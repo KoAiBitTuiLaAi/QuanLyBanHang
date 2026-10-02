@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nhà cung cấp | SaleStock</title>
+    <link rel="icon" href="assets/brand-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="css/dashboard.css" />
+    <link rel="stylesheet" href="css/suppliers.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- ── Sidebar ── -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar__header">
+          <a class="sidebar__brand" href="dashboard.html">
+            <img src="assets/brand-mark.svg" alt="" class="sidebar__logo" />
+            <span class="sidebar__brand-name">SaleStock</span>
+          </a>
+          <button class="sidebar__close" id="sidebar-close" aria-label="Đóng menu">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <nav class="sidebar__nav" id="sidebar-nav" aria-label="Menu chính"></nav>
+        <div class="sidebar__footer">
+          <div class="sidebar__user" id="sidebar-user">
+            <div class="sidebar__avatar" id="user-avatar">A</div>
+            <div class="sidebar__user-info">
+              <span class="sidebar__user-name" id="user-name">—</span>
+              <span class="sidebar__user-role" id="user-role">—</span>
+            </div>
+          </div>
+          <button class="sidebar__logout" id="btn-logout" title="Đăng xuất">
+            <svg viewBox="0 0 24 24">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ── Main content ── -->
+      <div class="main-area">
+        <header class="topbar">
+          <button class="topbar__menu-btn" id="sidebar-toggle" aria-label="Mở menu">
+            <svg viewBox="0 0 24 24">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <div class="topbar__breadcrumb">
+            <span>Nhà cung cấp</span>
+          </div>
+          <div class="topbar__actions">
+            <button class="topbar__btn topbar__btn--logout" id="btn-logout-topbar" title="Đăng xuất">
+              <svg viewBox="0 0 24 24">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span>Đăng xuất</span>
+            </button>
+          </div>
+        </header>
+
+        <main class="content">
+          <!-- Heading -->
+          <div class="sup-heading">
+            <div class="sup-heading__text">
+              <p class="sup-heading__section">Kho hàng</p>
+              <h1>Nhà cung cấp</h1>
+              <p class="sup-heading__desc">
+                Quản lý danh mục nhà cung cấp, gắn đúng nguồn hàng để truy nguyên khi có lô lỗi.
+              </p>
+            </div>
+            <button class="btn btn--primary" id="btn-add-supplier">
+              <svg width="16" height="16" viewBox="0 0 24 24">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Thêm nhà cung cấp
+            </button>
+          </div>
+
+          <!-- Filter / search bar -->
+          <div class="sup-toolbar">
+            <div class="sup-search-wrap">
+              <svg width="16" height="16" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="search"
+                id="sup-search"
+                placeholder="Tìm theo tên, mã, mã số thuế…"
+                autocomplete="off"
+              />
+            </div>
+            <div class="sup-filter-group">
+              <select id="sup-filter-status" class="sup-select">
+                <option value="">Tất cả trạng thái</option>
+                <option value="ACTIVE">Đang giao dịch</option>
+                <option value="INACTIVE">Ngưng giao dịch</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="sup-table-wrap">
+            <table class="sup-table" id="sup-table">
+              <thead>
+                <tr>
+                  <th class="col-code">Mã NCC</th>
+                  <th class="col-name">Tên nhà cung cấp</th>
+                  <th class="col-tax">Mã số thuế</th>
+                  <th class="col-contact">Người liên hệ</th>
+                  <th class="col-payment">Điều khoản TT</th>
+                  <th class="col-status">Trạng thái</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody id="sup-tbody">
+                <tr class="sup-loading-row">
+                  <td colspan="7">
+                    <div class="sup-loading">Đang tải dữ liệu…</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="sup-pagination" id="sup-pagination" hidden></div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Sidebar overlay (mobile) -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Toast container -->
+    <div id="toast-container"></div>
+
+    <!-- ── Modal: Thêm / Sửa nhà cung cấp ── -->
+    <div class="modal-overlay" id="supplier-modal" hidden>
+      <div class="modal modal--wide" role="dialog" aria-labelledby="supplier-modal-title">
+        <div class="modal__header">
+          <div>
+            <h2 id="supplier-modal-title">Thêm nhà cung cấp</h2>
+            <p class="modal-subtitle" id="supplier-modal-sub">Khai báo thông tin nhà cung cấp mới.</p>
+          </div>
+          <button class="modal__close" data-close-supplier aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <form class="modal__body" id="supplier-form" novalidate>
+          <input type="hidden" id="sup-id" />
+
+          <div class="form-grid">
+            <!-- Mã NCC -->
+            <div class="form-field">
+              <label for="sup-code">Mã nhà cung cấp <span class="req">*</span></label>
+              <input id="sup-code" type="text" required maxlength="30"
+                placeholder="VD: NCC001" autocomplete="off" />
+              <small>Mã định danh duy nhất, không thể thay đổi sau khi tạo.</small>
+            </div>
+
+            <!-- Mã số thuế -->
+            <div class="form-field">
+              <label for="sup-tax">Mã số thuế</label>
+              <input id="sup-tax" type="text" maxlength="20"
+                placeholder="VD: 0123456789" autocomplete="off" />
+            </div>
+
+            <!-- Tên -->
+            <div class="form-field form-field--full">
+              <label for="sup-name">Tên nhà cung cấp <span class="req">*</span></label>
+              <input id="sup-name" type="text" required maxlength="200"
+                placeholder="VD: Công ty TNHH Thực phẩm Bình An" autocomplete="off" />
+            </div>
+
+            <!-- Người liên hệ -->
+            <div class="form-field">
+              <label for="sup-contact-name">Người liên hệ</label>
+              <input id="sup-contact-name" type="text" maxlength="100"
+                placeholder="Họ và tên" autocomplete="off" />
+            </div>
+
+            <!-- Điện thoại -->
+            <div class="form-field">
+              <label for="sup-contact-phone">Điện thoại liên hệ</label>
+              <input id="sup-contact-phone" type="tel" maxlength="20"
+                placeholder="VD: 0901 234 567" autocomplete="off" />
+            </div>
+
+            <!-- Email -->
+            <div class="form-field">
+              <label for="sup-email">Email</label>
+              <input id="sup-email" type="email" maxlength="150"
+                placeholder="ncc@example.com" autocomplete="off" />
+            </div>
+
+            <!-- Điều khoản thanh toán -->
+            <div class="form-field">
+              <label for="sup-payment-terms">Điều khoản thanh toán</label>
+              <select id="sup-payment-terms" class="sup-select">
+                <option value="">— Chưa xác định —</option>
+                <option value="COD">Thanh toán ngay (COD)</option>
+                <option value="NET7">Net 7 ngày</option>
+                <option value="NET15">Net 15 ngày</option>
+                <option value="NET30">Net 30 ngày</option>
+                <option value="NET45">Net 45 ngày</option>
+                <option value="NET60">Net 60 ngày</option>
+              </select>
+            </div>
+
+            <!-- Địa chỉ -->
+            <div class="form-field form-field--full">
+              <label for="sup-address">Địa chỉ</label>
+              <input id="sup-address" type="text" maxlength="300"
+                placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố"
+                autocomplete="off" />
+            </div>
+
+            <!-- Ghi chú -->
+            <div class="form-field form-field--full">
+              <label for="sup-notes">Ghi chú</label>
+              <textarea id="sup-notes" rows="3" maxlength="1000"
+                placeholder="Thông tin bổ sung về nhà cung cấp…"></textarea>
+            </div>
+          </div>
+
+          <div id="supplier-form-message" class="form-message" hidden></div>
+
+          <div class="modal__actions">
+            <button type="button" class="btn btn--secondary" data-close-supplier>Huỷ</button>
+            <button type="submit" class="btn btn--primary" id="btn-save-supplier">Lưu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Modal: Xác nhận ngưng / khôi phục giao dịch ── -->
+    <div class="modal-overlay" id="status-modal" hidden>
+      <div class="modal" role="dialog" aria-labelledby="status-modal-title">
+        <div class="modal__header">
+          <div>
+            <h2 id="status-modal-title">Ngưng giao dịch</h2>
+            <p class="modal-subtitle" id="status-modal-sub"></p>
+          </div>
+          <button class="modal__close" data-close-status aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div class="modal__body">
+          <input type="hidden" id="status-sup-id" />
+          <input type="hidden" id="status-target" />
+          <p id="status-modal-body" class="status-confirm-text"></p>
+          <div id="status-form-message" class="form-message" hidden></div>
+          <div class="modal__actions">
+            <button type="button" class="btn btn--secondary" data-close-status>Huỷ</button>
+            <button type="button" class="btn btn--primary" id="btn-confirm-status">Xác nhận</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/menu-config.js"></script>
+    <script src="js/suppliers.js"></script>
+  </body>
+</html>
