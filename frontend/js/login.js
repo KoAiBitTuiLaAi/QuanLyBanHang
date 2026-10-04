@@ -26,49 +26,7 @@
     });
   }
 
-  // ── Toast notification system ──
-  function createToastContainer() {
-    let container = document.getElementById("toast-container");
-    if (!container) {
-      container = document.createElement("div");
-      container.id = "toast-container";
-      document.body.appendChild(container);
-    }
-    return container;
-  }
-
-  function showToast(message, type = "error", duration = 4000) {
-    const container = createToastContainer();
-
-    const toast = document.createElement("div");
-    toast.className = `toast toast--${type}`;
-    toast.setAttribute("role", "alert");
-
-    const icons = {
-      error: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>`,
-      success: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`,
-      warning: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-    };
-
-    toast.innerHTML = `
-      <span class="toast__icon">${icons[type] || icons.error}</span>
-      <span class="toast__message">${message}</span>
-    `;
-
-    container.appendChild(toast);
-
-    // Trigger enter animation
-    requestAnimationFrame(() => toast.classList.add("toast--visible"));
-
-    // Auto dismiss
-    setTimeout(() => {
-      toast.classList.remove("toast--visible");
-      toast.classList.add("toast--exit");
-      toast.addEventListener("animationend", () => toast.remove(), {
-        once: true,
-      });
-    }, duration);
-  }
+  const showToast = Toast.show;
 
   // ── Field validation styling ──
   function setFieldError(input, hasError) {

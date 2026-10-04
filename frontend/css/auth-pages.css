@@ -9,6 +9,7 @@ h1 { margin:34px 0 10px; font:650 32px/1.15 "Bahnschrift","Segoe UI",sans-serif;
 label { display:block; margin:0 0 7px; font-size:13px; font-weight:650; }
 input { width:100%; height:48px; margin-bottom:16px; padding:0 14px; border:1px solid var(--line); border-radius:10px; outline:none; font:inherit; }
 input:focus { border-color:var(--teal); box-shadow:0 0 0 4px rgba(47,184,138,.12); }
+input[aria-invalid="true"] { border-color:var(--danger); box-shadow:0 0 0 3px rgba(200,73,73,.12); }
 button { width:100%; height:49px; margin-top:6px; border:0; border-radius:10px; color:#fff; background:var(--navy); font:650 14px/1 inherit; cursor:pointer; }
 button:disabled { opacity:.55; cursor:wait; }
 .back-link { display:block; margin-top:22px; color:var(--muted); text-align:center; font-size:13px; text-decoration:none; }
