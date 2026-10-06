@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Khai báo chính sách chiết khấu theo sản lượng trong hệ thống SaleStock."
+    />
+    <title>Chiết khấu sản lượng | SaleStock</title>
+    <link rel="icon" href="assets/brand-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="css/dashboard.css" />
+    <link rel="stylesheet" href="css/discount-policies.css" />
+  </head>
+  <body>
+    <div class="catalog-shell">
+      <header class="catalog-topbar">
+        <a class="catalog-brand" href="dashboard.html">
+          <img src="assets/brand-mark.svg" alt="" />
+          <span>SaleStock</span>
+        </a>
+        <a class="catalog-back" href="dashboard.html">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+          Về tổng quan
+        </a>
+      </header>
+
+      <main class="catalog-main">
+        <section class="catalog-heading" aria-labelledby="discount-title">
+          <div>
+            <p class="catalog-heading__context">Kinh doanh</p>
+            <h1 id="discount-title">Chiết khấu sản lượng</h1>
+            <span>
+              Khai báo mức giảm giá tự động khi đại lý đặt đủ số lượng —
+              không cần thoả thuận miệng từng lần.
+            </span>
+          </div>
+          <button class="btn btn--primary" id="create-policy" type="button" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Thêm chính sách
+          </button>
+        </section>
+
+        <div class="discount-rules-note">
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4M12 8h.01" />
+          </svg>
+          Khi nhiều chính sách cùng áp dụng cho một đơn hàng, hệ thống tự động chọn mức chiết khấu cao nhất để áp dụng cho khách.
+        </div>
+
+        <!-- Filters -->
+        <form class="catalog-filters" id="policy-filters">
+          <label class="catalog-filter catalog-filter--search">
+            <span>Tìm chính sách</span>
+            <div class="catalog-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-4-4" />
+              </svg>
+              <input id="policy-search" type="search" placeholder="Tên chính sách hoặc SKU / nhóm hàng" />
+            </div>
+          </label>
+          <label class="catalog-filter">
+            <span>Áp dụng cho</span>
+            <select id="scope-filter">
+              <option value="">Tất cả phạm vi</option>
+              <option value="SKU">Theo SKU</option>
+              <option value="GROUP">Theo nhóm hàng</option>
+            </select>
+          </label>
+          <label class="catalog-filter">
+            <span>Trạng thái</span>
+            <select id="status-filter">
+              <option value="">Tất cả trạng thái</option>
+              <option value="active">Đang áp dụng</option>
+              <option value="inactive">Đã tắt</option>
+            </select>
+          </label>
+          <button class="btn btn--secondary" id="clear-filters" type="button">Đặt lại</button>
+        </form>
+
+        <!-- Policy list -->
+        <section class="catalog-panel" aria-live="polite">
+          <div class="catalog-panel__meta">
+            <p id="policy-summary">Đang tải…</p>
+          </div>
+          <div class="catalog-table-wrap">
+            <table class="catalog-table">
+              <thead>
+                <tr>
+                  <th>Chính sách</th>
+                  <th>Phạm vi áp dụng</th>
+                  <th>Bậc chiết khấu</th>
+                  <th>Hiệu lực</th>
+                  <th>Trạng thái</th>
+                  <th class="catalog-table__actions"></th>
+                </tr>
+              </thead>
+              <tbody id="policies-body">
+                <tr>
+                  <td class="catalog-empty" colspan="6">Đang tải danh sách chính sách…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Create / Edit Policy Modal -->
+    <div class="modal-overlay" id="policy-modal" hidden>
+      <div class="modal modal--policy" role="dialog" aria-labelledby="policy-modal-title">
+        <div class="modal__header">
+          <div>
+            <h2 id="policy-modal-title">Thêm chính sách chiết khấu</h2>
+            <p>Khai báo bậc chiết khấu theo số lượng mua.</p>
+          </div>
+          <button class="modal__close" data-close-policy type="button" aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <form class="modal__body policy-form" id="policy-form" novalidate>
+          <input id="policy-id" type="hidden" />
+
+          <div class="policy-form__grid">
+            <!-- Name -->
+            <label class="form-field policy-form__full">
+              <span>Tên chính sách</span>
+              <input id="policy-name" maxlength="200" placeholder="Ví dụ: Chiết khấu sỉ Q4 2025" required />
+            </label>
+
+            <!-- Scope type -->
+            <label class="form-field">
+              <span>Phạm vi áp dụng</span>
+              <select id="policy-scope-type" required>
+                <option value="SKU">Theo SKU cụ thể</option>
+                <option value="GROUP">Theo nhóm hàng</option>
+              </select>
+            </label>
+
+            <!-- Scope target -->
+            <label class="form-field" id="scope-target-field">
+              <span id="scope-target-label">Chọn sản phẩm (SKU)</span>
+              <select id="policy-scope-target" required>
+                <option value="">-- Chọn --</option>
+              </select>
+            </label>
+
+            <!-- Discount type -->
+            <label class="form-field">
+              <span>Kiểu chiết khấu</span>
+              <select id="policy-discount-type" required>
+                <option value="PERCENT">Theo phần trăm (%)</option>
+                <option value="AMOUNT">Theo số tiền (VNĐ / đơn vị)</option>
+              </select>
+            </label>
+
+            <!-- Date range -->
+            <label class="form-field">
+              <span>Ngày bắt đầu</span>
+              <input id="policy-start-date" type="date" />
+              <small>Để trống nếu áp dụng ngay lập tức.</small>
+            </label>
+            <label class="form-field">
+              <span>Ngày kết thúc</span>
+              <input id="policy-end-date" type="date" />
+              <small>Để trống nếu áp dụng vô thời hạn.</small>
+            </label>
+          </div>
+
+          <!-- Tiers -->
+          <div class="policy-tiers">
+            <div class="policy-tiers__header">
+              <span>Bậc chiết khấu</span>
+              <button type="button" class="tier-add-btn" id="add-tier">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                Thêm bậc
+              </button>
+            </div>
+            <div class="policy-tiers__legend">
+              <span>Số lượng từ</span>
+              <span>Số lượng đến <small>(để trống = không giới hạn)</small></span>
+              <span id="discount-col-label">Chiết khấu (%)</span>
+              <span></span>
+            </div>
+            <div id="tiers-list" class="policy-tiers__list"></div>
+            <p class="policy-tiers__empty" id="tiers-empty">Chưa có bậc nào. Bấm "Thêm bậc" để bắt đầu.</p>
+          </div>
+
+          <div class="policy-form__message" id="policy-form-message" role="alert" hidden></div>
+          <div class="modal__actions">
+            <button class="btn btn--secondary" data-close-policy type="button">Huỷ</button>
+            <button class="btn btn--primary" id="save-policy" type="submit">Lưu chính sách</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Tiers detail drawer (read-only, click row) -->
+    <div class="modal-overlay" id="tiers-drawer" hidden>
+      <div class="modal modal--tiers-detail" role="dialog" aria-labelledby="tiers-drawer-title">
+        <div class="modal__header">
+          <div>
+            <h2 id="tiers-drawer-title">Bậc chiết khấu</h2>
+            <p id="tiers-drawer-subtitle"></p>
+          </div>
+          <button class="modal__close" id="close-tiers-drawer" type="button" aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div class="modal__body">
+          <table class="catalog-table tiers-table">
+            <thead>
+              <tr>
+                <th>Số lượng từ</th>
+                <th>Số lượng đến</th>
+                <th id="drawer-discount-col">Chiết khấu</th>
+              </tr>
+            </thead>
+            <tbody id="tiers-drawer-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/discount-policies.js"></script>
+  </body>
+</html>
