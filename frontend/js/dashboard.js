@@ -45,6 +45,7 @@
   }).format(new Date());
 
   const workDescriptions = {
+    "order-approval": "Xem xét và phê duyệt đơn hàng vượt hạn mức hoặc bán dưới giá sàn.",
     "debt-limits": "Tra cứu và khai báo hạn mức tiền, số ngày nợ tối đa của đại lý.",
     users: "Tạo tài khoản, gán vai trò và quản lý nhân sự.",
     "audit-logs": "Tra cứu thay đổi tồn kho, giá và hạn mức công nợ.",
@@ -58,7 +59,7 @@
     warehouse: "Xem số lượng tồn và quy đổi theo đơn vị đóng gói.",
     profile: "Cập nhật họ tên, số điện thoại và ảnh đại diện.",
   };
-  const workOrder = ["users", "audit-logs", "debt-limits", "price-lists", "discount-policies", "products", "product-groups",
+  const workOrder = ["order-approval", "users", "audit-logs", "debt-limits", "price-lists", "discount-policies", "products", "product-groups",
     "import-export", "warehouse", "product-units", "suppliers", "profile"];
   const availableWork = MenuConfig.getMenuForUser(user);
   const work = workOrder.map((id) => availableWork.find((item) => item.id === id))

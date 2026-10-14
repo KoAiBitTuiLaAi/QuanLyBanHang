@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Duyệt đơn hàng | SaleStock</title>
+    <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/dashboard.css" />
+    <link rel="stylesheet" href="/css/order-approval.css" />
+    <link rel="stylesheet" href="/css/app-navigation.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- ── Sidebar ── -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar__header">
+          <a class="sidebar__brand" href="/dashboard">
+            <img src="/assets/brand-mark.svg" alt="" class="sidebar__logo" />
+            <span class="sidebar__brand-name">SaleStock</span>
+          </a>
+          <button class="sidebar__close" id="sidebar-close" aria-label="Đóng menu">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <nav class="sidebar__nav" id="sidebar-nav" aria-label="Menu chính"></nav>
+        <div class="sidebar__footer">
+          <div class="sidebar__user" id="sidebar-user">
+            <div class="sidebar__avatar" id="user-avatar">A</div>
+            <div class="sidebar__user-info">
+              <span class="sidebar__user-name" id="user-name">—</span>
+              <span class="sidebar__user-role" id="user-role">—</span>
+            </div>
+          </div>
+          <button class="sidebar__logout" id="btn-logout" title="Đăng xuất">
+            <svg viewBox="0 0 24 24">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ── Main content ── -->
+      <div class="main-area">
+        <header class="topbar">
+          <button class="topbar__menu-btn" id="sidebar-toggle" aria-label="Mở menu">
+            <svg viewBox="0 0 24 24">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <div class="topbar__breadcrumb"></div>
+          <div class="topbar__actions">
+            <button class="topbar__btn topbar__btn--logout" id="btn-logout-topbar" title="Đăng xuất">
+              <svg viewBox="0 0 24 24">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span>Đăng xuất</span>
+            </button>
+          </div>
+        </header>
+
+        <main class="content">
+          <!-- Heading -->
+          <div class="oa-heading">
+            <div class="oa-heading__text">
+              <p class="oa-heading__section">Kinh doanh</p>
+              <h1>Duyệt đơn hàng</h1>
+              <p class="oa-heading__desc">
+                Xem xét và phê duyệt các đơn hàng vượt hạn mức hoặc bán dưới giá sàn — kiểm soát biên lợi nhuận mà không làm chậm bán hàng.
+              </p>
+            </div>
+          </div>
+
+          <!-- Toolbar & Filters -->
+          <div class="oa-toolbar-card">
+            <div class="oa-toolbar">
+              <div class="oa-search-wrap">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  type="text"
+                  id="oa-search"
+                  placeholder="Tìm theo mã đơn, tên đại lý…"
+                  autocomplete="off"
+                  aria-label="Tìm theo mã đơn, tên đại lý"
+                />
+                <button type="button" class="oa-search-clear" id="oa-search-clear" title="Xoá tìm kiếm" aria-label="Xoá tìm kiếm" hidden>
+                  <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" fill="none">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+
+              <div class="oa-filter-group">
+                <!-- Lý do cần duyệt -->
+                <div class="oa-filter-item">
+                  <select id="oa-filter-reason" class="oa-select" aria-label="Lọc theo lý do cần duyệt">
+                    <option value="">Tất cả lý do</option>
+                    <option value="OVER_DEBT_LIMIT">Vượt hạn mức công nợ</option>
+                    <option value="BELOW_FLOOR_PRICE">Bán dưới giá sàn</option>
+                    <option value="OVER_QUANTITY_LIMIT">Vượt hạn mức số lượng</option>
+                  </select>
+                </div>
+
+                <!-- Trạng thái duyệt -->
+                <div class="oa-filter-item">
+                  <select id="oa-filter-status" class="oa-select" aria-label="Lọc theo trạng thái">
+                    <option value="PENDING_APPROVAL">Chờ duyệt</option>
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="APPROVED">Đã duyệt</option>
+                    <option value="REJECTED">Từ chối</option>
+                    <option value="RETURNED">Trả lại sửa</option>
+                  </select>
+                </div>
+
+                <!-- Nút đặt lại -->
+                <button type="button" id="btn-reset-oa-filters" class="btn btn--secondary oa-btn-reset" title="Đặt lại bộ lọc" hidden>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                  </svg>
+                  <span>Đặt lại</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Meta count -->
+            <div class="oa-toolbar-meta">
+              <div class="oa-meta-count" id="oa-meta-count">
+                <span class="oa-meta-dot"></span>
+                <span id="oa-count-text">Đang tải dữ liệu…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="oa-table-wrap">
+            <table class="oa-table" id="oa-table">
+              <thead>
+                <tr>
+                  <th class="col-code">Mã đơn</th>
+                  <th class="col-dealer">Đại lý</th>
+                  <th class="col-total">Tổng tiền</th>
+                  <th class="col-reason">Lý do cần duyệt</th>
+                  <th class="col-violation">Mức vi phạm</th>
+                  <th class="col-date">Ngày tạo</th>
+                  <th class="col-status">Trạng thái</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody id="oa-tbody">
+                <tr class="oa-loading-row">
+                  <td colspan="8">
+                    <div class="oa-loading">Đang tải dữ liệu…</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="oa-pagination" id="oa-pagination" hidden></div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Sidebar overlay (mobile) -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Toast container -->
+    <div id="toast-container"></div>
+
+    <!-- ── Modal: Xem chi tiết đơn hàng ── -->
+    <div class="modal-overlay" id="order-detail-modal" hidden>
+      <div class="modal modal--wide" role="dialog" aria-labelledby="order-detail-title" aria-modal="true">
+        <div class="modal__header">
+          <div>
+            <h2 id="order-detail-title">Chi tiết đơn hàng</h2>
+            <p class="modal-subtitle" id="order-detail-sub"></p>
+          </div>
+          <button class="modal__close" type="button" data-close-order-detail aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div class="modal__body">
+          <!-- Order info -->
+          <div class="order-detail-info" id="order-detail-info"></div>
+
+          <!-- Violation details -->
+          <div class="order-detail-violations" id="order-detail-violations"></div>
+
+          <!-- Order items table -->
+          <div class="order-detail-items-wrap">
+            <h3>Danh sách sản phẩm</h3>
+            <table class="oa-table oa-table--compact">
+              <thead>
+                <tr>
+                  <th>Sản phẩm</th>
+                  <th>Số lượng</th>
+                  <th>Đơn giá</th>
+                  <th>Giá sàn</th>
+                  <th>Chiết khấu</th>
+                  <th>Thành tiền</th>
+                </tr>
+              </thead>
+              <tbody id="order-detail-items"></tbody>
+            </table>
+          </div>
+
+          <!-- Order total -->
+          <div class="order-detail-total" id="order-detail-total"></div>
+
+          <!-- Approval history (immutable) -->
+          <div class="order-detail-history" id="order-detail-history"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Duyệt đơn hàng ── -->
+    <div class="modal-overlay" id="approve-modal" hidden>
+      <div class="modal" role="dialog" aria-labelledby="approve-modal-title" aria-modal="true">
+        <div class="modal__header">
+          <div>
+            <h2 id="approve-modal-title">Duyệt đơn hàng</h2>
+            <p class="modal-subtitle" id="approve-modal-sub"></p>
+          </div>
+          <button class="modal__close" type="button" data-close-approve aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form class="modal__body" id="approve-form" novalidate>
+          <input type="hidden" id="approve-order-id" />
+          <div class="oa-confirm-banner oa-confirm-banner--approve">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span>Đơn hàng sau khi duyệt sẽ chuyển sang <strong>giữ chỗ tồn kho</strong> và chờ xuất kho. Hành động này không thể hoàn tác.</span>
+          </div>
+          <div class="form-field">
+            <label for="approve-comment">Ghi chú duyệt</label>
+            <textarea id="approve-comment" rows="3" maxlength="500" placeholder="Ghi chú thêm nếu cần (không bắt buộc)"></textarea>
+          </div>
+          <div id="approve-form-message" class="form-message" role="alert" hidden></div>
+          <div class="modal__actions">
+            <button type="button" class="btn btn--secondary" data-close-approve>Huỷ</button>
+            <button type="submit" class="btn btn--primary" id="btn-submit-approve">Duyệt đơn hàng</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Modal: Từ chối đơn hàng ── -->
+    <div class="modal-overlay" id="reject-modal" hidden>
+      <div class="modal" role="dialog" aria-labelledby="reject-modal-title" aria-modal="true">
+        <div class="modal__header">
+          <div>
+            <h2 id="reject-modal-title">Từ chối đơn hàng</h2>
+            <p class="modal-subtitle" id="reject-modal-sub"></p>
+          </div>
+          <button class="modal__close" type="button" data-close-reject aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form class="modal__body" id="reject-form" novalidate>
+          <input type="hidden" id="reject-order-id" />
+          <div class="oa-confirm-banner oa-confirm-banner--reject">
+            <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            <span>Đơn hàng bị từ chối sẽ không được xử lý tiếp. Nhân viên bán hàng sẽ nhận được thông báo.</span>
+          </div>
+          <div class="form-field">
+            <label for="reject-comment">Lý do từ chối <span class="req">*</span></label>
+            <textarea id="reject-comment" rows="3" maxlength="500" required placeholder="Nhập lý do từ chối đơn hàng (bắt buộc)"></textarea>
+            <small class="form-hint">Bắt buộc nhập lý do (tối đa 500 ký tự).</small>
+          </div>
+          <div id="reject-form-message" class="form-message" role="alert" hidden></div>
+          <div class="modal__actions">
+            <button type="button" class="btn btn--secondary" data-close-reject>Huỷ</button>
+            <button type="submit" class="btn btn--danger" id="btn-submit-reject">Từ chối đơn hàng</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Modal: Trả lại sửa ── -->
+    <div class="modal-overlay" id="return-modal" hidden>
+      <div class="modal" role="dialog" aria-labelledby="return-modal-title" aria-modal="true">
+        <div class="modal__header">
+          <div>
+            <h2 id="return-modal-title">Trả lại sửa</h2>
+            <p class="modal-subtitle" id="return-modal-sub"></p>
+          </div>
+          <button class="modal__close" type="button" data-close-return aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form class="modal__body" id="return-form" novalidate>
+          <input type="hidden" id="return-order-id" />
+          <div class="oa-confirm-banner oa-confirm-banner--return">
+            <svg viewBox="0 0 24 24" width="18" height="18"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            <span>Đơn hàng sẽ được trả lại cho nhân viên bán hàng để chỉnh sửa và gửi duyệt lại.</span>
+          </div>
+          <div class="form-field">
+            <label for="return-comment">Ý kiến chỉnh sửa <span class="req">*</span></label>
+            <textarea id="return-comment" rows="3" maxlength="500" required placeholder="Mô tả cần sửa gì (bắt buộc): giá, số lượng, chiết khấu…"></textarea>
+            <small class="form-hint">Bắt buộc nhập ý kiến (tối đa 500 ký tự).</small>
+          </div>
+          <div id="return-form-message" class="form-message" role="alert" hidden></div>
+          <div class="modal__actions">
+            <button type="button" class="btn btn--secondary" data-close-return>Huỷ</button>
+            <button type="submit" class="btn btn--warning" id="btn-submit-return">Trả lại sửa</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/js/auth.js"></script>
+    <script src="/js/menu-config.js"></script>
+    <script src="/js/app-navigation.js"></script>
+    <script src="/js/order-approval.js"></script>
+  </body>
+</html>
