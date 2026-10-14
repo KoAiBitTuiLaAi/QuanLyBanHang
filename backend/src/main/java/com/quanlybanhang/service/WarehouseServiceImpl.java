@@ -331,6 +331,8 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .productCode(p != null ? p.getCode() : null)
                 .productName(p != null ? p.getName() : null)
                 .baseQuantity(inv.getBaseQuantity())
+                .reservedQuantity(inv.getReservedQuantity() != null ? inv.getReservedQuantity() : BigDecimal.ZERO)
+                .availableQuantity(inv.getAvailableQuantity())
                 .baseUnit(inv.getBaseUnit())
                 .convertedViews(converted)
                 .updatedAt(inv.getUpdatedAt())

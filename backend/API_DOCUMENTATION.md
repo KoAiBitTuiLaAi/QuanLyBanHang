@@ -421,7 +421,9 @@ Trạng thái dùng `active`, không dùng chuỗi `status`; người liên hệ
 | POST | `/orders` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF` | Tạo đơn hàng cho đại lý (tự động áp bảng giá hiệu lực theo nhóm khách hàng; chặn nếu SKU ngoài bảng giá; bán dưới giá sàn chuyển sang `PENDING_APPROVAL`) |
 | POST | `/orders/line-item/pricing` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF` | Tra cứu giá bảng giá, giá sàn, tính chiết khấu sản lượng và kiểm tra cảnh báo dưới giá sàn cho một dòng sản phẩm |
 | POST | `/orders/calculate` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF` | Tính toán lại chiết khấu sản lượng và tổng tiền toàn bộ đơn hàng khi thay đổi số lượng |
-| PUT | `/orders/{id}/cancel` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Hủy đơn hàng |
+| PUT | `/orders/{id}/cancel` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Hủy đơn hàng kèm lý do bắt buộc; tự động giải phóng tồn kho giữ chỗ (`reservedQuantity`); chặn huỷ đơn đã xuất kho trở đi (`EXPORTED`, `DELIVERED`, `CLOSED`) |
+| GET | `/orders/{id}/tracking` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Theo dõi vòng đời đơn hàng (7 bước chuẩn, timeline lịch sử, người thực hiện, lý do huỷ/từ chối; áp dụng RLS cho Nhân viên kinh doanh) |
+| PUT | `/orders/{id}/status` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF` | Cập nhật trạng thái vòng đời đơn hàng; tự động trừ tồn kho và giải phóng lượng giữ chỗ khi chuyển sang `EXPORTED` |
 | PUT | `/orders/{id}/approve` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Phê duyệt đơn hàng bán dưới giá sàn (chuyển trạng thái sang `RECORDED`) |
 | PUT | `/orders/{id}/reject?reason={ly_do}` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Từ chối đơn hàng bán dưới giá sàn (chuyển trạng thái sang `REJECTED`) |
 
@@ -574,6 +576,161 @@ POST /api/orders/calculate
 - Khi tạo đơn thật bằng `POST /api/orders`, ngày giao dùng trường
   **`expectedDeliveryDate`** (`yyyy-MM-dd`), không dùng `deliveryDate`.
   Response đơn hàng trả lại `expectedDeliveryDate` cùng `deliveryPointId`.
+
+### Theo dõi Vòng đời & Huỷ đơn hàng (S4-06)
+
+Hỗ trợ Nhân viên kinh doanh theo dõi vòng đời đơn hàng trực quan và thực hiện huỷ đơn hàng khi phát sinh nhu cầu, tự động giải phóng lượng hàng giữ chỗ trong kho và ngăn chặn huỷ sai quy trình khi hàng đã rời kho.
+
+#### 1. Chuẩn hóa Vòng đời đơn hàng 7 bước
+Vòng đời đơn hàng được quản trị qua 7 bước chuẩn:
+1. **Nháp (`DRAFT`)**: Đơn mới tạo hoặc đang lưu nháp.
+2. **Chờ duyệt (`PENDING_APPROVAL`)**: Đơn có dòng hàng bán dưới giá sàn hoặc chính sách đặc biệt, chờ Quản lý kinh doanh duyệt.
+3. **Đã duyệt (`APPROVED` / `RECORDED`)**: Đơn đã được duyệt hoặc ghi nhận hợp lệ, hệ thống tự động giữ chỗ tồn kho tương ứng (`reservedQuantity`) trong kho chỉ định.
+4. **Đang soạn hàng (`PICKING`)**: Kho nhận lệnh và tiến hành lấy hàng, đóng gói.
+5. **Đã xuất (`EXPORTED`)**: Hàng hóa đã rời kho. Tại thời điểm này, hệ thống tự động trừ số lượng tồn thực tế (`quantity`) và giải phóng số lượng giữ chỗ (`reservedQuantity`).
+6. **Đã giao (`DELIVERED`)**: Đơn hàng đã giao thành công tới điểm giao hàng của đại lý.
+7. **Đóng (`CLOSED`)**: Đơn hàng hoàn tất chu trình bán và giao hàng.
+
+Nhánh rẽ kết thúc sớm:
+- **Huỷ (`CANCELLED`)**: Đơn bị huỷ bởi người có thẩm quyền trước khi xuất kho.
+- **Từ chối duyệt (`REJECTED`)**: Quản lý từ chối duyệt đơn bán dưới giá sàn.
+
+#### 2. Quy tắc huỷ đơn hàng & Giải phóng tồn kho giữ chỗ
+- **Lý do huỷ là bắt buộc**: Khi gọi `PUT /api/orders/{id}/cancel`, trường `reason` là bắt buộc (gửi qua JSON body `{ "reason": "Khách hàng đổi ý" }` hoặc query parameter `?reason=...`). Nếu để trống hoặc chỉ chứa khoảng trắng, hệ thống từ chối với mã lỗi `400 Bad Request`: `"Lý do huỷ đơn hàng không được để trống"`.
+- **Chặn huỷ đơn đã xuất kho**: Nếu đơn hàng đang ở trạng thái `EXPORTED`, `DELIVERED`, hoặc `CLOSED`, hệ thống nghiêm cấm huỷ và trả lỗi `400 Bad Request` kèm thông báo:
+  `"Đơn đã xuất kho thì không huỷ được, phải đi đường trả hàng"`
+  (Ngoại lệ `OrderCannotBeCancelledException`).
+- **Tự động hoàn lại hàng giữ chỗ**: Khi đơn hàng được duyệt, kho đã ghi nhận `reservedQuantity` cho từng sản phẩm. Khi huỷ đơn thành công, hệ thống tự động trừ `reservedQuantity` tương ứng, nâng lại số lượng tồn khả dụng (`availableQuantity`) và đặt `inventoryReserved = false`.
+- **Lưu vết đầy đủ vào Database**: Khi huỷ thành công, trạng thái đơn chuyển sang `CANCELLED`, lưu `cancelReason`, `cancelledBy`, `cancelledAt` vào bảng `orders`, ghi một bản ghi vào bảng `order_status_histories` và ghi một bản ghi vào bảng `audit_logs`.
+
+#### 3. Phân quyền dòng dữ liệu (Row-Level Security - RLS)
+- Nhân viên kinh doanh (`ROLE_SALES`) chỉ được phép xem danh sách, xem chi tiết, theo dõi tiến trình (`/orders/{id}/tracking`) và huỷ (`/orders/{id}/cancel`) những đơn hàng:
+  - Do chính tài khoản đó tạo ra (`order.createdBy == currentUser`), HOẶC
+  - Đơn hàng thuộc các đại lý được phân công phụ trách (`assignedDealers`).
+- Nếu Nhân viên kinh doanh cố tình truy cập hoặc huỷ đơn hàng của nhân sự khác / đại lý khác, hệ thống chặn lại với lỗi `403 Forbidden` (`"Bạn không có quyền truy cập hoặc huỷ đơn hàng này"`).
+- Quản lý (`ROLE_SALES_MANAGER`, `ROLE_ADMIN`) có quyền theo dõi và xử lý mọi đơn hàng trong toàn hệ thống.
+
+#### 4. API Theo dõi Vòng đời (`GET /api/orders/{id}/tracking`)
+**Response thành công (`200 OK`):**
+```json
+{
+  "success": true,
+  "message": "Lấy thông tin tiến trình đơn hàng thành công",
+  "data": {
+    "orderId": 12,
+    "orderCode": "DH-20261014-0012",
+    "dealerId": 1,
+    "dealerName": "Đại lý Cấp 1 Minh Phát",
+    "warehouseId": 1,
+    "warehouseName": "Kho Tổng Hà Nội",
+    "currentStatus": "PICKING",
+    "currentStatusDisplayName": "Đang soạn hàng",
+    "canCancel": true,
+    "isExported": false,
+    "inventoryReserved": true,
+    "cancelReason": null,
+    "cancelledBy": null,
+    "cancelledAt": null,
+    "steps": [
+      {
+        "stepIndex": 1,
+        "stepKey": "DRAFT",
+        "stepName": "Nháp",
+        "state": "COMPLETED",
+        "completedAt": "2026-10-14T08:00:00",
+        "completedBy": "sales1",
+        "note": "Khởi tạo đơn hàng"
+      },
+      {
+        "stepIndex": 2,
+        "stepKey": "PENDING_APPROVAL",
+        "stepName": "Chờ duyệt",
+        "state": "SKIPPED",
+        "completedAt": null,
+        "completedBy": null,
+        "note": null
+      },
+      {
+        "stepIndex": 3,
+        "stepKey": "APPROVED",
+        "stepName": "Đã duyệt",
+        "state": "COMPLETED",
+        "completedAt": "2026-10-14T08:05:00",
+        "completedBy": "sales1",
+        "note": "Ghi nhận đơn và đặt trước tồn kho"
+      },
+      {
+        "stepIndex": 4,
+        "stepKey": "PICKING",
+        "stepName": "Đang soạn hàng",
+        "state": "CURRENT",
+        "completedAt": "2026-10-14T08:30:00",
+        "completedBy": "kho_hn",
+        "note": "Đang gom hàng theo phiếu xuất"
+      },
+      {
+        "stepIndex": 5,
+        "stepKey": "EXPORTED",
+        "stepName": "Đã xuất kho",
+        "state": "UPCOMING",
+        "completedAt": null,
+        "completedBy": null,
+        "note": null
+      },
+      {
+        "stepIndex": 6,
+        "stepKey": "DELIVERED",
+        "stepName": "Đã giao hàng",
+        "state": "UPCOMING",
+        "completedAt": null,
+        "completedBy": null,
+        "note": null
+      },
+      {
+        "stepIndex": 7,
+        "stepKey": "CLOSED",
+        "stepName": "Đóng đơn",
+        "state": "UPCOMING",
+        "completedAt": null,
+        "completedBy": null,
+        "note": null
+      }
+    ],
+    "history": [
+      {
+        "id": 101,
+        "previousStatus": "DRAFT",
+        "newStatus": "APPROVED",
+        "statusDisplayName": "Đã duyệt",
+        "note": "Ghi nhận đơn và đặt trước tồn kho",
+        "changedBy": "sales1",
+        "changedAt": "2026-10-14T08:05:00"
+      },
+      {
+        "id": 102,
+        "previousStatus": "APPROVED",
+        "newStatus": "PICKING",
+        "statusDisplayName": "Đang soạn hàng",
+        "note": "Đang gom hàng theo phiếu xuất",
+        "changedBy": "kho_hn",
+        "changedAt": "2026-10-14T08:30:00"
+      }
+    ]
+  }
+}
+```
+
+#### 5. API Cập nhật trạng thái vòng đời (`PUT /api/orders/{id}/status`)
+**Request:**
+```json
+PUT /api/orders/12/status
+{
+  "status": "EXPORTED",
+  "note": "Đã hoàn thành xuất kho bàn giao bên vận chuyển"
+}
+```
+**Response (`200 OK`):**
+Trả thông tin đơn hàng `OrderResponse` với `status = "EXPORTED"`, `statusDisplayName = "Đã xuất"`, `isExported = true`, cập nhật tồn kho thực tế và lưu vết `order_status_histories`.
 
 ## Khai báo Bảng giá theo nhóm khách hàng & Thời gian hiệu lực (S2-10)
 

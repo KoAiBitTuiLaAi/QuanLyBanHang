@@ -43,6 +43,13 @@ public class WarehouseInventory {
     private BigDecimal baseQuantity = BigDecimal.ZERO;
 
     /**
+     * Số lượng giữ chỗ cho các đơn hàng đã duyệt/ghi nhận nhưng chưa xuất kho (S4-06).
+     */
+    @Column(name = "reserved_quantity", precision = 15, scale = 4, nullable = false)
+    @Builder.Default
+    private BigDecimal reservedQuantity = BigDecimal.ZERO;
+
+    /**
      * Tên đơn vị cơ sở (vd: "lon").
      */
     @Column(name = "base_unit", nullable = false, length = 50)
@@ -57,6 +64,9 @@ public class WarehouseInventory {
         this.updatedAt = LocalDateTime.now();
         if (this.baseQuantity == null) {
             this.baseQuantity = BigDecimal.ZERO;
+        }
+        if (this.reservedQuantity == null) {
+            this.reservedQuantity = BigDecimal.ZERO;
         }
     }
 
@@ -76,5 +86,33 @@ public class WarehouseInventory {
             }
             this.baseQuantity = this.baseQuantity.subtract(amount);
         }
+    }
+
+    public void addReservedQuantity(BigDecimal amount) {
+        if (amount != null) {
+            if (this.reservedQuantity == null) {
+                this.reservedQuantity = BigDecimal.ZERO;
+            }
+            this.reservedQuantity = this.reservedQuantity.add(amount);
+        }
+    }
+
+    public void subtractReservedQuantity(BigDecimal amount) {
+        if (amount != null) {
+            if (this.reservedQuantity == null) {
+                this.reservedQuantity = BigDecimal.ZERO;
+            }
+            this.reservedQuantity = this.reservedQuantity.subtract(amount);
+            if (this.reservedQuantity.compareTo(BigDecimal.ZERO) < 0) {
+                this.reservedQuantity = BigDecimal.ZERO;
+            }
+        }
+    }
+
+    public BigDecimal getAvailableQuantity() {
+        BigDecimal base = this.baseQuantity != null ? this.baseQuantity : BigDecimal.ZERO;
+        BigDecimal reserved = this.reservedQuantity != null ? this.reservedQuantity : BigDecimal.ZERO;
+        BigDecimal available = base.subtract(reserved);
+        return available.compareTo(BigDecimal.ZERO) > 0 ? available : BigDecimal.ZERO;
     }
 }

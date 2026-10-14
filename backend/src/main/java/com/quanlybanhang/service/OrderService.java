@@ -13,7 +13,27 @@ public interface OrderService {
 
     OrderResponse getOrderById(Long id);
 
+    /**
+     * Huỷ đơn hàng có lý do và người thực hiện (S4-06).
+     * Bắt buộc có lý do (reason không được để trống).
+     * Đơn đã xuất kho thì không huỷ được.
+     * Tự động nhả tồn kho đã giữ chỗ (reservedQuantity).
+     */
+    OrderResponse cancelOrder(Long id, String reason, String username);
+
+    /** Overload huỷ đơn giữ tính tương thích ngược */
     OrderResponse cancelOrder(Long id, String username);
+
+    /**
+     * Cập nhật trạng thái vòng đời của đơn hàng (S4-06):
+     * Nháp -> Chờ duyệt -> Đã duyệt -> Đang soạn hàng -> Đã xuất -> Đã giao -> Đóng
+     */
+    OrderResponse updateOrderStatus(Long id, String status, String note, String username);
+
+    /**
+     * Theo dõi chi tiết vòng đời đơn hàng và lịch sử chuyển trạng thái (S4-06).
+     */
+    com.quanlybanhang.dto.response.OrderTrackingResponse getOrderTracking(Long id, String username);
 
     /**
      * Quản lý kinh doanh duyệt đơn hàng có dòng bán dưới giá sàn (S2-10).

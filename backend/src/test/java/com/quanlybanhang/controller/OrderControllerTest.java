@@ -3,14 +3,17 @@ package com.quanlybanhang.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quanlybanhang.config.SecurityConfig;
 import com.quanlybanhang.dto.request.OrderCalculateRequest;
+import com.quanlybanhang.dto.request.OrderCancelRequest;
 import com.quanlybanhang.dto.request.OrderItemRequest;
 import com.quanlybanhang.dto.request.OrderLineItemPricingRequest;
 import com.quanlybanhang.dto.request.OrderRequest;
+import com.quanlybanhang.dto.request.OrderStatusUpdateRequest;
 import com.quanlybanhang.dto.response.OrderCalculateItemResponse;
 import com.quanlybanhang.dto.response.OrderCalculateResponse;
 import com.quanlybanhang.dto.response.OrderItemResponse;
 import com.quanlybanhang.dto.response.OrderLineItemPricingResponse;
 import com.quanlybanhang.dto.response.OrderResponse;
+import com.quanlybanhang.dto.response.OrderTrackingResponse;
 import com.quanlybanhang.exception.GlobalExceptionHandler;
 import com.quanlybanhang.model.CustomerGroup;
 import com.quanlybanhang.repository.OrderDraftRepository;
@@ -197,23 +200,90 @@ class OrderControllerTest {
 
     @Test
     @WithMockUser(username = "sales_user", roles = "SALES")
-    @DisplayName("Huỷ đơn hàng của đại lý bị khoá vẫn xử lý tiếp được kèm cảnh báo (S3-07)")
+    @DisplayName("Huỷ đơn hàng có lý do thành công (kèm cảnh báo nếu đại lý bị khoá) (S3-07, S4-06)")
     void cancelOrder_LockedDealer_Returns200WithWarning() throws Exception {
         OrderResponse resp = OrderResponse.builder()
                 .id(1L)
                 .orderCode("DH-001")
                 .status("CANCELLED")
+                .cancelReason("Đại lý ngừng hoạt động")
                 .dealerLocked(true)
                 .dealerLockWarning("Cảnh báo: Đại lý 'Đại lý Minh Phát' đang bị khoá giao dịch")
                 .build();
 
-        when(orderService.cancelOrder(eq(1L), any())).thenReturn(resp);
+        when(orderService.cancelOrder(eq(1L), eq("Đại lý ngừng hoạt động"), any())).thenReturn(resp);
 
-        mockMvc.perform(put("/api/orders/1/cancel"))
+        OrderCancelRequest cancelReq = OrderCancelRequest.builder()
+                .reason("Đại lý ngừng hoạt động")
+                .build();
+
+        mockMvc.perform(put("/api/orders/1/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(cancelReq)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("Hủy đơn hàng thành công (Cảnh báo: Đại lý đang bị khoá giao dịch)"))
                 .andExpect(jsonPath("$.data.dealerLocked").value(true));
+    }
+
+    @Test
+    @WithMockUser(username = "sales_user", roles = "SALES")
+    @DisplayName("Huỷ đơn hàng không truyền lý do bị chặn 400 Bad Request (S4-06)")
+    void cancelOrder_WithoutReason_Returns400() throws Exception {
+        mockMvc.perform(put("/api/orders/1/cancel"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Lý do huỷ đơn hàng không được để trống"));
+    }
+
+    @Test
+    @WithMockUser(username = "sales_user", roles = "SALES")
+    @DisplayName("Theo dõi vòng đời đơn hàng GET /api/orders/1/tracking -> 200 OK (S4-06)")
+    void getOrderTracking_Returns200() throws Exception {
+        OrderTrackingResponse trackingResp = OrderTrackingResponse.builder()
+                .orderId(1L)
+                .orderCode("DH-001")
+                .currentStatus("PICKING")
+                .currentStatusDisplayName("Đang soạn hàng")
+                .canCancel(true)
+                .isExported(false)
+                .steps(List.of())
+                .history(List.of())
+                .build();
+
+        when(orderService.getOrderTracking(eq(1L), any())).thenReturn(trackingResp);
+
+        mockMvc.perform(get("/api/orders/1/tracking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.orderCode").value("DH-001"))
+                .andExpect(jsonPath("$.data.currentStatus").value("PICKING"));
+    }
+
+    @Test
+    @WithMockUser(username = "warehouse_user", roles = "WAREHOUSE_STAFF")
+    @DisplayName("Cập nhật trạng thái vòng đời PUT /api/orders/1/status -> 200 OK (S4-06)")
+    void updateOrderStatus_Returns200() throws Exception {
+        OrderStatusUpdateRequest updateReq = OrderStatusUpdateRequest.builder()
+                .status("PICKING")
+                .note("Bắt đầu soạn hàng")
+                .build();
+
+        OrderResponse resp = OrderResponse.builder()
+                .id(1L)
+                .orderCode("DH-001")
+                .status("PICKING")
+                .statusDisplayName("Đang soạn hàng")
+                .build();
+
+        when(orderService.updateOrderStatus(eq(1L), eq("PICKING"), eq("Bắt đầu soạn hàng"), any())).thenReturn(resp);
+
+        mockMvc.perform(put("/api/orders/1/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("PICKING"));
     }
 
     @Test

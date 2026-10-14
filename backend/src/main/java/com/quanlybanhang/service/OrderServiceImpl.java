@@ -6,13 +6,13 @@ import com.quanlybanhang.dto.request.OrderLineItemPricingRequest;
 import com.quanlybanhang.dto.request.OrderRequest;
 import com.quanlybanhang.dto.response.*;
 import com.quanlybanhang.exception.DealerLockedException;
+import com.quanlybanhang.exception.OrderCannotBeCancelledException;
 import com.quanlybanhang.model.*;
-import com.quanlybanhang.repository.DealerRepository;
-import com.quanlybanhang.repository.DealerDeliveryPointRepository;
-import com.quanlybanhang.repository.OrderRepository;
-import com.quanlybanhang.repository.PriceListRepository;
-import com.quanlybanhang.repository.ProductRepository;
-import lombok.RequiredArgsConstructor;
+import com.quanlybanhang.repository.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +24,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -36,6 +35,58 @@ public class OrderServiceImpl implements OrderService {
     private final AuditLogService auditLogService;
     private final VolumeDiscountPolicyService volumeDiscountPolicyService;
     private final DealerDebtService dealerDebtService;
+    private final WarehouseRepository warehouseRepository;
+    private final WarehouseInventoryRepository inventoryRepository;
+    private final OrderStatusHistoryRepository orderStatusHistoryRepository;
+    private final UserRepository userRepository;
+
+    @Autowired
+    public OrderServiceImpl(
+            OrderRepository orderRepository,
+            ProductRepository productRepository,
+            DealerRepository dealerRepository,
+            DealerDeliveryPointRepository deliveryPointRepository,
+            PriceListRepository priceListRepository,
+            UnitConversionService unitConversionService,
+            AuditLogService auditLogService,
+            VolumeDiscountPolicyService volumeDiscountPolicyService,
+            DealerDebtService dealerDebtService,
+            WarehouseRepository warehouseRepository,
+            WarehouseInventoryRepository inventoryRepository,
+            OrderStatusHistoryRepository orderStatusHistoryRepository,
+            UserRepository userRepository) {
+        this.orderRepository = orderRepository;
+        this.productRepository = productRepository;
+        this.dealerRepository = dealerRepository;
+        this.deliveryPointRepository = deliveryPointRepository;
+        this.priceListRepository = priceListRepository;
+        this.unitConversionService = unitConversionService;
+        this.auditLogService = auditLogService;
+        this.volumeDiscountPolicyService = volumeDiscountPolicyService;
+        this.dealerDebtService = dealerDebtService;
+        this.warehouseRepository = warehouseRepository;
+        this.inventoryRepository = inventoryRepository;
+        this.orderStatusHistoryRepository = orderStatusHistoryRepository;
+        this.userRepository = userRepository;
+    }
+
+    /**
+     * Constructor tương thích cho các unit test cũ chỉ mock 9 bean ban đầu.
+     */
+    public OrderServiceImpl(
+            OrderRepository orderRepository,
+            ProductRepository productRepository,
+            DealerRepository dealerRepository,
+            DealerDeliveryPointRepository deliveryPointRepository,
+            PriceListRepository priceListRepository,
+            UnitConversionService unitConversionService,
+            AuditLogService auditLogService,
+            VolumeDiscountPolicyService volumeDiscountPolicyService,
+            DealerDebtService dealerDebtService) {
+        this(orderRepository, productRepository, dealerRepository, deliveryPointRepository,
+                priceListRepository, unitConversionService, auditLogService,
+                volumeDiscountPolicyService, dealerDebtService, null, null, null, null);
+    }
 
     private record ItemPreData(
             Product product,
@@ -329,12 +380,22 @@ public class OrderServiceImpl implements OrderService {
             order.setStatus("PENDING_APPROVAL");
             order.setRequiresApproval(true);
             order.setApprovalReason(String.join("; ", belowFloorReasons));
+            order.setInventoryReserved(false);
         } else {
             order.setStatus("RECORDED");
             order.setRequiresApproval(false);
+            if (request.getWarehouseId() != null) {
+                order.setWarehouse(resolveDefaultWarehouse(request.getWarehouseId()));
+                reserveInventory(order);
+            }
         }
 
         Order saved = orderRepository.save(order);
+        if (orderRequiresApproval) {
+            recordStatusHistory(saved, null, "PENDING_APPROVAL", "Đơn hàng chờ Quản lý kinh doanh duyệt: " + saved.getApprovalReason(), username);
+        } else {
+            recordStatusHistory(saved, null, "RECORDED", "Đơn hàng đã được duyệt/ghi nhận, đã giữ chỗ tồn kho", username);
+        }
         String auditSuffix = orderRequiresApproval ? " (Chờ duyệt: " + order.getApprovalReason() + ")" : "";
         auditLogService.logAction("INVOICE", saved.getOrderCode(), "CREATE", null,
                 "Tổng tiền: " + saved.getTotalAmount().toPlainString() + auditSuffix,
@@ -346,7 +407,18 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public List<OrderResponse> getAllOrders() {
-        return orderRepository.findAllByOrderByCreatedAtDesc().stream()
+        List<Order> orders = orderRepository.findAllByOrderByCreatedAtDesc();
+        if (isSalesOnlyUser()) {
+            User currentUser = getCurrentUser();
+            if (currentUser != null) {
+                orders = orders.stream()
+                        .filter(o -> (o.getCreatedBy() != null && o.getCreatedBy().equalsIgnoreCase(currentUser.getUsername()))
+                                || (o.getDealer() != null && o.getDealer().getAssignedUser() != null
+                                && o.getDealer().getAssignedUser().getId().equals(currentUser.getId())))
+                        .collect(Collectors.toList());
+            }
+        }
+        return orders.stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -356,20 +428,216 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse getOrderById(Long id) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+        checkSalesAuthorizationForOrder(order, "xem");
         return mapToResponse(order);
     }
 
     @Override
     @Transactional
-    public OrderResponse cancelOrder(Long id, String username) {
+    public OrderResponse cancelOrder(Long id, String reason, String username) {
+        if (reason == null || reason.trim().isBlank()) {
+            throw new IllegalArgumentException("Lý do huỷ đơn hàng không được để trống");
+        }
+        String trimmedReason = reason.trim();
+
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+
+        // RLS kiểm tra quyền hạn cho SALES: chỉ huỷ được đơn của mình hoặc đại lý phụ trách
+        checkSalesAuthorizationForOrder(order, "huỷ");
+
         String oldStatus = order.getStatus();
+        if ("CANCELLED".equalsIgnoreCase(oldStatus)) {
+            throw new IllegalArgumentException("Đơn hàng này đã bị huỷ trước đó");
+        }
+
+        // Đơn đã xuất kho thì không huỷ được, phải đi đường trả hàng (S4-06)
+        if (OrderStatus.isExportedOrLater(oldStatus)) {
+            throw new OrderCannotBeCancelledException("Đơn đã xuất kho thì không huỷ được, phải đi đường trả hàng");
+        }
+
+        // Tự động nhả tồn kho đang giữ chỗ (S4-06)
+        releaseReservedInventory(order);
+
         order.setStatus("CANCELLED");
+        order.setCancelReason(trimmedReason);
+        order.setCancelledBy(username != null ? username : "system");
+        order.setCancelledAt(LocalDateTime.now());
+        if (order.getNote() == null || order.getNote().isBlank()) {
+            order.setNote("Huỷ: " + trimmedReason);
+        } else {
+            order.setNote(order.getNote() + " | Huỷ: " + trimmedReason);
+        }
+
         Order saved = orderRepository.save(order);
+        recordStatusHistory(saved, oldStatus, "CANCELLED", "Huỷ đơn hàng. Lý do: " + trimmedReason, username);
         auditLogService.logAction("INVOICE", saved.getOrderCode(), "CANCEL", oldStatus,
-                saved.getStatus(), username != null ? username : "system");
+                "Huỷ đơn: " + trimmedReason, username != null ? username : "system");
+
         return mapToResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse cancelOrder(Long id, String username) {
+        return cancelOrder(id, "Huỷ bởi người dùng " + (username != null ? username : "system"), username);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse updateOrderStatus(Long id, String status, String note, String username) {
+        if (status == null || status.isBlank()) {
+            throw new IllegalArgumentException("Trạng thái mới không được để trống");
+        }
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+
+        String oldStatus = order.getStatus();
+        String targetStatus = status.trim().toUpperCase();
+
+        if ("CANCELLED".equalsIgnoreCase(oldStatus)) {
+            throw new IllegalArgumentException("Không thể cập nhật trạng thái của đơn hàng đã bị huỷ");
+        }
+        if ("CANCELLED".equalsIgnoreCase(targetStatus)) {
+            throw new IllegalArgumentException("Vui lòng sử dụng chức năng huỷ đơn hàng kèm lý do huỷ");
+        }
+
+        try {
+            OrderStatus.valueOf(targetStatus);
+        } catch (IllegalArgumentException e) {
+            if (!"PROCESSING".equals(targetStatus) && !"SHIPPED".equals(targetStatus) && !"COMPLETED".equals(targetStatus)) {
+                throw new IllegalArgumentException("Trạng thái đơn hàng không hợp lệ: " + status);
+            }
+        }
+
+        // Khi chuyển sang EXPORTED (Đã xuất): trừ tồn kho thực tế và nhả giữ chỗ (S4-06)
+        if (("EXPORTED".equals(targetStatus) || "SHIPPED".equals(targetStatus))
+                && !OrderStatus.isExportedOrLater(oldStatus)) {
+            deductInventoryOnExport(order);
+        }
+
+        order.setStatus(targetStatus);
+        if (note != null && !note.isBlank()) {
+            order.setNote((order.getNote() != null ? order.getNote() + " | " : "") + note.trim());
+        }
+
+        Order saved = orderRepository.save(order);
+        recordStatusHistory(saved, oldStatus, targetStatus, note, username);
+        auditLogService.logAction("INVOICE", saved.getOrderCode(), "UPDATE_STATUS", oldStatus,
+                "Chuyển trạng thái sang: " + OrderStatus.getDisplayName(targetStatus) + (note != null ? " (" + note + ")" : ""),
+                username != null ? username : "system");
+
+        return mapToResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderTrackingResponse getOrderTracking(Long id, String username) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+
+        checkSalesAuthorizationForOrder(order, "theo dõi");
+
+        List<OrderStatusHistory> historyEntities = orderStatusHistoryRepository != null
+                ? orderStatusHistoryRepository.findByOrderIdOrderByChangedAtAsc(order.getId())
+                : Collections.emptyList();
+
+        List<OrderStatusHistoryResponse> historyList = historyEntities.stream()
+                .map(h -> OrderStatusHistoryResponse.builder()
+                        .id(h.getId())
+                        .orderId(h.getOrder().getId())
+                        .previousStatus(h.getPreviousStatus())
+                        .newStatus(h.getNewStatus())
+                        .statusDisplayName(h.getStatusDisplayName())
+                        .note(h.getNote())
+                        .changedBy(h.getChangedBy())
+                        .changedAt(h.getChangedAt())
+                        .build())
+                .collect(Collectors.toList());
+
+        String currentStatus = order.getStatus();
+        boolean isCancelled = "CANCELLED".equalsIgnoreCase(currentStatus);
+        boolean isRejected = "REJECTED".equalsIgnoreCase(currentStatus);
+        boolean wasApprovalRequired = Boolean.TRUE.equals(order.getRequiresApproval());
+
+        Map<String, OrderStatusHistory> historyByStatus = new HashMap<>();
+        for (OrderStatusHistory h : historyEntities) {
+            historyByStatus.put(h.getNewStatus(), h);
+        }
+
+        List<OrderLifecycleStepResponse> steps = new ArrayList<>();
+        int currentStepOrder = resolveStepOrder(currentStatus);
+
+        // Step 1: DRAFT
+        steps.add(buildStep(1, "DRAFT", "Nháp", "Đơn hàng đang ở trạng thái nháp",
+                resolveStepState(1, currentStepOrder, isCancelled, isRejected, false),
+                historyByStatus.get("DRAFT"), order.getCreatedAt(), order.getCreatedBy()));
+
+        // Step 2: PENDING_APPROVAL
+        boolean skippedApproval = !wasApprovalRequired && !historyByStatus.containsKey("PENDING_APPROVAL");
+        steps.add(buildStep(2, "PENDING_APPROVAL", "Chờ duyệt", "Chờ Quản lý kinh doanh duyệt (giá sàn / công nợ)",
+                skippedApproval ? "SKIPPED" : resolveStepState(2, currentStepOrder, isCancelled, isRejected, false),
+                historyByStatus.get("PENDING_APPROVAL"), null, null));
+
+        // Step 3: APPROVED
+        OrderStatusHistory approvedHist = historyByStatus.get("RECORDED");
+        if (approvedHist == null) approvedHist = historyByStatus.get("APPROVED");
+        steps.add(buildStep(3, "APPROVED", "Đã duyệt", "Đơn hàng đã được duyệt, sẵn sàng soạn hàng",
+                resolveStepState(3, currentStepOrder, isCancelled, isRejected, false),
+                approvedHist, order.getRecordedAt(), order.getApprovedBy() != null ? order.getApprovedBy() : order.getCreatedBy()));
+
+        // Step 4: PICKING
+        OrderStatusHistory pickingHist = historyByStatus.get("PICKING");
+        if (pickingHist == null) pickingHist = historyByStatus.get("PROCESSING");
+        steps.add(buildStep(4, "PICKING", "Đang soạn hàng", "Kho đang thực hiện soạn hàng và đóng gói",
+                resolveStepState(4, currentStepOrder, isCancelled, isRejected, false),
+                pickingHist, null, null));
+
+        // Step 5: EXPORTED
+        OrderStatusHistory exportedHist = historyByStatus.get("EXPORTED");
+        if (exportedHist == null) exportedHist = historyByStatus.get("SHIPPED");
+        steps.add(buildStep(5, "EXPORTED", "Đã xuất", "Đã xuất kho, đang vận chuyển đến đại lý",
+                resolveStepState(5, currentStepOrder, isCancelled, isRejected, false),
+                exportedHist, null, null));
+
+        // Step 6: DELIVERED
+        steps.add(buildStep(6, "DELIVERED", "Đã giao", "Đã giao hàng thành công đến đại lý",
+                resolveStepState(6, currentStepOrder, isCancelled, isRejected, false),
+                historyByStatus.get("DELIVERED"), null, null));
+
+        // Step 7: CLOSED
+        OrderStatusHistory closedHist = historyByStatus.get("CLOSED");
+        if (closedHist == null) closedHist = historyByStatus.get("COMPLETED");
+        steps.add(buildStep(7, "CLOSED", "Đóng", "Đơn hàng hoàn tất toàn bộ chu trình và đóng",
+                resolveStepState(7, currentStepOrder, isCancelled, isRejected, false),
+                closedHist, null, null));
+
+        return OrderTrackingResponse.builder()
+                .orderId(order.getId())
+                .orderCode(order.getOrderCode())
+                .customerName(order.getCustomerName())
+                .dealerId(order.getDealer() != null ? order.getDealer().getId() : null)
+                .dealerName(order.getDealer() != null ? order.getDealer().getName() : null)
+                .dealerCode(order.getDealer() != null ? order.getDealer().getCode() : null)
+                .warehouseId(order.getWarehouse() != null ? order.getWarehouse().getId() : null)
+                .warehouseCode(order.getWarehouse() != null ? order.getWarehouse().getCode() : null)
+                .warehouseName(order.getWarehouse() != null ? order.getWarehouse().getName() : null)
+                .currentStatus(currentStatus)
+                .currentStatusDisplayName(OrderStatus.getDisplayName(currentStatus))
+                .currentStep(currentStepOrder)
+                .canCancel(OrderStatus.canCancel(currentStatus))
+                .isExported(OrderStatus.isExportedOrLater(currentStatus))
+                .inventoryReserved(order.getInventoryReserved())
+                .cancelReason(order.getCancelReason())
+                .cancelledBy(order.getCancelledBy())
+                .cancelledAt(order.getCancelledAt())
+                .expectedDeliveryDate(order.getExpectedDeliveryDate())
+                .createdAt(order.getCreatedAt())
+                .recordedAt(order.getRecordedAt())
+                .totalAmount(order.getTotalAmount())
+                .steps(steps)
+                .history(historyList)
+                .build();
     }
 
     @Override
@@ -385,8 +653,13 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus("RECORDED");
         order.setApprovedBy(username != null ? username : "system");
         order.setApprovedAt(LocalDateTime.now());
+        if (order.getWarehouse() != null) {
+            reserveInventory(order);
+        }
 
         Order saved = orderRepository.save(order);
+        recordStatusHistory(saved, "PENDING_APPROVAL", "RECORDED", "Quản lý kinh doanh phê duyệt đơn hàng, đã giữ chỗ tồn kho", username);
+
         Dealer dealer = order.getDealer();
         boolean dealerLocked = dealer != null && Boolean.TRUE.equals(dealer.getLocked());
         String auditDetail = "Quản lý kinh doanh duyệt đơn bán dưới giá sàn" +
@@ -414,6 +687,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Order saved = orderRepository.save(order);
+        recordStatusHistory(saved, "PENDING_APPROVAL", "REJECTED", "Từ chối duyệt: " + (reason != null ? reason : ""), username);
         auditLogService.logAction("INVOICE", saved.getOrderCode(), "REJECT", "PENDING_APPROVAL",
                 "Từ chối đơn bán dưới giá sàn: " + (reason != null ? reason : ""), username != null ? username : "system");
         return mapToResponse(saved);
@@ -475,7 +749,17 @@ public class OrderServiceImpl implements OrderService {
                 .expectedDeliveryDate(order.getExpectedDeliveryDate())
                 .priceListId(order.getPriceList() != null ? order.getPriceList().getId() : null)
                 .priceListCode(order.getPriceList() != null ? order.getPriceList().getCode() : null)
+                .warehouseId(order.getWarehouse() != null ? order.getWarehouse().getId() : null)
+                .warehouseCode(order.getWarehouse() != null ? order.getWarehouse().getCode() : null)
+                .warehouseName(order.getWarehouse() != null ? order.getWarehouse().getName() : null)
                 .status(order.getStatus())
+                .statusDisplayName(OrderStatus.getDisplayName(order.getStatus()))
+                .canCancel(OrderStatus.canCancel(order.getStatus()))
+                .isExported(OrderStatus.isExportedOrLater(order.getStatus()))
+                .inventoryReserved(order.getInventoryReserved())
+                .cancelReason(order.getCancelReason())
+                .cancelledBy(order.getCancelledBy())
+                .cancelledAt(order.getCancelledAt())
                 .requiresApproval(order.getRequiresApproval())
                 .approvalReason(order.getApprovalReason())
                 .approvedBy(order.getApprovedBy())
@@ -895,6 +1179,232 @@ public class OrderServiceImpl implements OrderService {
                 .requiresApproval(orderRequiresApproval)
                 .approvalReason(orderRequiresApproval ? String.join("; ", belowFloorReasons) : null)
                 .items(calculatedItems)
+                .build();
+    }
+
+    private boolean isSalesOnlyUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        boolean hasSales = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_SALES".equals(a.getAuthority()));
+        boolean hasManagerOrAdmin = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority())
+                        || "ROLE_SALES_MANAGER".equals(a.getAuthority())
+                        || "ROLE_ACCOUNTANT".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_MANAGER".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_STAFF".equals(a.getAuthority())
+                        || "ROLE_VIEWER".equals(a.getAuthority()));
+        return hasSales && !hasManagerOrAdmin;
+    }
+
+    private User getCurrentUser() {
+        if (userRepository == null) {
+            return null;
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+            return null;
+        }
+        return userRepository.findByUsername(auth.getName()).orElse(null);
+    }
+
+    private void checkSalesAuthorizationForOrder(Order order, String action) {
+        if (!isSalesOnlyUser()) {
+            return;
+        }
+        User currentUser = getCurrentUser();
+        if (currentUser == null) {
+            return;
+        }
+
+        boolean isCreator = order.getCreatedBy() != null && order.getCreatedBy().equalsIgnoreCase(currentUser.getUsername());
+        boolean isAssignedDealer = order.getDealer() != null
+                && order.getDealer().getAssignedUser() != null
+                && order.getDealer().getAssignedUser().getId().equals(currentUser.getId());
+
+        if (!isCreator && !isAssignedDealer) {
+            throw new AccessDeniedException(
+                    "Bạn chỉ có quyền " + action + " đơn hàng do mình tạo hoặc thuộc đại lý do mình phụ trách");
+        }
+    }
+
+    private Warehouse resolveDefaultWarehouse(Long warehouseId) {
+        if (warehouseRepository == null) {
+            return null;
+        }
+        if (warehouseId != null) {
+            return warehouseRepository.findById(warehouseId)
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy kho hàng với ID: " + warehouseId));
+        }
+        List<Warehouse> active = warehouseRepository.findAllByActiveTrueOrderByNameAsc();
+        if (active != null && !active.isEmpty()) {
+            return active.get(0);
+        }
+        return warehouseRepository.findAll().stream().findFirst().orElse(null);
+    }
+
+    private void reserveInventory(Order order) {
+        if (Boolean.TRUE.equals(order.getInventoryReserved())) {
+            return;
+        }
+        if (warehouseRepository == null || inventoryRepository == null) {
+            order.setInventoryReserved(true);
+            return;
+        }
+        Warehouse warehouse = order.getWarehouse();
+        if (warehouse == null) {
+            return;
+        }
+        if (warehouse != null && order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getProduct() != null && item.getBaseQuantity() != null && item.getBaseQuantity().compareTo(BigDecimal.ZERO) > 0) {
+                    Product product = item.getProduct();
+                    BigDecimal baseQty = item.getBaseQuantity();
+                    WarehouseInventory inventory = inventoryRepository
+                            .findByWarehouseIdAndProductId(warehouse.getId(), product.getId())
+                            .orElseGet(() -> WarehouseInventory.builder()
+                                    .warehouse(order.getWarehouse())
+                                    .product(product)
+                                    .baseQuantity(BigDecimal.ZERO)
+                                    .reservedQuantity(BigDecimal.ZERO)
+                                    .baseUnit(product.getUnit())
+                                    .build());
+                    inventory.addReservedQuantity(baseQty);
+                    inventoryRepository.save(inventory);
+                }
+            }
+            order.setInventoryReserved(true);
+        }
+    }
+
+    private void releaseReservedInventory(Order order) {
+        if (!Boolean.TRUE.equals(order.getInventoryReserved())) {
+            return;
+        }
+        if (warehouseRepository == null || inventoryRepository == null) {
+            order.setInventoryReserved(false);
+            return;
+        }
+        Warehouse warehouse = order.getWarehouse();
+        if (warehouse == null) {
+            warehouse = resolveDefaultWarehouse(null);
+        }
+        if (warehouse != null && order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getProduct() != null && item.getBaseQuantity() != null && item.getBaseQuantity().compareTo(BigDecimal.ZERO) > 0) {
+                    Product product = item.getProduct();
+                    inventoryRepository.findByWarehouseIdAndProductId(warehouse.getId(), product.getId())
+                            .ifPresent(inv -> {
+                                inv.subtractReservedQuantity(item.getBaseQuantity());
+                                inventoryRepository.save(inv);
+                            });
+                }
+            }
+        }
+        order.setInventoryReserved(false);
+    }
+
+    private void deductInventoryOnExport(Order order) {
+        if (warehouseRepository == null || inventoryRepository == null) {
+            order.setInventoryReserved(false);
+            return;
+        }
+        Warehouse warehouse = order.getWarehouse();
+        if (warehouse == null) {
+            warehouse = resolveDefaultWarehouse(null);
+            if (warehouse != null) {
+                order.setWarehouse(warehouse);
+            }
+        }
+        if (warehouse != null && order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getProduct() != null && item.getBaseQuantity() != null && item.getBaseQuantity().compareTo(BigDecimal.ZERO) > 0) {
+                    Product product = item.getProduct();
+                    BigDecimal baseQty = item.getBaseQuantity();
+                    WarehouseInventory inv = inventoryRepository
+                            .findByWarehouseIdAndProductId(warehouse.getId(), product.getId())
+                            .orElseGet(() -> WarehouseInventory.builder()
+                                    .warehouse(order.getWarehouse())
+                                    .product(product)
+                                    .baseQuantity(BigDecimal.ZERO)
+                                    .reservedQuantity(BigDecimal.ZERO)
+                                    .baseUnit(product.getUnit())
+                                    .build());
+                    if (Boolean.TRUE.equals(order.getInventoryReserved())) {
+                        inv.subtractReservedQuantity(baseQty);
+                    }
+                    inv.subtractBaseQuantity(baseQty);
+                    inventoryRepository.save(inv);
+                }
+            }
+        }
+        order.setInventoryReserved(false);
+    }
+
+    private void recordStatusHistory(Order order, String prevStatus, String newStatus, String note, String changedBy) {
+        if (orderStatusHistoryRepository == null || order == null) {
+            return;
+        }
+        OrderStatusHistory history = OrderStatusHistory.builder()
+                .order(order)
+                .previousStatus(prevStatus)
+                .newStatus(newStatus)
+                .statusDisplayName(OrderStatus.getDisplayName(newStatus))
+                .note(note)
+                .changedBy(changedBy != null ? changedBy : "system")
+                .changedAt(LocalDateTime.now())
+                .build();
+        orderStatusHistoryRepository.save(history);
+    }
+
+    private int resolveStepOrder(String status) {
+        if (status == null) return 0;
+        String s = status.trim().toUpperCase();
+        return switch (s) {
+            case "DRAFT" -> 1;
+            case "PENDING_APPROVAL" -> 2;
+            case "APPROVED", "RECORDED" -> 3;
+            case "PICKING", "PROCESSING" -> 4;
+            case "EXPORTED", "SHIPPED" -> 5;
+            case "DELIVERED" -> 6;
+            case "CLOSED", "COMPLETED" -> 7;
+            default -> 0;
+        };
+    }
+
+    private String resolveStepState(int stepOrder, int currentStepOrder, boolean isCancelled, boolean isRejected, boolean isSkipped) {
+        if (isSkipped) return "SKIPPED";
+        if (isCancelled) {
+            if (stepOrder < currentStepOrder) return "COMPLETED";
+            if (stepOrder == currentStepOrder) return "CANCELLED";
+            return "SKIPPED";
+        }
+        if (isRejected && stepOrder == 2) {
+            return "REJECTED";
+        }
+        if (stepOrder < currentStepOrder) return "COMPLETED";
+        if (stepOrder == currentStepOrder) return "CURRENT";
+        return "UPCOMING";
+    }
+
+    private OrderLifecycleStepResponse buildStep(
+            int stepOrder, String status, String displayName, String description,
+            String state, OrderStatusHistory history, LocalDateTime fallbackTime, String fallbackOperator) {
+        LocalDateTime timestamp = history != null ? history.getChangedAt() : fallbackTime;
+        String operator = history != null ? history.getChangedBy() : fallbackOperator;
+        String note = history != null ? history.getNote() : null;
+
+        return OrderLifecycleStepResponse.builder()
+                .stepOrder(stepOrder)
+                .status(status)
+                .displayName(displayName)
+                .description(description)
+                .state(state)
+                .timestamp(timestamp)
+                .operator(operator)
+                .note(note)
                 .build();
     }
 }

@@ -38,6 +38,16 @@ public class WarehouseInventoryResponse {
     private String baseUnit;
 
     /**
+     * Số lượng đã giữ chỗ cho các đơn hàng chưa xuất kho (S4-06).
+     */
+    private BigDecimal reservedQuantity;
+
+    /**
+     * Số lượng tồn khả dụng có thể đặt/xuất = baseQuantity - reservedQuantity (S4-06).
+     */
+    private BigDecimal availableQuantity;
+
+    /**
      * Quy đổi tương đương theo các đơn vị tính khác (vd: "thùng": 10.0, "lốc": 40.0).
      */
     private Map<String, BigDecimal> convertedViews;

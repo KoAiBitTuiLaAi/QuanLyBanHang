@@ -2,7 +2,9 @@ package com.quanlybanhang.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.quanlybanhang.dto.request.OrderCancelRequest;
 import com.quanlybanhang.dto.request.OrderDebtCheckRequest;
+import com.quanlybanhang.dto.request.OrderStatusUpdateRequest;
 import com.quanlybanhang.dto.response.OrderDebtCheckResponse;
 import com.quanlybanhang.dto.request.OrderCalculateRequest;
 import com.quanlybanhang.dto.request.OrderLineItemPricingRequest;
@@ -11,6 +13,7 @@ import com.quanlybanhang.dto.response.ApiResponse;
 import com.quanlybanhang.dto.response.OrderCalculateResponse;
 import com.quanlybanhang.dto.response.OrderLineItemPricingResponse;
 import com.quanlybanhang.dto.response.OrderResponse;
+import com.quanlybanhang.dto.response.OrderTrackingResponse;
 import com.quanlybanhang.model.OrderDraft;
 import com.quanlybanhang.repository.OrderDraftRepository;
 import com.quanlybanhang.service.DealerDebtService;
@@ -128,15 +131,61 @@ public class OrderController {
         return ApiResponse.success("Tính toán giá và chiết khấu đơn hàng thành công", response);
     }
 
+    /**
+     * S4-06: Huỷ đơn hàng có lý do và nhả tồn kho giữ chỗ.
+     * Bắt buộc có lý do (reason không được để trống).
+     * Đơn đã xuất kho thì không huỷ được, phải đi đường trả hàng.
+     */
     @PutMapping("/{id}/cancel")
     @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN')")
-    public ApiResponse cancelOrder(@PathVariable Long id, Principal principal) {
+    public ApiResponse cancelOrder(
+            @PathVariable Long id,
+            @RequestBody(required = false) OrderCancelRequest request,
+            @RequestParam(required = false) String reason,
+            Principal principal) {
+        String finalReason = null;
+        if (request != null && request.getReason() != null && !request.getReason().trim().isBlank()) {
+            finalReason = request.getReason().trim();
+        } else if (reason != null && !reason.trim().isBlank()) {
+            finalReason = reason.trim();
+        }
+
+        if (finalReason == null) {
+            throw new IllegalArgumentException("Lý do huỷ đơn hàng không được để trống");
+        }
+
         String username = principal != null ? principal.getName() : "system";
-        OrderResponse response = orderService.cancelOrder(id, username);
+        OrderResponse response = orderService.cancelOrder(id, finalReason, username);
         String message = Boolean.TRUE.equals(response.getDealerLocked())
                 ? "Hủy đơn hàng thành công (Cảnh báo: Đại lý đang bị khoá giao dịch)"
                 : "Hủy đơn hàng thành công";
         return ApiResponse.success(message, response);
+    }
+
+    /**
+     * S4-06: Theo dõi chi tiết vòng đời đơn hàng và lịch sử chuyển trạng thái.
+     * Nhân viên kinh doanh theo dõi trực tiếp khâu xử lý mà không cần gọi hỏi kho.
+     */
+    @GetMapping("/{id}/tracking")
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'ACCOUNTANT', 'VIEWER')")
+    public ApiResponse getOrderTracking(@PathVariable Long id, Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        OrderTrackingResponse tracking = orderService.getOrderTracking(id, username);
+        return ApiResponse.success("Theo dõi vòng đời đơn hàng", tracking);
+    }
+
+    /**
+     * S4-06: Cập nhật trạng thái vòng đời của đơn hàng (Soạn hàng, Xuất kho, Giao hàng, Đóng).
+     */
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_STAFF', 'WAREHOUSE_MANAGER', 'SALES_MANAGER', 'ADMIN')")
+    public ApiResponse updateOrderStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody OrderStatusUpdateRequest request,
+            Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        OrderResponse response = orderService.updateOrderStatus(id, request.getStatus(), request.getNote(), username);
+        return ApiResponse.success("Cập nhật trạng thái đơn hàng thành công", response);
     }
 
     /**

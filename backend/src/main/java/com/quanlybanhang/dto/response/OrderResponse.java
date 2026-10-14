@@ -23,7 +23,17 @@ public class OrderResponse {
     private LocalDate expectedDeliveryDate;
     private Long priceListId;
     private String priceListCode;
+    private Long warehouseId;
+    private String warehouseCode;
+    private String warehouseName;
     private String status;
+    private String statusDisplayName;
+    private Boolean canCancel;
+    private Boolean isExported;
+    private Boolean inventoryReserved;
+    private String cancelReason;
+    private String cancelledBy;
+    private LocalDateTime cancelledAt;
     private Boolean requiresApproval;
     private String approvalReason;
     private String approvedBy;

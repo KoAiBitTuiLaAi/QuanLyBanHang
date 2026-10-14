@@ -55,9 +55,46 @@ public class Order {
     @JoinColumn(name = "price_list_id")
     private PriceList priceList;
 
+    /**
+     * Kho xuất hàng phục vụ đơn hàng và giữ chỗ tồn kho (S4-06).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "warehouse_id")
+    private Warehouse warehouse;
+
+    /**
+     * Trạng thái đơn hàng theo vòng đời (S4-06):
+     * DRAFT, PENDING_APPROVAL, RECORDED/APPROVED, PICKING, EXPORTED, DELIVERED, CLOSED, CANCELLED, REJECTED
+     */
     @Column(length = 30)
     @Builder.Default
     private String status = "RECORDED";
+
+    /**
+     * Đánh dấu đơn hàng đã được giữ chỗ tồn kho trong kho (S4-06).
+     * Sẽ tự động nhả giữ chỗ khi huỷ đơn hoặc trừ tồn thực tế khi xuất kho.
+     */
+    @Column(name = "inventory_reserved", nullable = false)
+    @Builder.Default
+    private Boolean inventoryReserved = false;
+
+    /**
+     * Lý do huỷ đơn hàng (bắt buộc khi huỷ) (S4-06).
+     */
+    @Column(name = "cancel_reason", length = 500)
+    private String cancelReason;
+
+    /**
+     * Người thực hiện huỷ đơn (S4-06).
+     */
+    @Column(name = "cancelled_by", length = 100)
+    private String cancelledBy;
+
+    /**
+     * Thời điểm huỷ đơn (S4-06).
+     */
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
 
     /**
      * Đánh dấu đơn hàng có dòng sản phẩm bán dưới giá sàn cần qua duyệt (S2-10).
@@ -128,6 +165,9 @@ public class Order {
         }
         if (this.status == null) {
             this.status = "RECORDED";
+        }
+        if (this.inventoryReserved == null) {
+            this.inventoryReserved = false;
         }
         if (this.subtotalAmount == null) {
             this.subtotalAmount = BigDecimal.ZERO;

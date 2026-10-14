@@ -42,6 +42,11 @@ public class OrderRequest {
      */
     private Long priceListId;
 
+    /**
+     * ID kho xuất hàng và giữ chỗ tồn kho (S4-06). Nếu không chỉ định, lấy kho mặc định đang hoạt động.
+     */
+    private Long warehouseId;
+
     private String note;
 
     @NotEmpty(message = "Đơn hàng phải có ít nhất 1 sản phẩm")

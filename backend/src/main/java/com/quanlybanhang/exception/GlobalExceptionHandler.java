@@ -172,6 +172,15 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Xử lý lỗi đơn hàng đã xuất kho không thể huỷ (S4-06).
+     */
+    @ExceptionHandler(OrderCannotBeCancelledException.class)
+    public ResponseEntity<ApiResponse> handleOrderCannotBeCancelled(OrderCannotBeCancelledException ex) {
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    /**
      * Xử lý lỗi không có quyền truy cập (@PreAuthorize hoặc AccessDeniedException).
      * Trả về 403 Forbidden.
      */
