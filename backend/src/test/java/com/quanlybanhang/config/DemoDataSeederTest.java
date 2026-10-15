@@ -103,7 +103,7 @@ class DemoDataSeederTest {
         seeder.seed(true, false, "demo-password");
         entityManager.flush();
         entityManager.clear();
-        assertThat(users.count()).isEqualTo(7);
+        assertThat(users.count()).isEqualTo(8);
         assertThat(warehouses.count()).isEqualTo(2);
         assertThat(territories.count()).isEqualTo(3);
         assertThat(products.count()).isZero();
@@ -120,6 +120,8 @@ class DemoDataSeederTest {
         }
         assertThat(users.findByUsername("warehouse.manager").orElseThrow().getRoles())
                 .extracting(Role::getName).containsExactly(ERole.ROLE_WAREHOUSE_MANAGER);
+        assertThat(users.findByUsername("dealer.demo").orElseThrow().getRoles())
+                .extracting(Role::getName).containsExactly(ERole.ROLE_DEALER);
     }
 
     @Test
@@ -138,7 +140,7 @@ class DemoDataSeederTest {
         entityManager.flush();
         entityManager.clear();
         assertThat(counts()).containsAllEntriesOf(Map.ofEntries(
-                Map.entry("users", 7L), Map.entry("warehouses", 2L), Map.entry("territories", 3L),
+                Map.entry("users", 8L), Map.entry("warehouses", 2L), Map.entry("territories", 3L),
                 Map.entry("categories", 12L), Map.entry("products", 8L), Map.entry("suppliers", 3L),
                 Map.entry("conversions", 8L), Map.entry("dealers", 5L), Map.entry("deliveryPoints", 6L),
                 Map.entry("assignments", 5L), Map.entry("priceLists", 3L), Map.entry("priceItems", 24L),

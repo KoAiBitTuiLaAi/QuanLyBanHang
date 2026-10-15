@@ -69,6 +69,16 @@ public class DealerServiceImpl implements DealerService {
     @Override
     @Transactional(readOnly = true)
     public List<DealerResponse> getActiveDealers() {
+        if (isDealerUser()) {
+            User currentUser = getCurrentUser();
+            if (currentUser != null && currentUser.getDealer() != null) {
+                Dealer dealer = currentUser.getDealer();
+                if (!Boolean.TRUE.equals(dealer.getLocked()) && Boolean.TRUE.equals(dealer.getActive())) {
+                    return List.of(mapToResponse(dealer));
+                }
+                return List.of();
+            }
+        }
         if (isSalesOnlyUser()) {
             User currentUser = getCurrentUser();
             if (currentUser != null) {
@@ -89,6 +99,16 @@ public class DealerServiceImpl implements DealerService {
     public DealerResponse getDealerById(Long id) {
         Dealer dealer = dealerRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + id));
+
+        // S4-10: Đại lý chỉ nhìn thấy thông tin của chính mình
+        if (isDealerUser()) {
+            User currentUser = getCurrentUser();
+            if (currentUser != null) {
+                if (currentUser.getDealer() == null || !currentUser.getDealer().getId().equals(id)) {
+                    throw new AccessDeniedException("Bạn chỉ có quyền xem thông tin của chính đại lý mình");
+                }
+            }
+        }
 
         // Quy tắc S3-06: Nhân viên kinh doanh chỉ nhìn thấy đại lý mình phụ trách
         if (isSalesOnlyUser()) {
@@ -609,6 +629,13 @@ public class DealerServiceImpl implements DealerService {
                         || "ROLE_ACCOUNTANT".equals(a.getAuthority())
                         || "ROLE_VIEWER".equals(a.getAuthority()));
         return hasSales && !hasElevated;
+    }
+
+    private boolean isDealerUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_DEALER".equals(a.getAuthority()));
     }
 
     private User getCurrentUser() {

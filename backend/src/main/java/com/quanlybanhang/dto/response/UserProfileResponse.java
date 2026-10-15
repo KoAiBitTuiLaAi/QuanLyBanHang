@@ -18,5 +18,8 @@ public class UserProfileResponse {
     private List<String> roles;
     private List<NamedResourceResponse> warehouses;
     private List<NamedResourceResponse> territories;
+    private Long dealerId;
+    private String dealerCode;
+    private String dealerName;
     private Boolean active;
 }

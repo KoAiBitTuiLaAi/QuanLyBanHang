@@ -1072,15 +1072,195 @@ Quy tắc nghiệp vụ:
 }
 ```
 
-## Bảy vai trò
+## Cổng tự đặt hàng dành cho Đại lý (S4-10)
+
+Cổng tự đặt hàng trực tuyến dành riêng cho khách hàng đại lý (`ROLE_DEALER`), cho phép đại lý chủ động kiểm tra giá, xem công nợ còn lại và gửi đơn đặt hàng 24/7 trên cả máy tính và thiết bị di động.
+
+### Nguyên tắc bảo mật & Phân quyền dữ liệu (Row-Level Security)
+1. **Phân quyền vai trò:** Chỉ người dùng có vai trò `ROLE_DEALER` hoặc `ROLE_ADMIN` mới có quyền truy cập các endpoint `/api/portal/**`.
+2. **Cô lập dữ liệu danh mục & bảng giá:** Đại lý chỉ được xem các sản phẩm và đơn giá nằm trong **bảng giá có hiệu lực** thuộc nhóm khách hàng của chính đại lý đó (`DAI_LY_CAP_1`, `DAI_LY_CAP_2`, `KHACH_LE`). Tuyệt đối không nhìn thấy sản phẩm hoặc bảng giá của nhóm khách hàng khác.
+3. **Cô lập công nợ & đơn hàng:** Đại lý chỉ xem được hạn mức công nợ, công nợ hiện tại, công nợ còn lại và danh sách đơn hàng thuộc mã đại lý của chính mình.
+4. **Kiểm soát rủi ro khoá giao dịch:** Nếu đại lý đang bị khoá (`locked = true`) hoặc có nợ quá hạn, hệ thống chặn gửi đơn đặt hàng và trả lỗi HTTP 400 Bad Request.
+5. **Quy trình phê duyệt bắt buộc:** Mọi đơn hàng do đại lý tự đặt gửi lên hệ thống **bắt buộc luôn ở trạng thái Chờ duyệt** (`PENDING_APPROVAL`, `requiresApproval = true`, `approvalReason = "[Đại lý tự đặt qua cổng] Chờ nhân viên phụ trách xác nhận"`). Đơn hàng sẽ được nhân viên kinh doanh được phân công phụ trách đại lý đó (`assignedUser`) xác nhận hoặc từ chối trước khi chuyển sang trạng thái ghi sổ (`RECORDED`).
+
+### Danh sách API Cổng Đại lý
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| GET | `/portal/profile` | `ROLE_DEALER`, `ROLE_ADMIN` | Lấy hồ sơ đại lý, thông tin NVKD phụ trách, công nợ và danh sách điểm giao hàng |
+| GET | `/portal/catalog` | `ROLE_DEALER`, `ROLE_ADMIN` | Lấy danh mục sản phẩm và giá theo bảng giá hiệu lực của nhóm khách hàng đại lý |
+| GET | `/portal/debt` | `ROLE_DEALER`, `ROLE_ADMIN` | Tra cứu hạn mức, công nợ hiện tại và công nợ còn lại thời gian thực |
+| POST | `/portal/orders` | `ROLE_DEALER`, `ROLE_ADMIN` | Tạo đơn đặt hàng mới (luôn ở trạng thái `PENDING_APPROVAL`) |
+| GET | `/portal/orders` | `ROLE_DEALER`, `ROLE_ADMIN` | Lấy danh sách lịch sử đơn hàng của chính đại lý |
+| GET | `/portal/orders/{id}` | `ROLE_DEALER`, `ROLE_ADMIN` | Xem chi tiết đơn hàng của đại lý |
+
+#### 1. Lấy thông tin hồ sơ đại lý
+```http
+GET /api/portal/profile
+Authorization: Bearer <dealer-jwt-token>
+```
+Response `200 OK`:
+```json
+{
+  "success": true,
+  "message": "Lấy thông tin hồ sơ đại lý thành công",
+  "data": {
+    "id": 100,
+    "code": "DL-MINHPHAT",
+    "name": "Đại lý Minh Phát",
+    "customerGroup": "DAI_LY_CAP_1",
+    "customerGroupName": "Đại lý cấp 1",
+    "phone": "0987654321",
+    "email": "dealer.minhphat@example.com",
+    "address": "123 Đường Giải Phóng, Hà Nội",
+    "taxCode": "0101234567",
+    "active": true,
+    "locked": false,
+    "lockReason": null,
+    "salesUserId": 2,
+    "salesUserName": "sales.demo",
+    "salesUserFullName": "Nguyễn Văn Kinh Doanh",
+    "salesUserPhone": "0901234567",
+    "salesUserEmail": "sales.demo@company.vn",
+    "debtLimit": 50000000,
+    "currentDebt": 15000000,
+    "remainingLimit": 35000000,
+    "hasOverdueDebt": false,
+    "isBlocked": false,
+    "blockReason": null,
+    "deliveryPoints": [
+      {
+        "id": 1,
+        "dealerId": 100,
+        "name": "Kho chính Minh Phát",
+        "contactName": "Anh Minh",
+        "phone": "0987654321",
+        "address": "123 Đường Giải Phóng, Hà Nội",
+        "isDefault": true
+      }
+    ]
+  }
+}
+```
+
+#### 2. Lấy danh mục sản phẩm & đơn giá theo bảng giá đại lý
+```http
+GET /api/portal/catalog
+Authorization: Bearer <dealer-jwt-token>
+```
+Response `200 OK`:
+```json
+{
+  "success": true,
+  "message": "Lấy danh mục sản phẩm thành công",
+  "data": [
+    {
+      "id": 10,
+      "sku": "SP-KEN330",
+      "name": "Bia Heineken Sleek lon 330ml",
+      "categoryId": 1,
+      "categoryName": "Bia",
+      "baseUnit": "lon",
+      "basePrice": 18000,
+      "floorPrice": 15000,
+      "imageUrl": "/images/heineken.png",
+      "units": [
+        {
+          "unitName": "lon",
+          "factor": 1,
+          "price": 18000
+        },
+        {
+          "unitName": "thùng",
+          "factor": 24,
+          "price": 430000
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 3. Tra cứu công nợ thời gian thực
+```http
+GET /api/portal/debt
+Authorization: Bearer <dealer-jwt-token>
+```
+Response `200 OK`:
+```json
+{
+  "success": true,
+  "message": "Lấy thông tin công nợ thành công",
+  "data": {
+    "dealerId": 100,
+    "dealerCode": "DL-MINHPHAT",
+    "dealerName": "Đại lý Minh Phát",
+    "currentDebt": 15000000,
+    "debtLimit": 50000000,
+    "remainingLimit": 35000000,
+    "maxDebtDays": 30,
+    "hasOverdueDebt": false,
+    "overdueAmount": 0,
+    "isBlocked": false,
+    "blockReason": null
+  }
+}
+```
+
+#### 4. Đại lý gửi đơn đặt hàng
+```http
+POST /api/portal/orders
+Authorization: Bearer <dealer-jwt-token>
+Content-Type: application/json
+
+{
+  "deliveryPointId": 1,
+  "expectedDeliveryDate": "2026-10-20",
+  "note": "Giao vào buổi sáng",
+  "items": [
+    {
+      "productId": 10,
+      "unit": "thùng",
+      "quantity": 10
+    }
+  ]
+}
+```
+Response `201 Created`:
+```json
+{
+  "success": true,
+  "message": "Đặt hàng thành công. Đơn hàng đang ở trạng thái Chờ duyệt.",
+  "data": {
+    "id": 1001,
+    "orderCode": "DH20261015-0001",
+    "dealerId": 100,
+    "dealerName": "Đại lý Minh Phát",
+    "status": "PENDING_APPROVAL",
+    "requiresApproval": true,
+    "approvalReason": "[Đại lý tự đặt qua cổng] Chờ nhân viên phụ trách xác nhận",
+    "subtotalAmount": 4300000,
+    "discountAmount": 0,
+    "totalAmount": 4300000
+  }
+}
+```
+
+#### 5. Xác nhận / Từ chối đơn hàng của đại lý (Dành cho NVKD phụ trách)
+- **Xác nhận đơn:** `PUT /api/orders/{id}/approve` (Quyền: NVKD phụ trách đại lý đó, hoặc `SALES_MANAGER`/`ADMIN`). Chuyển đơn sang trạng thái `RECORDED`.
+- **Từ chối đơn:** `PUT /api/orders/{id}/reject` (Quyền: NVKD phụ trách đại lý đó, hoặc `SALES_MANAGER`/`ADMIN`). Chuyển đơn sang trạng thái `REJECTED`.
+*Lưu ý: Nếu NVKD không phải người phụ trách đại lý của đơn hàng cố tình duyệt hoặc từ chối, hệ thống sẽ trả về lỗi HTTP 403 Forbidden.*
+
+## Các vai trò hệ thống (8 vai trò)
 
 - `ROLE_ADMIN`: quản trị tài khoản và hệ thống; không mặc nhiên xem giá vốn.
-- `ROLE_SALES_MANAGER`: quản lý kinh doanh; vai trò duy nhất xem giá vốn và biên lợi nhuận.
+- `ROLE_SALES_MANAGER`: quản lý kinh doanh; vai trò duy nhất xem giá vốn và biên lợi nhuận; phê duyệt các đơn hàng đặc biệt / dưới giá sàn.
+- `ROLE_SALES`: tạo đơn, quản lý khách hàng và địa bàn; xác nhận các đơn hàng do đại lý mình phụ trách gửi lên qua cổng; không sửa được tồn kho, không xem giá vốn.
 - `ROLE_WAREHOUSE_MANAGER`: quản lý, điều chỉnh và phê duyệt kho.
-- `ROLE_SALES`: tạo đơn, quản lý khách hàng và địa bàn; không sửa được tồn kho, không xem giá vốn.
 - `ROLE_WAREHOUSE_STAFF`: nhập/xuất tại kho được gán; không sửa điều chỉnh tồn kho, không xem giá vốn.
 - `ROLE_ACCOUNTANT`: công nợ và báo cáo tài chính, không xem giá vốn.
 - `ROLE_VIEWER`: chỉ xem báo cáo được phép.
+- `ROLE_DEALER`: khách hàng đại lý; truy cập cổng tự đặt hàng `/api/portal/**`, xem giá theo nhóm khách hàng của mình, xem hạn mức công nợ còn lại, tự đặt hàng (trạng thái Chờ duyệt), theo dõi lịch sử đơn hàng của chính mình.
 
 Mọi chức năng đều kiểm quyền ở tầng server. Endpoint chưa được khai báo hoặc không đủ quyền bị từ chối mặc định (401 khi chưa đăng nhập, 403 khi thiếu quyền).
 

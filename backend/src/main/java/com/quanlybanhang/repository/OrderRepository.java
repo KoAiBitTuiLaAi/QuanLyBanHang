@@ -21,6 +21,8 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 
     boolean existsByDealerId(Long dealerId);
 
+    List<Order> findByDealerIdOrderByCreatedAtDesc(Long dealerId);
+
     List<Order> findByStatus(String status);
 
     long countByDealerIdAndStatusNotIn(Long dealerId, java.util.Collection<String> statuses);

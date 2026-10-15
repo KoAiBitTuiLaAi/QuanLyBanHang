@@ -59,4 +59,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
      */
     @Query("SELECT p FROM Product p WHERE UPPER(p.code) IN :codes")
     List<Product> findByCodeUpperIn(@Param("codes") Collection<String> codes);
+
+    List<Product> findByActiveTrueOrderByNameAsc();
 }

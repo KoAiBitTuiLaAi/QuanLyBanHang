@@ -19,5 +19,6 @@ public enum ERole {
     ROLE_SALES,              // Nhân viên kinh doanh
     ROLE_WAREHOUSE_STAFF,    // Thủ kho
     ROLE_ACCOUNTANT,         // Kế toán
-    ROLE_VIEWER              // Chỉ xem báo cáo
+    ROLE_VIEWER,             // Chỉ xem báo cáo
+    ROLE_DEALER              // Đại lý (S4-10, S5-01)
 }

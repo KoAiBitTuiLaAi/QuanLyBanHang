@@ -59,4 +59,14 @@ public interface OrderService {
      * S4-09: Sao chép các dòng hàng của đơn cũ trực tiếp vào bản nháp tạo đơn của người dùng.
      */
     com.fasterxml.jackson.databind.JsonNode copyOrderToDraft(Long id, String username);
+
+    /**
+     * S4-10, S5-01: Lấy danh sách đơn hàng của riêng đại lý đăng nhập.
+     */
+    List<OrderResponse> getOrdersForDealer(String username);
+
+    /**
+     * S4-10, S5-01: Xem chi tiết đơn hàng của riêng đại lý đăng nhập.
+     */
+    OrderResponse getOrderByIdForDealer(Long id, String username);
 }

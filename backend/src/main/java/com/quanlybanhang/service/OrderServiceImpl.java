@@ -43,7 +43,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -56,8 +55,43 @@ public class OrderServiceImpl implements OrderService {
     private final VolumeDiscountPolicyService volumeDiscountPolicyService;
     private final DealerDebtService dealerDebtService;
 
-    @Autowired(required = false)
     private UserRepository userRepository;
+
+    public OrderServiceImpl(OrderRepository orderRepository,
+                            ProductRepository productRepository,
+                            DealerRepository dealerRepository,
+                            DealerDeliveryPointRepository deliveryPointRepository,
+                            PriceListRepository priceListRepository,
+                            UnitConversionService unitConversionService,
+                            AuditLogService auditLogService,
+                            VolumeDiscountPolicyService volumeDiscountPolicyService,
+                            DealerDebtService dealerDebtService) {
+        this.orderRepository = orderRepository;
+        this.productRepository = productRepository;
+        this.dealerRepository = dealerRepository;
+        this.deliveryPointRepository = deliveryPointRepository;
+        this.priceListRepository = priceListRepository;
+        this.unitConversionService = unitConversionService;
+        this.auditLogService = auditLogService;
+        this.volumeDiscountPolicyService = volumeDiscountPolicyService;
+        this.dealerDebtService = dealerDebtService;
+    }
+
+    @Autowired
+    public OrderServiceImpl(OrderRepository orderRepository,
+                            ProductRepository productRepository,
+                            DealerRepository dealerRepository,
+                            DealerDeliveryPointRepository deliveryPointRepository,
+                            PriceListRepository priceListRepository,
+                            UnitConversionService unitConversionService,
+                            AuditLogService auditLogService,
+                            VolumeDiscountPolicyService volumeDiscountPolicyService,
+                            DealerDebtService dealerDebtService,
+                            @Autowired(required = false) UserRepository userRepository) {
+        this(orderRepository, productRepository, dealerRepository, deliveryPointRepository, priceListRepository,
+                unitConversionService, auditLogService, volumeDiscountPolicyService, dealerDebtService);
+        this.userRepository = userRepository;
+    }
 
     @Autowired(required = false)
     public void setUserRepository(UserRepository userRepository) {
@@ -97,11 +131,32 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Mã đơn hàng '" + orderCode + "' đã tồn tại");
         }
 
-        // 1. Xác định đại lý và nhóm khách hàng (S2-10)
+        // 1. Xác định đại lý và nhóm khách hàng (S2-10, S4-10)
+        boolean isDealer = isDealerUser();
         Dealer dealer = null;
         CustomerGroup customerGroup = request.getCustomerGroup();
 
-        if (request.getDealerId() != null) {
+        if (isDealer) {
+            User currentUser = getCurrentUser();
+            if (currentUser == null || currentUser.getDealer() == null) {
+                throw new AccessDeniedException("Tài khoản đại lý chưa được liên kết với đại lý cụ thể");
+            }
+            if (request.getDealerId() != null && !currentUser.getDealer().getId().equals(request.getDealerId())) {
+                throw new AccessDeniedException("Đại lý không được phép đặt hàng cho đại lý khác");
+            }
+            dealer = currentUser.getDealer();
+            if (Boolean.TRUE.equals(dealer.getLocked())) {
+                throw new DealerLockedException(dealer.getCode(), dealer.getName(), dealer.getLockReason());
+            }
+            if (Boolean.FALSE.equals(dealer.getActive())) {
+                throw new IllegalArgumentException(String.format("Đại lý '%s' (%s) đã ngừng giao dịch, không thể tạo đơn hàng mới.",
+                        dealer.getName(), dealer.getCode()));
+            }
+            if (dealerDebtService != null) {
+                dealerDebtService.validateDealerCanCreateOrder(dealer);
+            }
+            customerGroup = dealer.getCustomerGroup();
+        } else if (request.getDealerId() != null) {
             dealer = dealerRepository.findById(request.getDealerId())
                     .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + request.getDealerId()));
             // S3-07: Đại lý bị khoá không tạo được đơn mới, kể cả trên cổng đặt hàng
@@ -357,8 +412,16 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // Nếu có sản phẩm bán dưới giá sàn hoặc đơn vượt hạn mức công nợ -> chuyển sang trạng thái CHỜ DUYỆT (PENDING_APPROVAL)
-        if (orderRequiresApproval) {
+        // S4-10: Đơn hàng do đại lý tự đặt qua cổng luôn ở trạng thái CHỜ DUYỆT (PENDING_APPROVAL), do nhân viên phụ trách xác nhận
+        if (isDealer) {
+            order.setStatus("PENDING_APPROVAL");
+            order.setRequiresApproval(true);
+            String dealerReason = "[Đại lý tự đặt qua cổng] Chờ nhân viên phụ trách xác nhận";
+            if (!belowFloorReasons.isEmpty()) {
+                dealerReason += "; " + String.join("; ", belowFloorReasons);
+            }
+            order.setApprovalReason(dealerReason);
+        } else if (orderRequiresApproval) {
             order.setStatus("PENDING_APPROVAL");
             order.setRequiresApproval(true);
             order.setApprovalReason(String.join("; ", belowFloorReasons));
@@ -368,7 +431,8 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Order saved = orderRepository.save(order);
-        String auditSuffix = orderRequiresApproval ? " (Chờ duyệt: " + order.getApprovalReason() + ")" : "";
+        boolean isPending = "PENDING_APPROVAL".equals(saved.getStatus());
+        String auditSuffix = isPending ? " (Chờ duyệt: " + saved.getApprovalReason() + ")" : "";
         auditLogService.logAction("INVOICE", saved.getOrderCode(), "CREATE", null,
                 "Tổng tiền: " + saved.getTotalAmount().toPlainString() + auditSuffix,
                 username != null ? username : "system");
@@ -385,12 +449,22 @@ public class OrderServiceImpl implements OrderService {
 
         final OrderFilterRequest f = filter;
         final boolean salesOnly = isSalesOnlyUser();
-        final User currentUser = salesOnly ? getCurrentUser() : null;
+        final boolean dealerOnly = isDealerOnlyUser();
+        final User currentUser = (salesOnly || dealerOnly) ? getCurrentUser() : null;
         final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         final String currentUsername = auth != null ? auth.getName() : null;
 
         Specification<Order> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+
+            // 0. Phân quyền dữ liệu (RLS): Đại lý chỉ thấy đơn hàng của chính mình (S4-10)
+            if (dealerOnly) {
+                if (currentUser != null && currentUser.getDealer() != null) {
+                    predicates.add(cb.equal(root.get("dealer").get("id"), currentUser.getDealer().getId()));
+                } else {
+                    predicates.add(cb.disjunction());
+                }
+            }
 
             // 1. Phân quyền dữ liệu (RLS): Nhân viên kinh doanh chỉ thấy đơn của đại lý mình phụ trách (S4-07)
             if (salesOnly) {
@@ -497,7 +571,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse getOrderById(Long id, String username) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
-        validateSalesViewAccess(order, username);
+        validateOrderViewAccess(order, username);
         return mapToResponse(order);
     }
 
@@ -524,6 +598,34 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Chỉ có thể phê duyệt đơn hàng đang ở trạng thái Chờ duyệt (PENDING_APPROVAL)");
         }
 
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isElevated = true;
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            isElevated = auth.getAuthorities().stream()
+                    .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_SALES_MANAGER".equals(a.getAuthority()));
+
+            if (!isElevated) {
+                boolean isSales = auth.getAuthorities().stream()
+                        .anyMatch(a -> "ROLE_SALES".equals(a.getAuthority()));
+                if (isSales) {
+                    boolean isAssignedSales = order.getDealer() != null
+                            && order.getDealer().getAssignedUser() != null
+                            && order.getDealer().getAssignedUser().getUsername() != null
+                            && order.getDealer().getAssignedUser().getUsername().equalsIgnoreCase(username);
+
+                    if (!isAssignedSales) {
+                        throw new AccessDeniedException("Chỉ nhân viên phụ trách đại lý hoặc Quản lý kinh doanh mới có quyền xác nhận đơn hàng này");
+                    }
+
+                    if (order.getApprovalReason() != null && order.getApprovalReason().contains("dưới giá sàn")) {
+                        throw new AccessDeniedException("Đơn hàng bán dưới giá sàn cần Quản lý kinh doanh phê duyệt");
+                    }
+                } else {
+                    throw new AccessDeniedException("Chỉ nhân viên phụ trách đại lý hoặc Quản lý kinh doanh mới có quyền xác nhận đơn hàng này");
+                }
+            }
+        }
+
         order.setStatus("RECORDED");
         order.setApprovedBy(username != null ? username : "system");
         order.setApprovedAt(LocalDateTime.now());
@@ -531,7 +633,8 @@ public class OrderServiceImpl implements OrderService {
         Order saved = orderRepository.save(order);
         Dealer dealer = order.getDealer();
         boolean dealerLocked = dealer != null && Boolean.TRUE.equals(dealer.getLocked());
-        String auditDetail = "Quản lý kinh doanh duyệt đơn bán dưới giá sàn" +
+        String roleLabel = isElevated ? "Quản lý kinh doanh duyệt đơn" : "Nhân viên phụ trách xác nhận đơn";
+        String auditDetail = roleLabel + (order.getApprovalReason() != null ? " (" + order.getApprovalReason() + ")" : "") +
                 (dealerLocked ? " [Cảnh báo: Đại lý '" + dealer.getName() + "' đang bị khoá giao dịch. Lý do: " + dealer.getLockReason() + "]" : "");
         auditLogService.logAction("INVOICE", saved.getOrderCode(), "APPROVE", "PENDING_APPROVAL",
                 auditDetail, username != null ? username : "system");
@@ -548,6 +651,30 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Chỉ có thể từ chối đơn hàng đang ở trạng thái Chờ duyệt (PENDING_APPROVAL)");
         }
 
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isElevated = true;
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            isElevated = auth.getAuthorities().stream()
+                    .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_SALES_MANAGER".equals(a.getAuthority()));
+
+            if (!isElevated) {
+                boolean isSales = auth.getAuthorities().stream()
+                        .anyMatch(a -> "ROLE_SALES".equals(a.getAuthority()));
+                if (isSales) {
+                    boolean isAssignedSales = order.getDealer() != null
+                            && order.getDealer().getAssignedUser() != null
+                            && order.getDealer().getAssignedUser().getUsername() != null
+                            && order.getDealer().getAssignedUser().getUsername().equalsIgnoreCase(username);
+
+                    if (!isAssignedSales) {
+                        throw new AccessDeniedException("Chỉ nhân viên phụ trách đại lý hoặc Quản lý kinh doanh mới có quyền từ chối đơn hàng này");
+                    }
+                } else {
+                    throw new AccessDeniedException("Chỉ nhân viên phụ trách đại lý hoặc Quản lý kinh doanh mới có quyền từ chối đơn hàng này");
+                }
+            }
+        }
+
         order.setStatus("REJECTED");
         order.setApprovedBy(username != null ? username : "system");
         order.setApprovedAt(LocalDateTime.now());
@@ -556,8 +683,9 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Order saved = orderRepository.save(order);
+        String roleLabel = isElevated ? "Quản lý kinh doanh từ chối đơn: " : "Nhân viên phụ trách từ chối đơn: ";
         auditLogService.logAction("INVOICE", saved.getOrderCode(), "REJECT", "PENDING_APPROVAL",
-                "Từ chối đơn bán dưới giá sàn: " + (reason != null ? reason : ""), username != null ? username : "system");
+                roleLabel + (reason != null ? reason : ""), username != null ? username : "system");
         return mapToResponse(saved);
     }
 
@@ -1413,13 +1541,36 @@ public class OrderServiceImpl implements OrderService {
         return hasSales && !hasElevated;
     }
 
+    private boolean isDealerUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_DEALER".equals(a.getAuthority()));
+    }
+
+    private boolean isDealerOnlyUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        boolean hasDealer = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_DEALER".equals(a.getAuthority()));
+        boolean hasElevated = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority())
+                        || "ROLE_SALES_MANAGER".equals(a.getAuthority())
+                        || "ROLE_ACCOUNTANT".equals(a.getAuthority())
+                        || "ROLE_VIEWER".equals(a.getAuthority())
+                        || "ROLE_SALES".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_MANAGER".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_STAFF".equals(a.getAuthority()));
+        return hasDealer && !hasElevated;
+    }
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || userRepository == null) return null;
         return userRepository.findByUsername(auth.getName()).orElse(null);
     }
 
-    private void validateSalesViewAccess(Order order, String username) {
+    private void validateOrderViewAccess(Order order, String username) {
         if (username == null || username.isBlank() || "system".equalsIgnoreCase(username) || "admin".equalsIgnoreCase(username)) {
             return;
         }
@@ -1436,6 +1587,18 @@ public class OrderServiceImpl implements OrderService {
                         || "ROLE_WAREHOUSE_STAFF".equals(a.getAuthority()));
         if (isElevated) {
             return;
+        }
+
+        boolean isDealer = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_DEALER".equals(a.getAuthority()));
+        if (isDealer) {
+            User currentUser = getCurrentUser();
+            if (currentUser != null && currentUser.getDealer() != null) {
+                if (order.getDealer() != null && order.getDealer().getId().equals(currentUser.getDealer().getId())) {
+                    return;
+                }
+            }
+            throw new AccessDeniedException("Bạn chỉ có quyền xem đơn hàng của chính đại lý mình");
         }
 
         boolean isSales = auth.getAuthorities().stream()
@@ -1456,5 +1619,34 @@ public class OrderServiceImpl implements OrderService {
         }
 
         throw new AccessDeniedException("Bạn chỉ có quyền xem đơn hàng của đại lý do mình phụ trách");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getOrdersForDealer(String username) {
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng: " + username));
+        if (currentUser.getDealer() == null) {
+            throw new AccessDeniedException("Tài khoản chưa được liên kết với đại lý");
+        }
+        return orderRepository.findByDealerIdOrderByCreatedAtDesc(currentUser.getDealer().getId()).stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderByIdForDealer(Long id, String username) {
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng: " + username));
+        if (currentUser.getDealer() == null) {
+            throw new AccessDeniedException("Tài khoản chưa được liên kết với đại lý");
+        }
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+        if (order.getDealer() == null || !order.getDealer().getId().equals(currentUser.getDealer().getId())) {
+            throw new AccessDeniedException("Bạn chỉ có quyền xem đơn hàng của chính đại lý mình");
+        }
+        return mapToResponse(order);
     }
 }

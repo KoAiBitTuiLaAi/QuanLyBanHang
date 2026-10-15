@@ -28,12 +28,21 @@ public class UserDetailsImpl implements UserDetails {
     private String fullName;
     private Boolean active;
     private Long tokenVersion;
+    private Long dealerId;
     private Collection<? extends GrantedAuthority> authorities;
+
+    public UserDetailsImpl(Long id, String username, String email, String password,
+                           String fullName, Boolean active, Long tokenVersion,
+                           Collection<? extends GrantedAuthority> authorities) {
+        this(id, username, email, password, fullName, active, tokenVersion, null, authorities);
+    }
 
     public static UserDetailsImpl build(User user) {
         List<GrantedAuthority> authorities = user.getRoles().stream()
                 .map(role -> new SimpleGrantedAuthority(role.getName().name()))
                 .collect(Collectors.toList());
+
+        Long dealerId = user.getDealer() != null ? user.getDealer().getId() : null;
 
         return new UserDetailsImpl(
                 user.getId(),
@@ -43,6 +52,7 @@ public class UserDetailsImpl implements UserDetails {
                 user.getFullName(),
                 user.getActive(),
                 user.getTokenVersion(),
+                dealerId,
                 authorities
         );
     }
@@ -61,9 +71,11 @@ public class UserDetailsImpl implements UserDetails {
                 .map(SimpleGrantedAuthority::new)
                 .forEach(authorities::add);
 
+        Long dealerId = user.getDealer() != null ? user.getDealer().getId() : null;
+
         return new UserDetailsImpl(
                 user.getId(), user.getUsername(), user.getEmail(), user.getPassword(),
-                user.getFullName(), user.getActive(), user.getTokenVersion(), authorities);
+                user.getFullName(), user.getActive(), user.getTokenVersion(), dealerId, authorities);
     }
 
     @Override

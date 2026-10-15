@@ -29,6 +29,7 @@ import java.util.List;
 public class PriceListController {
 
     private final PriceListService priceListService;
+    private final com.quanlybanhang.repository.UserRepository userRepository;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SALES_MANAGER', 'ADMIN', 'SALES', 'ACCOUNTANT', 'VIEWER')")
@@ -48,10 +49,20 @@ public class PriceListController {
     }
 
     @GetMapping("/effective")
-    @PreAuthorize("hasAnyRole('SALES_MANAGER', 'ADMIN', 'SALES', 'ACCOUNTANT', 'VIEWER')")
+    @PreAuthorize("hasAnyRole('SALES_MANAGER', 'ADMIN', 'SALES', 'ACCOUNTANT', 'VIEWER', 'DEALER')")
     public ApiResponse getEffectivePriceList(
             @RequestParam CustomerGroup customerGroup,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_DEALER".equals(a.getAuthority()))) {
+            com.quanlybanhang.model.User currentUser = userRepository.findByUsername(auth.getName()).orElse(null);
+            if (currentUser != null && currentUser.getDealer() != null) {
+                if (currentUser.getDealer().getCustomerGroup() != customerGroup) {
+                    throw new org.springframework.security.access.AccessDeniedException("Đại lý chỉ được phép xem bảng giá thuộc nhóm khách hàng của mình");
+                }
+            }
+        }
+
         PriceListResponse priceList = priceListService.getEffectivePriceList(customerGroup, date);
         if (priceList == null) {
             return ApiResponse.builder()

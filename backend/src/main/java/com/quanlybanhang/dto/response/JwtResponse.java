@@ -31,5 +31,8 @@ public class JwtResponse {
     private List<String> permissions;
     private List<NamedResourceResponse> warehouses;
     private List<NamedResourceResponse> territories;
+    private Long dealerId;
+    private String dealerCode;
+    private String dealerName;
     private Boolean mustChangePassword;
 }

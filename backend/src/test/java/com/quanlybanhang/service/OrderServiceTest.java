@@ -11,6 +11,7 @@ import com.quanlybanhang.model.Product;
 import com.quanlybanhang.repository.DealerRepository;
 import com.quanlybanhang.repository.OrderRepository;
 import com.quanlybanhang.repository.ProductRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,12 +19,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -62,6 +68,9 @@ class OrderServiceTest {
     @Mock
     private DealerDebtService dealerDebtService;
 
+    @Mock
+    private com.quanlybanhang.repository.UserRepository userRepository;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -76,6 +85,11 @@ class OrderServiceTest {
                 .unit("lon")
                 .price(new BigDecimal("19000"))
                 .build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -343,6 +357,173 @@ class OrderServiceTest {
         assertThat(response.getCurrentDebt()).isEqualByComparingTo(new BigDecimal("5000000"));
         assertThat(response.getDebtLimit()).isEqualByComparingTo(new BigDecimal("50000000"));
     }
+
+    // ==========================================
+    // STORY S4-10: CỔNG TỰ ĐẶT HÀNG DÀNH CHO ĐẠI LÝ
+    // ==========================================
+
+    @Test
+    @DisplayName("S4-10: Đơn hàng do Đại lý tạo luôn ở trạng thái Chờ duyệt (PENDING_APPROVAL)")
+    void createOrder_DealerUser_AlwaysSetsPendingApproval() {
+        Dealer dealer = Dealer.builder()
+                .id(100L)
+                .code("DL-PORTAL")
+                .name("Đại lý Portal")
+                .debtLimit(new BigDecimal("100000000"))
+                .locked(false)
+                .build();
+
+        com.quanlybanhang.model.User dealerUser = com.quanlybanhang.model.User.builder()
+                .id(99L)
+                .username("dealer.portal")
+                .dealer(dealer)
+                .build();
+
+        // Setup SecurityContextHolder as ROLE_DEALER
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("dealer.portal", null,
+                        List.of(new SimpleGrantedAuthority("ROLE_DEALER")))
+        );
+
+        orderService.setUserRepository(userRepository);
+        when(userRepository.findByUsername("dealer.portal")).thenReturn(Optional.of(dealerUser));
+        mockEffectivePrices(dealer);
+        when(productRepository.findById(10L)).thenReturn(Optional.of(biaHeineken));
+        when(unitConversionService.getConversionFactor(biaHeineken, "lon")).thenReturn(BigDecimal.ONE);
+        when(dealerDebtService.getDealerDebtInfo(dealer)).thenReturn(
+                DealerDebtResponse.builder()
+                        .dealerId(100L)
+                        .currentDebt(BigDecimal.ZERO)
+                        .debtLimit(new BigDecimal("100000000"))
+                        .remainingLimit(new BigDecimal("100000000"))
+                        .build()
+        );
+        when(dealerDebtService.checkProjectedDebtExceedsLimit(eq(dealer), any(BigDecimal.class), eq(BigDecimal.ZERO)))
+                .thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderRequest request = OrderRequest.builder()
+                .dealerId(100L)
+                .items(List.of(OrderItemRequest.builder()
+                        .productId(10L)
+                        .unit("lon")
+                        .quantity(BigDecimal.TEN)
+                        .price(new BigDecimal("19000"))
+                        .build()))
+                .build();
+
+        OrderResponse response = orderService.createOrder(request, "dealer.portal");
+
+        assertThat(response).isNotNull();
+        assertThat(response.getStatus()).isEqualTo("PENDING_APPROVAL");
+        assertThat(response.getRequiresApproval()).isTrue();
+        assertThat(response.getApprovalReason()).contains("Đại lý tự đặt qua cổng");
+    }
+
+    @Test
+    @DisplayName("S4-10: NVKD phụ trách đại lý có quyền xác nhận đơn hàng đại lý tự đặt")
+    void approveOrder_AssignedSales_Succeeds() {
+        com.quanlybanhang.model.User salesUser = com.quanlybanhang.model.User.builder()
+                .id(50L)
+                .username("sales.assigned")
+                .build();
+
+        Dealer dealer = Dealer.builder()
+                .id(100L)
+                .code("DL-PORTAL")
+                .name("Đại lý Portal")
+                .assignedUser(salesUser)
+                .build();
+
+        Order order = Order.builder()
+                .id(1001L)
+                .orderCode("DH-DEALER-01")
+                .dealer(dealer)
+                .status("PENDING_APPROVAL")
+                .requiresApproval(true)
+                .approvalReason("Đơn hàng tự đặt từ Cổng Đại lý, chờ NVKD phụ trách xác nhận")
+                .build();
+
+        when(orderRepository.findById(1001L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // NVKD phụ trách xác nhận
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("sales.assigned", null,
+                        List.of(new SimpleGrantedAuthority("ROLE_SALES")))
+        );
+
+        OrderResponse response = orderService.approveOrder(1001L, "sales.assigned");
+
+        assertThat(response).isNotNull();
+        assertThat(response.getStatus()).isEqualTo("RECORDED");
+        assertThat(response.getApprovedBy()).isEqualTo("sales.assigned");
+    }
+
+    @Test
+    @DisplayName("S4-10: NVKD không phụ trách đại lý bị chặn xác nhận đơn hàng (AccessDeniedException)")
+    void approveOrder_UnassignedSales_ThrowsAccessDenied() {
+        com.quanlybanhang.model.User salesAssigned = com.quanlybanhang.model.User.builder()
+                .id(50L)
+                .username("sales.assigned")
+                .build();
+
+        Dealer dealer = Dealer.builder()
+                .id(100L)
+                .code("DL-PORTAL")
+                .name("Đại lý Portal")
+                .assignedUser(salesAssigned)
+                .build();
+
+        Order order = Order.builder()
+                .id(1001L)
+                .orderCode("DH-DEALER-01")
+                .dealer(dealer)
+                .status("PENDING_APPROVAL")
+                .requiresApproval(true)
+                .approvalReason("Đơn hàng tự đặt từ Cổng Đại lý, chờ NVKD phụ trách xác nhận")
+                .build();
+
+        when(orderRepository.findById(1001L)).thenReturn(Optional.of(order));
+
+        // NVKD khác cố tình xác nhận
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("sales.other", null,
+                        List.of(new SimpleGrantedAuthority("ROLE_SALES")))
+        );
+
+        assertThatThrownBy(() -> orderService.approveOrder(1001L, "sales.other"))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Chỉ nhân viên phụ trách đại lý hoặc Quản lý kinh doanh");
+    }
+
+    @Test
+    @DisplayName("S4-10: Đại lý chỉ xem được đơn hàng của chính mình (RLS)")
+    void getOrderByIdForDealer_WrongDealer_ThrowsAccessDenied() {
+        Dealer dealerA = Dealer.builder().id(100L).code("DL-A").build();
+        Dealer dealerB = Dealer.builder().id(200L).code("DL-B").build();
+
+        com.quanlybanhang.model.User userA = com.quanlybanhang.model.User.builder()
+                .id(1L)
+                .username("dealerA")
+                .dealer(dealerA)
+                .build();
+
+        Order orderB = Order.builder()
+                .id(500L)
+                .orderCode("DH-B")
+                .dealer(dealerB)
+                .build();
+
+        orderService.setUserRepository(userRepository);
+        when(userRepository.findByUsername("dealerA")).thenReturn(Optional.of(userA));
+        when(orderRepository.findById(500L)).thenReturn(Optional.of(orderB));
+
+        assertThatThrownBy(() -> orderService.getOrderByIdForDealer(500L, "dealerA"))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("chính đại lý mình");
+    }
+
     private void mockEffectivePrices(Dealer dealer) {
         var priceList = com.quanlybanhang.model.PriceList.builder()
                 .id(1L).customerGroup(dealer.getCustomerGroup())

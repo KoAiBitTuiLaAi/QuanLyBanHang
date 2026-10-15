@@ -65,6 +65,9 @@ class PriceListControllerTest {
     @MockBean
     private JwtUtils jwtUtils;
 
+    @MockBean
+    private com.quanlybanhang.repository.UserRepository userRepository;
+
     @BeforeEach
     void setUp() throws Exception {
         objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());

@@ -122,6 +122,13 @@ public class User {
     @Builder.Default
     private Set<Territory> territories = new HashSet<>();
 
+    /**
+     * Đại lý liên kết với tài khoản này (dành cho người dùng đại lý - ROLE_DEALER) (S4-10).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dealer_id")
+    private Dealer dealer;
+
     // ── Reset password ──
 
     @Column(length = 255)

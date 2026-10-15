@@ -120,7 +120,8 @@ public class DemoDataSeeder {
                 new DemoUser("warehouse.manager", "Quản lý kho Demo", ERole.ROLE_WAREHOUSE_MANAGER),
                 new DemoUser("warehouse.demo", "Thủ kho Demo", ERole.ROLE_WAREHOUSE_STAFF),
                 new DemoUser("accountant.demo", "Kế toán Demo", ERole.ROLE_ACCOUNTANT),
-                new DemoUser("viewer.demo", "Người xem Demo", ERole.ROLE_VIEWER));
+                new DemoUser("viewer.demo", "Người xem Demo", ERole.ROLE_VIEWER),
+                new DemoUser("dealer.demo", "Đại lý Minh Phát Demo", ERole.ROLE_DEALER));
         for (DemoUser account : accounts) {
             if (users.existsByUsername(account.username())) continue;
             Role role = roles.findByName(account.role())
@@ -237,6 +238,10 @@ public class DemoDataSeeder {
             deliveryPoint(dealer, dealer.getName(), dealer.getAddress(), "0900000001");
         }
         deliveryPoint(customers.get("cap1"), "Kho phụ Minh Phát (Demo)", "50 Võ Văn Kiệt, TP.HCM (Demo)", "0900000002");
+        users.findByUsername("dealer.demo").ifPresent(dealerUser -> {
+            dealerUser.setDealer(customers.get("cap1"));
+            users.save(dealerUser);
+        });
         return customers;
     }
 

@@ -71,7 +71,7 @@ public class DealerController {
     }
 
     @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('ACCOUNTANT', 'SALES_MANAGER', 'ADMIN', 'SALES', 'VIEWER')")
+    @PreAuthorize("hasAnyRole('ACCOUNTANT', 'SALES_MANAGER', 'ADMIN', 'SALES', 'VIEWER', 'DEALER')")
     public ApiResponse getActiveDealers() {
         List<DealerResponse> dealers = dealerService.getActiveDealers();
         return ApiResponse.success("Lấy danh sách đại lý đang hoạt động thành công", dealers);
@@ -85,7 +85,7 @@ public class DealerController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ACCOUNTANT', 'SALES_MANAGER', 'ADMIN', 'SALES', 'VIEWER')")
+    @PreAuthorize("hasAnyRole('ACCOUNTANT', 'SALES_MANAGER', 'ADMIN', 'SALES', 'VIEWER', 'DEALER')")
     public ApiResponse getDealerById(@PathVariable Long id) {
         DealerResponse dealer = dealerService.getDealerById(id);
         return ApiResponse.success("Lấy chi tiết đại lý thành công", dealer);
@@ -262,7 +262,7 @@ public class DealerController {
      * Phục vụ hiển thị trên màn hình tạo đơn và kiểm soát rủi ro bán hàng.
      */
     @GetMapping({"/{id}/debt", "/{id}/credit-info"})
-    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'ACCOUNTANT', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'VIEWER')")
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'ACCOUNTANT', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'VIEWER', 'DEALER')")
     public ApiResponse getDealerDebtInfo(@PathVariable Long id) {
         DealerDebtResponse response = dealerDebtService.getDealerDebtInfo(id);
         return ApiResponse.success("Lấy thông tin công nợ đại lý thành công", response);

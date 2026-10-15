@@ -149,7 +149,7 @@ public class OrderController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    @PreAuthorize("hasAuthority('ORDER_CREATE') or hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'DEALER')")
     public ResponseEntity<ApiResponse> createOrder(
             @Valid @RequestBody OrderRequest request,
             Principal principal) {
@@ -167,7 +167,7 @@ public class OrderController {
      * Không có bảng giá hiệu lực cho SKU đó thì chặn thêm dòng hàng kèm thông báo rõ lý do.
      */
     @PostMapping("/line-item/pricing")
-    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'DEALER')")
     public ApiResponse calculateLineItemPricing(@Valid @RequestBody OrderLineItemPricingRequest request) {
         OrderLineItemPricingResponse response = orderService.calculateLineItemPricing(request);
         return ApiResponse.success("Áp giá và chiết khấu dòng hàng thành công", response);
@@ -178,7 +178,7 @@ public class OrderController {
      * Chặn thêm dòng hàng nếu có SKU chưa có trong bảng giá hiệu lực.
      */
     @PostMapping("/calculate")
-    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'DEALER')")
     public ApiResponse calculateOrder(@Valid @RequestBody OrderCalculateRequest request) {
         OrderCalculateResponse response = orderService.calculateOrder(request);
         return ApiResponse.success("Tính toán giá và chiết khấu đơn hàng thành công", response);
@@ -196,11 +196,11 @@ public class OrderController {
     }
 
     /**
-     * Quản lý kinh doanh phê duyệt đơn hàng bán dưới giá sàn (S2-10).
+     * Quản lý kinh doanh hoặc nhân viên kinh doanh phụ trách đại lý phê duyệt đơn hàng (S2-10, S4-10).
      * Đơn hàng của đại lý bị khoá vẫn được xử lý tiếp nhưng có cảnh báo (S3-07).
      */
     @PutMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('SALES_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SALES_MANAGER', 'ADMIN', 'SALES')")
     public ApiResponse approveOrder(@PathVariable Long id, Principal principal) {
         String username = principal != null ? principal.getName() : "system";
         OrderResponse response = orderService.approveOrder(id, username);
@@ -211,11 +211,11 @@ public class OrderController {
     }
 
     /**
-     * Quản lý kinh doanh từ chối đơn hàng bán dưới giá sàn (S2-10).
+     * Quản lý kinh doanh hoặc nhân viên kinh doanh phụ trách từ chối đơn hàng (S2-10, S4-10).
      * Đơn hàng của đại lý bị khoá vẫn được xử lý tiếp nhưng có cảnh báo (S3-07).
      */
     @PutMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('SALES_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SALES_MANAGER', 'ADMIN', 'SALES')")
     public ApiResponse rejectOrder(
             @PathVariable Long id,
             @RequestParam(required = false) String reason,

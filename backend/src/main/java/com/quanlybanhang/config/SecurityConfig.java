@@ -118,6 +118,9 @@ public class SecurityConfig {
                 // ── Quản lý hồ sơ đại lý (S3-03): mọi role hợp lệ đã đăng nhập; chi tiết phân quyền qua @PreAuthorize ──
                 .requestMatchers("/api/dealers/**").authenticated()
 
+                // ── Cổng đại lý tự đặt hàng và theo dõi đơn (S4-10, S5-01) ──
+                .requestMatchers("/api/portal/**").authenticated()
+
                 // ── Khách hàng: ADMIN, SALES_MANAGER, SALES, VIEWER ──
                 .requestMatchers("/api/customers/**").hasAnyRole(
                         "ADMIN", "SALES_MANAGER", "SALES", "VIEWER")
