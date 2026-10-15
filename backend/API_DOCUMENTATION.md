@@ -1046,7 +1046,155 @@ Quy tắc nghiệp vụ:
 }
 ```
 
-## Bảy vai trò
+## Cổng Đại lý (Dealer Portal) — Sprint 5 (S5-01)
+
+Base URL: `http://localhost:8080/api`
+
+Cung cấp tính năng dành riêng cho Đại lý (`ROLE_DEALER`) theo dõi trạng thái đơn hàng và tiến trình giao nhận hàng hóa của chính mình mà không cần gọi điện hỏi nhân viên kinh doanh.
+
+### Nguyên tắc bảo mật & Cô lập dữ liệu (Row-Level Security)
+- Tài khoản đại lý được liên kết với một bản ghi `Dealer` thông qua trường `dealer_id` trên thực thể User.
+- API lấy danh sách đơn `/api/portal/orders` và API xem chi tiết `/api/portal/orders/{id}` tự động truy vấn đơn hàng thuộc `dealer_id` của tài khoản đăng nhập.
+- Nếu người dùng thuộc một đại lý cố tình truy cập vào ID đơn hàng của đại lý khác, server sẽ chặn và trả về lỗi `403 Forbidden` (`Bạn không có quyền thực hiện chức năng này`).
+- Nhân viên kinh doanh (`ROLE_SALES`) chỉ xem được đơn hàng của các đại lý mà mình được phân công phụ trách.
+- Quản trị viên (`ROLE_ADMIN`) và Quản lý kinh doanh (`ROLE_SALES_MANAGER`) có thể xem toàn bộ đơn hàng.
+- `ROLE_DEALER` được cấp quyền mặc định trong Ma trận phân quyền (`RolePermissionConfig`): `ORDER_VIEW`, `ORDER_CREATE`. Tuyệt đối không có quyền thao tác kho hay xem giá vốn.
+
+### Danh sách API
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| GET | `/api/portal/orders` | `ROLE_DEALER`, `ROLE_ADMIN` | Danh sách đơn hàng của đại lý: trạng thái, ngày giao dự kiến, tổng tiền, cảnh báo giao thiếu |
+| GET | `/api/portal/orders/{id}` | `ROLE_DEALER`, `ROLE_ADMIN` | Chi tiết đơn hàng của đại lý: dòng hàng, số lượng đặt, đơn giá, số lượng thực giao, số lượng thiếu, ghi chú giao hàng |
+| PUT | `/api/orders/{id}/delivery` | `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Cập nhật tiến độ giao nhận: trạng thái đơn, ngày giao thực tế, số lượng thực giao cho từng dòng sản phẩm |
+
+---
+
+### 1. Danh sách đơn hàng của đại lý (S5-01 Tiêu chí 1)
+
+```text
+GET /api/portal/orders
+Authorization: Bearer <access-token>
+```
+
+#### Response thành công (HTTP 200 OK):
+```json
+{
+  "success": true,
+  "message": "Danh sách đơn hàng của đại lý",
+  "data": [
+    {
+      "id": 101,
+      "orderCode": "DH-MINHPHAT-001",
+      "customerName": "Đại lý Cấp 1 Minh Phát",
+      "dealerId": 1,
+      "status": "DELIVERED",
+      "expectedDeliveryDate": "2026-10-18",
+      "actualDeliveryDate": "2026-10-17",
+      "totalAmount": 15000000.00,
+      "hasShortage": true,
+      "totalLineItems": 2,
+      "deliveryNote": "Giao đợt 1, còn thiếu sản phẩm Heineken do kho hết hàng",
+      "createdAt": "2026-10-15T09:00:00"
+    }
+  ]
+}
+```
+
+---
+
+### 2. Chi tiết dòng hàng và số lượng thực giao nếu giao thiếu (S5-01 Tiêu chí 2)
+
+```text
+GET /api/portal/orders/101
+Authorization: Bearer <access-token>
+```
+
+#### Response thành công (HTTP 200 OK):
+```json
+{
+  "success": true,
+  "message": "Chi tiết đơn hàng",
+  "data": {
+    "id": 101,
+    "orderCode": "DH-MINHPHAT-001",
+    "customerName": "Đại lý Cấp 1 Minh Phát",
+    "dealerId": 1,
+    "status": "DELIVERED",
+    "expectedDeliveryDate": "2026-10-18",
+    "actualDeliveryDate": "2026-10-17",
+    "totalAmount": 15000000.00,
+    "hasShortage": true,
+    "deliveryNote": "Đã giao đợt 1 có thiếu 2 thùng bia Heineken",
+    "items": [
+      {
+        "id": 201,
+        "productId": 10,
+        "productCode": "SP-KEN330",
+        "productName": "Bia Heineken lon 330ml",
+        "unit": "thùng",
+        "quantity": 10.0000,
+        "price": 450000.00,
+        "totalAmount": 4500000.00,
+        "deliveredQuantity": 8.0000,
+        "shortageQuantity": 2.0000,
+        "isShortage": true,
+        "deliveryNote": "Kho tạm thời thiếu 2 thùng, sẽ giao bù đợt 2"
+      },
+      {
+        "id": 202,
+        "productId": 11,
+        "productCode": "SP-TIGER330",
+        "productName": "Bia Tiger lon 330ml",
+        "unit": "thùng",
+        "quantity": 5.0000,
+        "price": 380000.00,
+        "totalAmount": 1900000.00,
+        "deliveredQuantity": 5.0000,
+        "shortageQuantity": 0.0000,
+        "isShortage": false,
+        "deliveryNote": "Giao đủ"
+      }
+    ]
+  }
+}
+```
+
+#### Response lỗi khi truy cập đơn của đại lý khác (HTTP 403 Forbidden):
+```json
+{
+  "success": false,
+  "message": "Bạn không có quyền thực hiện chức năng này"
+}
+```
+
+---
+
+### 3. Cập nhật tiến độ giao hàng và số lượng thực giao (Dành cho Kho)
+
+```json
+PUT /api/orders/101/delivery
+Authorization: Bearer <access-token>
+{
+  "status": "DELIVERED",
+  "actualDeliveryDate": "2026-10-17",
+  "deliveryNote": "Giao hàng đợt 1",
+  "items": [
+    {
+      "orderItemId": 201,
+      "deliveredQuantity": 8.0000,
+      "deliveryNote": "Kho thiếu 2 thùng"
+    },
+    {
+      "orderItemId": 202,
+      "deliveredQuantity": 5.0000,
+      "deliveryNote": "Giao đủ"
+    }
+  ]
+}
+```
+
+## Các vai trò trong hệ thống
 
 - `ROLE_ADMIN`: quản trị tài khoản và hệ thống; không mặc nhiên xem giá vốn.
 - `ROLE_SALES_MANAGER`: quản lý kinh doanh; vai trò duy nhất xem giá vốn và biên lợi nhuận.
@@ -1055,6 +1203,7 @@ Quy tắc nghiệp vụ:
 - `ROLE_WAREHOUSE_STAFF`: nhập/xuất tại kho được gán; không sửa điều chỉnh tồn kho, không xem giá vốn.
 - `ROLE_ACCOUNTANT`: công nợ và báo cáo tài chính, không xem giá vốn.
 - `ROLE_VIEWER`: chỉ xem báo cáo được phép.
+- `ROLE_DEALER`: tài khoản cổng đại lý (S5-01); chỉ xem và tạo đơn của chính đại lý mình, theo dõi trạng thái giao nhận và dòng hàng giao thiếu; tuyệt đối không thể sửa kho hay xem giá vốn.
 
 Mọi chức năng đều kiểm quyền ở tầng server. Endpoint chưa được khai báo hoặc không đủ quyền bị từ chối mặc định (401 khi chưa đăng nhập, 403 khi thiếu quyền).
 

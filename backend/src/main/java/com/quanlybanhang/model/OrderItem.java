@@ -129,4 +129,23 @@ public class OrderItem {
 
     @Column(length = 255)
     private String note;
+
+    /**
+     * Số lượng thực giao theo đơn vị đặt hàng (S5-01).
+     * Null nếu chưa giao; nhỏ hơn quantity nếu giao thiếu.
+     */
+    @Column(name = "delivered_quantity", precision = 15, scale = 4)
+    private BigDecimal deliveredQuantity;
+
+    /**
+     * Số lượng thực giao quy đổi về đơn vị cơ sở (S5-01).
+     */
+    @Column(name = "delivered_base_quantity", precision = 15, scale = 4)
+    private BigDecimal deliveredBaseQuantity;
+
+    /**
+     * Ghi chú giao hàng / lý do giao thiếu cho dòng này (S5-01).
+     */
+    @Column(name = "delivery_note", length = 500)
+    private String deliveryNote;
 }

@@ -68,6 +68,9 @@ public class RolePermissionConfig {
                 PRODUCT_VIEW, ORDER_VIEW, WAREHOUSE_VIEW, CUSTOMER_VIEW,
                 REPORT_SALES, REPORT_INVENTORY
         ));
+        defaults.put(ERole.ROLE_DEALER, EnumSet.of(
+                ORDER_VIEW, ORDER_CREATE
+        ));
         return defaults;
     }
 
@@ -143,6 +146,12 @@ public class RolePermissionConfig {
         }
         if (role == ERole.ROLE_SALES && newPermissions.contains(WAREHOUSE_ADJUST)) {
             throw new IllegalArgumentException("Nhân viên kinh doanh không được phép sửa tồn kho");
+        }
+        if (role == ERole.ROLE_DEALER && (newPermissions.contains(WAREHOUSE_ADJUST)
+                || newPermissions.contains(WAREHOUSE_IMPORT)
+                || newPermissions.contains(WAREHOUSE_EXPORT)
+                || newPermissions.contains(WAREHOUSE_APPROVE))) {
+            throw new IllegalArgumentException("Đại lý không được phép thao tác kho");
         }
         Set<Permission> permissions = newPermissions.isEmpty()
                 ? EnumSet.noneOf(Permission.class) : EnumSet.copyOf(newPermissions);

@@ -34,4 +34,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     java.math.BigDecimal sumTotalAmountByDealerIdAndStatus(
             @org.springframework.data.repository.query.Param("dealerId") Long dealerId,
             @org.springframework.data.repository.query.Param("status") String status);
+
+    List<Order> findByDealerIdOrderByCreatedAtDesc(Long dealerId);
+
+    Optional<Order> findByIdAndDealerId(Long id, Long dealerId);
+
+    List<Order> findByDealerAssignedUserIdOrderByCreatedAtDesc(Long assignedUserId);
 }

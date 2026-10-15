@@ -33,4 +33,5 @@ public class AdminUserRequest {
 
     private Set<Long> warehouseIds = new HashSet<>();
     private Set<Long> territoryIds = new HashSet<>();
+    private Long dealerId;
 }

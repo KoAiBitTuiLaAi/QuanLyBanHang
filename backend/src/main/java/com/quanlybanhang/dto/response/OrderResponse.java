@@ -47,4 +47,16 @@ public class OrderResponse {
     private BigDecimal currentDebt;
     private BigDecimal debtLimit;
     private BigDecimal remainingDebtLimit;
+
+    /** Ngày thực tế giao hàng (S5-01). */
+    private LocalDate actualDeliveryDate;
+
+    /** Ghi chú giao hàng tổng thể (S5-01). */
+    private String deliveryNote;
+
+    /** Đánh dấu đơn hàng có dòng bị giao thiếu (S5-01). */
+    private Boolean hasShortage;
+
+    /** Tổng số dòng hàng trong đơn (S5-01). */
+    private Integer totalLineItems;
 }

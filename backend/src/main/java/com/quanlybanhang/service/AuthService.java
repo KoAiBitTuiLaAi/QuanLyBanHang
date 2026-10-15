@@ -222,7 +222,7 @@ public class AuthService {
 
     private JwtResponse buildJwtResponse(User user, String accessToken, String refreshToken) {
         List<ERole> roleEnums = user.getRoles().stream().map(Role::getName).toList();
-        return JwtResponse.builder()
+        JwtResponse.JwtResponseBuilder builder = JwtResponse.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .tokenType("Bearer")
@@ -239,8 +239,15 @@ public class AuthService {
                         .map(w -> new NamedResourceResponse(w.getId(), w.getCode(), w.getName())).toList())
                 .territories(user.getTerritories().stream()
                         .map(t -> new NamedResourceResponse(t.getId(), t.getCode(), t.getName())).toList())
-                .mustChangePassword(user.getMustChangePassword())
-                .build();
+                .mustChangePassword(user.getMustChangePassword());
+
+        if (user.getDealer() != null) {
+            builder.dealerId(user.getDealer().getId())
+                    .dealerCode(user.getDealer().getCode())
+                    .dealerName(user.getDealer().getName());
+        }
+
+        return builder.build();
     }
 }
 

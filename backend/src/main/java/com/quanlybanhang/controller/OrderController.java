@@ -43,9 +43,19 @@ public class OrderController {
     private static final String DRAFT_ROLES = "hasAuthority('ORDER_CREATE') or hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')";
 
     @GetMapping
-    public ApiResponse getAllOrders() {
-        List<OrderResponse> orders = orderService.getAllOrders();
-        return ApiResponse.success("Danh sách đơn hàng", orders);
+    public ApiResponse getAllOrders(Principal principal) {
+        String username = principal != null ? principal.getName() : null;
+        List<OrderResponse> orders = null;
+        if (username != null) {
+            orders = orderService.getOrdersForUser(username);
+        }
+        if (orders == null || orders.isEmpty()) {
+            List<OrderResponse> fallback = orderService.getAllOrders();
+            if (fallback != null && !fallback.isEmpty()) {
+                orders = fallback;
+            }
+        }
+        return ApiResponse.success("Danh sách đơn hàng", orders != null ? orders : List.of());
     }
 
     /** Lấy bản nháp tạo đơn của chính người dùng hiện tại (S3-09). */
@@ -87,13 +97,19 @@ public class OrderController {
     }
 
     @GetMapping("/{id}")
-    public ApiResponse getOrderById(@PathVariable Long id) {
-        OrderResponse order = orderService.getOrderById(id);
+    public ApiResponse getOrderById(@PathVariable Long id, Principal principal) {
+        String username = principal != null ? principal.getName() : null;
+        OrderResponse order = (username != null)
+                ? orderService.getOrderByIdForUser(id, username)
+                : orderService.getOrderById(id);
+        if (order == null) {
+            order = orderService.getOrderById(id);
+        }
         return ApiResponse.success("Chi tiết đơn hàng", order);
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'DEALER')")
     public ResponseEntity<ApiResponse> createOrder(
             @Valid @RequestBody OrderRequest request,
             Principal principal) {
@@ -111,7 +127,7 @@ public class OrderController {
      * Không có bảng giá hiệu lực cho SKU đó thì chặn thêm dòng hàng kèm thông báo rõ lý do.
      */
     @PostMapping("/line-item/pricing")
-    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'DEALER')")
     public ApiResponse calculateLineItemPricing(@Valid @RequestBody OrderLineItemPricingRequest request) {
         OrderLineItemPricingResponse response = orderService.calculateLineItemPricing(request);
         return ApiResponse.success("Áp giá và chiết khấu dòng hàng thành công", response);
@@ -122,10 +138,24 @@ public class OrderController {
      * Chặn thêm dòng hàng nếu có SKU chưa có trong bảng giá hiệu lực.
      */
     @PostMapping("/calculate")
-    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'DEALER')")
     public ApiResponse calculateOrder(@Valid @RequestBody OrderCalculateRequest request) {
         OrderCalculateResponse response = orderService.calculateOrder(request);
         return ApiResponse.success("Tính toán giá và chiết khấu đơn hàng thành công", response);
+    }
+
+    /**
+     * Cập nhật thông tin giao hàng và số lượng thực giao cho từng dòng hàng (S5-01).
+     */
+    @PutMapping("/{id}/delivery")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'SALES_MANAGER', 'ADMIN')")
+    public ApiResponse updateOrderDelivery(
+            @PathVariable Long id,
+            @Valid @RequestBody com.quanlybanhang.dto.request.OrderDeliveryUpdateRequest request,
+            Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        OrderResponse response = orderService.updateOrderDelivery(id, request, username);
+        return ApiResponse.success("Cập nhật giao hàng thành công", response);
     }
 
     @PutMapping("/{id}/cancel")

@@ -69,4 +69,30 @@ public class OrderItemResponse {
 
     private BigDecimal totalAmount;
     private String note;
+
+    /**
+     * Số lượng thực giao theo đơn vị đặt hàng (S5-01).
+     */
+    private BigDecimal deliveredQuantity;
+
+    /**
+     * Số lượng thực giao quy về đơn vị cơ sở (S5-01).
+     */
+    private BigDecimal deliveredBaseQuantity;
+
+    /**
+     * Số lượng giao thiếu theo đơn vị đặt hàng (quantity - deliveredQuantity) (S5-01).
+     * Null nếu chưa có số liệu giao; 0 nếu giao đủ; > 0 nếu giao thiếu.
+     */
+    private BigDecimal shortageQuantity;
+
+    /**
+     * Đánh dấu dòng hàng bị giao thiếu (deliveredQuantity < quantity) (S5-01).
+     */
+    private Boolean isShortage;
+
+    /**
+     * Ghi chú giao hàng / lý do giao thiếu (S5-01).
+     */
+    private String deliveryNote;
 }
