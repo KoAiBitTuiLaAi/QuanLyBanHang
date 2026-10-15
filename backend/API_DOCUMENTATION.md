@@ -377,6 +377,64 @@ trên màn lập phiếu và tồn kho, đồng thời khoá nút ghi phiếu. C
 mức tồn kho thì hiển thị `Chưa thiết lập`; không gán ngưỡng 200 hoặc nhãn an toàn
 cho tất cả SKU.
 
+### Danh sách API Chuyển kho nội bộ (S5-07)
+
+Hỗ trợ Nhân viên kho lập phiếu chuyển kho nội bộ để điều hàng từ kho thừa sang kho thiếu mà số liệu hai bên đều chính xác, minh bạch.
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| POST | `/warehouse/transfers` (hoặc `/warehouse/transfer`) | `WAREHOUSE_TRANSFER`, `WAREHOUSE_EXPORT`, `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu chuyển kho nội bộ. Trừ tồn kho tại kho xuất, ghi nhận hàng đang trên đường (`inTransitQuantity`), CHƯA cộng vào kho nhập |
+| GET | `/warehouse/transfers` | `WAREHOUSE_TRANSFER`, `WAREHOUSE_VIEW`, `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_VIEWER` | Danh sách phiếu chuyển kho (hỗ trợ lọc `fromWarehouseId`, `toWarehouseId`, `status`) |
+| GET | `/warehouse/transfers/{id}` | `WAREHOUSE_TRANSFER`, `WAREHOUSE_VIEW`, `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_VIEWER` | Chi tiết phiếu chuyển kho |
+| POST | `/warehouse/transfers/{id}/receive` | `WAREHOUSE_TRANSFER`, `WAREHOUSE_IMPORT`, `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Kho đến xác nhận nhận hàng. Nhận đủ hoặc thực nhận; tồn kho đến mới được cộng; chênh lệch bắt buộc nhập lý do |
+| POST | `/warehouse/transfers/{id}/cancel` | `WAREHOUSE_TRANSFER`, `WAREHOUSE_APPROVE`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Hủy phiếu chuyển kho khi đang trên đường (`IN_TRANSIT`); hoàn tồn cho kho xuất và xóa hàng trên đường |
+
+#### Quy tắc nghiệp vụ chuyển kho (S5-07):
+1. **Lập phiếu chuyển**:
+   - Chọn kho xuất (`fromWarehouseId`), kho nhập (`toWarehouseId`), danh sách sản phẩm, số lượng và đơn vị tính (thùng, lốc, lon...).
+   - Kho xuất và kho nhập không được trùng nhau. Cả hai kho phải đang hoạt động (`active = true`).
+   - Kiểm tra tồn kho cơ sở tại kho xuất: nếu tồn kho không đủ để chuyển, hệ thống chặn với lỗi `400 Bad Request` ("Kho xuất không đủ tồn kho...").
+   - Khi tạo thành công: tồn kho tại kho xuất bị trừ ngay lập tức; hàng được ghi nhận là đang trên đường chuyển (`status = IN_TRANSIT`, `inTransitQuantity` tại kho nhập tăng lên tương ứng); tồn kho khả dụng (`baseQuantity`) tại kho nhập **CHƯA ĐƯỢC CỘNG**.
+2. **Xác nhận nhận hàng tại kho đến**:
+   - Chỉ được xác nhận khi phiếu ở trạng thái `IN_TRANSIT`.
+   - Nếu nhận đủ: `receivedQuantity` bằng số lượng xuất, tồn kho đến được cộng đủ, `inTransitQuantity` trừ về 0, trạng thái thành `COMPLETED`.
+   - Nếu có chênh lệch (`receivedQuantity != quantity`): **BẮT BUỘC** phải nhập lý do (`discrepancyReason`). Nếu không nhập lý do, hệ thống trả về lỗi `400 Bad Request` ("Chênh lệch khi nhận hàng bắt buộc phải nhập lý do").
+   - Tồn kho tại kho nhập chỉ được cộng đúng số lượng thực nhận (`receivedBaseQuantity`).
+3. **Hủy phiếu chuyển kho**:
+   - Chỉ áp dụng cho phiếu đang ở trạng thái `IN_TRANSIT`.
+   - Hoàn lại tồn kho cho kho xuất và xóa lượng đang trên đường tại kho nhập. Trạng thái phiếu thành `CANCELLED`.
+
+#### Ví dụ Request tạo phiếu chuyển kho (`POST /api/warehouse/transfers`):
+```json
+{
+  "fromWarehouseId": 1,
+  "toWarehouseId": 2,
+  "note": "Điều hàng giải phóng tồn kho Hà Nội chuyển về kho Hải Phòng",
+  "items": [
+    {
+      "productId": 10,
+      "unit": "thùng",
+      "quantity": 10,
+      "note": "Hàng chuyển đợt 1"
+    }
+  ]
+}
+```
+
+#### Ví dụ Request xác nhận nhận hàng có chênh lệch (`POST /api/warehouse/transfers/1/receive`):
+```json
+{
+  "note": "Đã nhận hàng đợt 1 tại kho Hải Phòng",
+  "items": [
+    {
+      "itemId": 1,
+      "receivedQuantity": 9,
+      "discrepancyReason": "Bể vỡ 1 thùng trong quá trình vận chuyển trên đường"
+    }
+  ]
+}
+```
+
 ### Danh sách API Danh mục nhà cung cấp (S2-09)
 
 Hỗ trợ Nhân viên kho quản lý danh mục nhà cung cấp, để phiếu nhập kho luôn gắn đúng nguồn hàng nhằm truy nguyên khi có lô lỗi.

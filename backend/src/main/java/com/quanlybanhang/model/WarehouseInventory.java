@@ -43,6 +43,13 @@ public class WarehouseInventory {
     private BigDecimal baseQuantity = BigDecimal.ZERO;
 
     /**
+     * Số lượng hàng đang trên đường chuyển đến kho này theo đơn vị cơ sở (chưa xác nhận nhận).
+     */
+    @Column(name = "in_transit_quantity", precision = 15, scale = 4, nullable = false)
+    @Builder.Default
+    private BigDecimal inTransitQuantity = BigDecimal.ZERO;
+
+    /**
      * Tên đơn vị cơ sở (vd: "lon").
      */
     @Column(name = "base_unit", nullable = false, length = 50)
@@ -57,6 +64,9 @@ public class WarehouseInventory {
         this.updatedAt = LocalDateTime.now();
         if (this.baseQuantity == null) {
             this.baseQuantity = BigDecimal.ZERO;
+        }
+        if (this.inTransitQuantity == null) {
+            this.inTransitQuantity = BigDecimal.ZERO;
         }
     }
 
@@ -75,6 +85,27 @@ public class WarehouseInventory {
                 this.baseQuantity = BigDecimal.ZERO;
             }
             this.baseQuantity = this.baseQuantity.subtract(amount);
+        }
+    }
+
+    public void addInTransitQuantity(BigDecimal amount) {
+        if (amount != null) {
+            if (this.inTransitQuantity == null) {
+                this.inTransitQuantity = BigDecimal.ZERO;
+            }
+            this.inTransitQuantity = this.inTransitQuantity.add(amount);
+        }
+    }
+
+    public void subtractInTransitQuantity(BigDecimal amount) {
+        if (amount != null) {
+            if (this.inTransitQuantity == null) {
+                this.inTransitQuantity = BigDecimal.ZERO;
+            }
+            this.inTransitQuantity = this.inTransitQuantity.subtract(amount);
+            if (this.inTransitQuantity.compareTo(BigDecimal.ZERO) < 0) {
+                this.inTransitQuantity = BigDecimal.ZERO;
+            }
         }
     }
 }

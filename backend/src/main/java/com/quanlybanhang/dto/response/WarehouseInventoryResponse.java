@@ -33,6 +33,11 @@ public class WarehouseInventoryResponse {
     private BigDecimal baseQuantity;
 
     /**
+     * Số lượng hàng đang trên đường chuyển đến kho này theo đơn vị cơ sở.
+     */
+    private BigDecimal inTransitQuantity;
+
+    /**
      * Tên đơn vị cơ sở (vd: "lon").
      */
     private String baseUnit;

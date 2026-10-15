@@ -40,6 +40,7 @@ public enum Permission {
     WAREHOUSE_EXPORT("Xuất kho"),
     WAREHOUSE_ADJUST("Điều chỉnh tồn kho"),
     WAREHOUSE_APPROVE("Duyệt phiếu kho"),
+    WAREHOUSE_TRANSFER("Chuyển kho nội bộ"),
 
     // ── Khách hàng / Đại lý ──
     CUSTOMER_VIEW("Xem khách hàng"),

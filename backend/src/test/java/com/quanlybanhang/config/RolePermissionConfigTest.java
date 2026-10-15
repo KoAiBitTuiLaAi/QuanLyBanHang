@@ -76,6 +76,7 @@ class RolePermissionConfigTest {
         assertThat(permissions.hasPermission(ERole.ROLE_SALES, Permission.WAREHOUSE_ADJUST)).isFalse();
         assertThat(permissions.hasPermission(ERole.ROLE_SALES, Permission.WAREHOUSE_IMPORT)).isFalse();
         assertThat(permissions.hasPermission(ERole.ROLE_SALES, Permission.WAREHOUSE_EXPORT)).isFalse();
+        assertThat(permissions.hasPermission(ERole.ROLE_SALES, Permission.WAREHOUSE_TRANSFER)).isFalse();
     }
 
     @Test
@@ -85,6 +86,7 @@ class RolePermissionConfigTest {
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_STAFF, Permission.WAREHOUSE_IMPORT)).isTrue();
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_STAFF, Permission.WAREHOUSE_EXPORT)).isTrue();
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_STAFF, Permission.WAREHOUSE_VIEW)).isTrue();
+        assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_STAFF, Permission.WAREHOUSE_TRANSFER)).isTrue();
 
         // Không sửa / điều chỉnh tồn kho (chỉ Quản lý kho mới được sửa)
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_STAFF, Permission.WAREHOUSE_ADJUST)).isFalse();
@@ -100,6 +102,7 @@ class RolePermissionConfigTest {
     void warehouseManagerCanAdjustStockWithoutCostPrice() {
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_MANAGER, Permission.WAREHOUSE_ADJUST)).isTrue();
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_MANAGER, Permission.WAREHOUSE_APPROVE)).isTrue();
+        assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_MANAGER, Permission.WAREHOUSE_TRANSFER)).isTrue();
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_MANAGER, Permission.FINANCE_VIEW_COST_PRICE)).isFalse();
         assertThat(permissions.hasPermission(ERole.ROLE_WAREHOUSE_MANAGER, Permission.FINANCE_VIEW_PROFIT_MARGIN)).isFalse();
     }

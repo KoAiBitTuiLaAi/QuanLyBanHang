@@ -17,6 +17,16 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import com.quanlybanhang.dto.request.WarehouseTransferItemRequest;
+import com.quanlybanhang.dto.request.WarehouseTransferReceiveItemRequest;
+import com.quanlybanhang.dto.request.WarehouseTransferReceiveRequest;
+import com.quanlybanhang.dto.request.WarehouseTransferRequest;
+import com.quanlybanhang.dto.response.WarehouseTransferItemResponse;
+import com.quanlybanhang.dto.response.WarehouseTransferResponse;
+import com.quanlybanhang.model.WarehouseTransfer;
+import com.quanlybanhang.model.WarehouseTransferItem;
+import com.quanlybanhang.model.WarehouseTransferStatus;
+import com.quanlybanhang.repository.WarehouseTransferRepository;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,6 +39,7 @@ public class WarehouseServiceImpl implements WarehouseService {
     private final UnitConversionService unitConversionService;
     private final WarehouseVoucherRepository voucherRepository;
     private final WarehouseInventoryRepository inventoryRepository;
+    private final WarehouseTransferRepository warehouseTransferRepository;
     private final AuditLogService auditLogService;
 
     @Override
@@ -233,16 +244,20 @@ public class WarehouseServiceImpl implements WarehouseService {
         return warehouses.get(0);
     }
 
-    private Product resolveProduct(WarehouseVoucherItemRequest itemReq) {
-        if (itemReq.getProductId() != null) {
-            return productRepository.findById(itemReq.getProductId())
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy sản phẩm với ID: " + itemReq.getProductId()));
+    private Product resolveProduct(Long productId, String productCode) {
+        if (productId != null) {
+            return productRepository.findById(productId)
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy sản phẩm với ID: " + productId));
         }
-        if (itemReq.getProductCode() != null && !itemReq.getProductCode().isBlank()) {
-            return productRepository.findByCode(itemReq.getProductCode().trim().toUpperCase())
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy sản phẩm với mã: " + itemReq.getProductCode()));
+        if (productCode != null && !productCode.isBlank()) {
+            return productRepository.findByCode(productCode.trim().toUpperCase())
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy sản phẩm với mã: " + productCode));
         }
         throw new IllegalArgumentException("Cần cung cấp productId hoặc productCode");
+    }
+
+    private Product resolveProduct(WarehouseVoucherItemRequest itemReq) {
+        return resolveProduct(itemReq.getProductId(), itemReq.getProductCode());
     }
 
     private List<WarehouseVoucherItemRequest> normalizeItemRequests(WarehouseVoucherRequest request, WarehouseVoucherType type) {
@@ -331,9 +346,369 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .productCode(p != null ? p.getCode() : null)
                 .productName(p != null ? p.getName() : null)
                 .baseQuantity(inv.getBaseQuantity())
+                .inTransitQuantity(inv.getInTransitQuantity() != null ? inv.getInTransitQuantity() : BigDecimal.ZERO)
                 .baseUnit(inv.getBaseUnit())
                 .convertedViews(converted)
                 .updatedAt(inv.getUpdatedAt())
+                .build();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // CHUYỂN KHO NỘI BỘ (S5-07)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Override
+    @Transactional
+    public WarehouseTransferResponse createTransfer(WarehouseTransferRequest request, String username) {
+        if (request == null) {
+            throw new IllegalArgumentException("Không được để trống nội dung phiếu chuyển kho");
+        }
+        if (request.getFromWarehouseId() == null) {
+            throw new IllegalArgumentException("Kho xuất (kho đi) không được để trống");
+        }
+        if (request.getToWarehouseId() == null) {
+            throw new IllegalArgumentException("Kho nhập (kho đến) không được để trống");
+        }
+        if (Objects.equals(request.getFromWarehouseId(), request.getToWarehouseId())) {
+            throw new IllegalArgumentException("Kho xuất và kho nhập không được trùng nhau");
+        }
+
+        Warehouse fromWarehouse = warehouseRepository.findById(request.getFromWarehouseId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy kho xuất với ID: " + request.getFromWarehouseId()));
+        if (!Boolean.TRUE.equals(fromWarehouse.getActive())) {
+            throw new IllegalArgumentException("Kho xuất đã ngừng hoạt động");
+        }
+
+        Warehouse toWarehouse = warehouseRepository.findById(request.getToWarehouseId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy kho nhập với ID: " + request.getToWarehouseId()));
+        if (!Boolean.TRUE.equals(toWarehouse.getActive())) {
+            throw new IllegalArgumentException("Kho nhập đã ngừng hoạt động");
+        }
+
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new IllegalArgumentException("Phiếu chuyển kho phải có ít nhất 1 sản phẩm");
+        }
+
+        String transferCode = request.getTransferCode();
+        if (transferCode == null || transferCode.isBlank()) {
+            transferCode = "PCK-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
+        } else {
+            transferCode = transferCode.trim();
+            if (warehouseTransferRepository.existsByTransferCode(transferCode)) {
+                throw new IllegalArgumentException("Mã phiếu chuyển kho '" + transferCode + "' đã tồn tại");
+            }
+        }
+
+        WarehouseTransfer transfer = WarehouseTransfer.builder()
+                .transferCode(transferCode)
+                .fromWarehouse(fromWarehouse)
+                .toWarehouse(toWarehouse)
+                .status(WarehouseTransferStatus.IN_TRANSIT)
+                .note(request.getNote())
+                .createdBy(username != null ? username : "system")
+                .createdAt(LocalDateTime.now())
+                .dispatchedAt(LocalDateTime.now())
+                .items(new ArrayList<>())
+                .build();
+
+        for (WarehouseTransferItemRequest itemReq : request.getItems()) {
+            if (itemReq == null) {
+                throw new IllegalArgumentException("Dòng sản phẩm chuyển kho không được để trống");
+            }
+            Product product = resolveProduct(itemReq.getProductId(), itemReq.getProductCode());
+
+            String unit = itemReq.getUnit();
+            if (unit == null || unit.isBlank()) {
+                unit = product.getUnit();
+            } else {
+                unit = unit.trim();
+            }
+
+            BigDecimal qty = itemReq.getQuantity();
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Số lượng cho sản phẩm '" + product.getCode() + "' phải lớn hơn 0");
+            }
+
+            BigDecimal factor = unitConversionService.getConversionFactor(product, unit);
+            BigDecimal baseQty = qty.multiply(factor);
+
+            // Kiểm tra tồn kho thực tế tại kho xuất
+            WarehouseInventory fromInventory = inventoryRepository
+                    .findByWarehouseIdAndProductId(fromWarehouse.getId(), product.getId())
+                    .orElse(null);
+            BigDecimal available = (fromInventory != null && fromInventory.getBaseQuantity() != null)
+                    ? fromInventory.getBaseQuantity() : BigDecimal.ZERO;
+
+            if (available.compareTo(baseQty) < 0) {
+                throw new IllegalArgumentException("Kho xuất '" + fromWarehouse.getName() + "' không đủ tồn kho để chuyển sản phẩm '"
+                        + product.getName() + "'. Tồn hiện tại: " + available + " " + product.getUnit()
+                        + ", yêu cầu chuyển: " + baseQty + " " + product.getUnit() + " (" + qty + " " + unit + ")");
+            }
+
+            // Trừ tồn kho tại kho xuất ngay khi xuất chuyển
+            fromInventory.subtractBaseQuantity(baseQty);
+            inventoryRepository.save(fromInventory);
+
+            // Ghi nhận hàng đang trên đường đến kho nhập (CHƯA cộng vào tồn kho đến!)
+            WarehouseInventory toInventory = inventoryRepository
+                    .findByWarehouseIdAndProductId(toWarehouse.getId(), product.getId())
+                    .orElseGet(() -> WarehouseInventory.builder()
+                            .warehouse(toWarehouse)
+                            .product(product)
+                            .baseQuantity(BigDecimal.ZERO)
+                            .inTransitQuantity(BigDecimal.ZERO)
+                            .baseUnit(product.getUnit())
+                            .build());
+            toInventory.addInTransitQuantity(baseQty);
+            inventoryRepository.save(toInventory);
+
+            // Tạo chi tiết phiếu chuyển
+            WarehouseTransferItem item = WarehouseTransferItem.builder()
+                    .product(product)
+                    .unit(unit)
+                    .quantity(qty)
+                    .conversionFactor(factor)
+                    .baseUnit(product.getUnit())
+                    .baseQuantity(baseQty)
+                    .note(itemReq.getNote())
+                    .build();
+            transfer.addItem(item);
+
+            auditLogService.logAction(
+                    "INVENTORY",
+                    fromWarehouse.getCode() + "->" + toWarehouse.getCode() + ":" + product.getCode(),
+                    "TRANSFER_DISPATCH",
+                    available.toPlainString() + " " + product.getUnit(),
+                    fromInventory.getBaseQuantity().toPlainString() + " " + product.getUnit(),
+                    username != null ? username : "system");
+        }
+
+        WarehouseTransfer saved = warehouseTransferRepository.save(transfer);
+        return mapToTransferResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public WarehouseTransferResponse receiveTransfer(Long transferId, WarehouseTransferReceiveRequest request, String username) {
+        WarehouseTransfer transfer = warehouseTransferRepository.findById(transferId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu chuyển kho với ID: " + transferId));
+
+        if (transfer.getStatus() != WarehouseTransferStatus.IN_TRANSIT) {
+            throw new IllegalStateException("Phiếu chuyển kho đang ở trạng thái '" + transfer.getStatus()
+                    + "', không thể xác nhận nhận hàng");
+        }
+
+        Map<Long, WarehouseTransferReceiveItemRequest> itemReqMap = new HashMap<>();
+        if (request != null && request.getItems() != null) {
+            for (WarehouseTransferReceiveItemRequest rItem : request.getItems()) {
+                if (rItem.getItemId() != null) {
+                    itemReqMap.put(rItem.getItemId(), rItem);
+                } else if (rItem.getProductId() != null) {
+                    itemReqMap.put(rItem.getProductId(), rItem);
+                }
+            }
+        }
+
+        for (WarehouseTransferItem item : transfer.getItems()) {
+            WarehouseTransferReceiveItemRequest receiveItemReq = itemReqMap.get(item.getId());
+            if (receiveItemReq == null && item.getProduct() != null) {
+                receiveItemReq = itemReqMap.get(item.getProduct().getId());
+            }
+
+            BigDecimal receivedQty;
+            String discrepancyReason = null;
+            if (receiveItemReq != null && receiveItemReq.getReceivedQuantity() != null) {
+                receivedQty = receiveItemReq.getReceivedQuantity();
+                if (receivedQty.compareTo(BigDecimal.ZERO) < 0) {
+                    throw new IllegalArgumentException("Số lượng nhận không được âm");
+                }
+                discrepancyReason = receiveItemReq.getDiscrepancyReason();
+            } else {
+                receivedQty = item.getQuantity(); // Mặc định nhận đủ
+            }
+
+            BigDecimal factor = item.getConversionFactor();
+            BigDecimal receivedBaseQty = receivedQty.multiply(factor);
+            BigDecimal discrepancyQty = item.getQuantity().subtract(receivedQty);
+            BigDecimal discrepancyBaseQty = item.getBaseQuantity().subtract(receivedBaseQty);
+
+            // Kiểm tra chênh lệch: nếu có chênh lệch thì BẮT BUỘC phải nhập lý do!
+            if (discrepancyBaseQty.compareTo(BigDecimal.ZERO) != 0) {
+                if (discrepancyReason == null || discrepancyReason.isBlank()) {
+                    throw new IllegalArgumentException("Chênh lệch khi nhận hàng cho sản phẩm '"
+                            + item.getProduct().getName() + "' bắt buộc phải nhập lý do (Xuất: "
+                            + item.getQuantity() + " " + item.getUnit() + ", Nhận: " + receivedQty + " " + item.getUnit() + ")");
+                }
+                item.setDiscrepancyReason(discrepancyReason.trim());
+            }
+
+            item.setReceivedQuantity(receivedQty);
+            item.setReceivedBaseQuantity(receivedBaseQty);
+            item.setDiscrepancyQuantity(discrepancyQty);
+            item.setDiscrepancyBaseQuantity(discrepancyBaseQty);
+
+            // Cập nhật tồn kho tại kho đến:
+            // 1. Trừ số lượng hàng đang trên đường (baseQuantity ban đầu đã xuất)
+            // 2. Chỉ cộng số lượng thực tế nhận được (receivedBaseQty) vào tồn kho cơ sở
+            WarehouseInventory toInventory = inventoryRepository
+                    .findByWarehouseIdAndProductId(transfer.getToWarehouse().getId(), item.getProduct().getId())
+                    .orElseGet(() -> WarehouseInventory.builder()
+                            .warehouse(transfer.getToWarehouse())
+                            .product(item.getProduct())
+                            .baseQuantity(BigDecimal.ZERO)
+                            .inTransitQuantity(BigDecimal.ZERO)
+                            .baseUnit(item.getBaseUnit())
+                            .build());
+
+            BigDecimal beforeStock = toInventory.getBaseQuantity() != null ? toInventory.getBaseQuantity() : BigDecimal.ZERO;
+            toInventory.subtractInTransitQuantity(item.getBaseQuantity());
+            toInventory.addBaseQuantity(receivedBaseQty);
+            inventoryRepository.save(toInventory);
+
+            auditLogService.logAction(
+                    "INVENTORY",
+                    transfer.getToWarehouse().getCode() + ":" + item.getProduct().getCode(),
+                    "TRANSFER_RECEIVE",
+                    beforeStock.toPlainString() + " " + item.getBaseUnit(),
+                    toInventory.getBaseQuantity().toPlainString() + " " + item.getBaseUnit(),
+                    username != null ? username : "system");
+        }
+
+        transfer.setStatus(WarehouseTransferStatus.COMPLETED);
+        transfer.setReceivedBy(username != null ? username : "system");
+        transfer.setReceivedAt(LocalDateTime.now());
+        if (request != null && request.getNote() != null && !request.getNote().isBlank()) {
+            transfer.setReceiveNote(request.getNote().trim());
+        }
+
+        WarehouseTransfer saved = warehouseTransferRepository.save(transfer);
+        return mapToTransferResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public WarehouseTransferResponse cancelTransfer(Long transferId, String reason, String username) {
+        WarehouseTransfer transfer = warehouseTransferRepository.findById(transferId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu chuyển kho với ID: " + transferId));
+
+        if (transfer.getStatus() != WarehouseTransferStatus.IN_TRANSIT) {
+            throw new IllegalStateException("Chỉ phiếu chuyển kho đang ở trạng thái 'IN_TRANSIT' mới có thể hủy");
+        }
+
+        for (WarehouseTransferItem item : transfer.getItems()) {
+            // Hoàn lại tồn kho cho kho xuất
+            WarehouseInventory fromInventory = inventoryRepository
+                    .findByWarehouseIdAndProductId(transfer.getFromWarehouse().getId(), item.getProduct().getId())
+                    .orElseGet(() -> WarehouseInventory.builder()
+                            .warehouse(transfer.getFromWarehouse())
+                            .product(item.getProduct())
+                            .baseQuantity(BigDecimal.ZERO)
+                            .inTransitQuantity(BigDecimal.ZERO)
+                            .baseUnit(item.getBaseUnit())
+                            .build());
+            fromInventory.addBaseQuantity(item.getBaseQuantity());
+            inventoryRepository.save(fromInventory);
+
+            // Xóa hàng đang trên đường tại kho nhập
+            WarehouseInventory toInventory = inventoryRepository
+                    .findByWarehouseIdAndProductId(transfer.getToWarehouse().getId(), item.getProduct().getId())
+                    .orElse(null);
+            if (toInventory != null) {
+                toInventory.subtractInTransitQuantity(item.getBaseQuantity());
+                inventoryRepository.save(toInventory);
+            }
+
+            auditLogService.logAction(
+                    "INVENTORY",
+                    transfer.getFromWarehouse().getCode() + ":" + item.getProduct().getCode(),
+                    "TRANSFER_CANCEL",
+                    "inTransit-" + item.getBaseQuantity(),
+                    fromInventory.getBaseQuantity().toPlainString() + " " + item.getBaseUnit(),
+                    username != null ? username : "system");
+        }
+
+        transfer.setStatus(WarehouseTransferStatus.CANCELLED);
+        transfer.setCancelledBy(username != null ? username : "system");
+        transfer.setCancelledAt(LocalDateTime.now());
+        transfer.setCancelReason(reason != null ? reason.trim() : null);
+
+        WarehouseTransfer saved = warehouseTransferRepository.save(transfer);
+        return mapToTransferResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WarehouseTransferResponse> getTransfers(Long fromWarehouseId, Long toWarehouseId, WarehouseTransferStatus status) {
+        List<WarehouseTransfer> list = warehouseTransferRepository.findAllByOrderByCreatedAtDesc();
+        return list.stream()
+                .filter(t -> fromWarehouseId == null || (t.getFromWarehouse() != null && Objects.equals(t.getFromWarehouse().getId(), fromWarehouseId)))
+                .filter(t -> toWarehouseId == null || (t.getToWarehouse() != null && Objects.equals(t.getToWarehouse().getId(), toWarehouseId)))
+                .filter(t -> status == null || t.getStatus() == status)
+                .map(this::mapToTransferResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WarehouseTransferResponse getTransferById(Long id) {
+        WarehouseTransfer transfer = warehouseTransferRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu chuyển kho với ID: " + id));
+        return mapToTransferResponse(transfer);
+    }
+
+    private WarehouseTransferResponse mapToTransferResponse(WarehouseTransfer transfer) {
+        List<WarehouseTransferItemResponse> items = transfer.getItems() != null
+                ? transfer.getItems().stream().map(this::mapToTransferItemResponse).collect(Collectors.toList())
+                : Collections.emptyList();
+
+        String statusDesc = switch (transfer.getStatus()) {
+            case IN_TRANSIT -> "Đang trên đường";
+            case COMPLETED -> "Đã nhận hàng";
+            case CANCELLED -> "Đã hủy";
+        };
+
+        return WarehouseTransferResponse.builder()
+                .id(transfer.getId())
+                .transferCode(transfer.getTransferCode())
+                .fromWarehouseId(transfer.getFromWarehouse() != null ? transfer.getFromWarehouse().getId() : null)
+                .fromWarehouseCode(transfer.getFromWarehouse() != null ? transfer.getFromWarehouse().getCode() : null)
+                .fromWarehouseName(transfer.getFromWarehouse() != null ? transfer.getFromWarehouse().getName() : null)
+                .toWarehouseId(transfer.getToWarehouse() != null ? transfer.getToWarehouse().getId() : null)
+                .toWarehouseCode(transfer.getToWarehouse() != null ? transfer.getToWarehouse().getCode() : null)
+                .toWarehouseName(transfer.getToWarehouse() != null ? transfer.getToWarehouse().getName() : null)
+                .status(transfer.getStatus())
+                .statusDescription(statusDesc)
+                .note(transfer.getNote())
+                .receiveNote(transfer.getReceiveNote())
+                .cancelReason(transfer.getCancelReason())
+                .createdBy(transfer.getCreatedBy())
+                .createdAt(transfer.getCreatedAt())
+                .dispatchedAt(transfer.getDispatchedAt())
+                .receivedBy(transfer.getReceivedBy())
+                .receivedAt(transfer.getReceivedAt())
+                .cancelledBy(transfer.getCancelledBy())
+                .cancelledAt(transfer.getCancelledAt())
+                .items(items)
+                .build();
+    }
+
+    private WarehouseTransferItemResponse mapToTransferItemResponse(WarehouseTransferItem item) {
+        return WarehouseTransferItemResponse.builder()
+                .id(item.getId())
+                .productId(item.getProduct() != null ? item.getProduct().getId() : null)
+                .productCode(item.getProduct() != null ? item.getProduct().getCode() : null)
+                .productName(item.getProduct() != null ? item.getProduct().getName() : null)
+                .unit(item.getUnit())
+                .quantity(item.getQuantity())
+                .conversionFactor(item.getConversionFactor())
+                .baseUnit(item.getBaseUnit())
+                .baseQuantity(item.getBaseQuantity())
+                .receivedQuantity(item.getReceivedQuantity())
+                .receivedBaseQuantity(item.getReceivedBaseQuantity())
+                .discrepancyQuantity(item.getDiscrepancyQuantity())
+                .discrepancyBaseQuantity(item.getDiscrepancyBaseQuantity())
+                .discrepancyReason(item.getDiscrepancyReason())
+                .note(item.getNote())
                 .build();
     }
 }
