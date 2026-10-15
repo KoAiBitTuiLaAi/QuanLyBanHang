@@ -219,4 +219,15 @@ public class OrderController {
         JsonNode draftNode = orderService.copyOrderToDraft(id, username);
         return ApiResponse.success("Đã sao chép đơn cũ vào bản nháp tạo đơn", draftNode);
     }
+
+    /**
+     * S4-04: Thêm nhanh cả nhóm hàng đã mua lần trước của đại lý vào bản nháp tạo đơn mới.
+     */
+    @PostMapping("/dealer/{dealerId}/last-order-to-draft")
+    @PreAuthorize("hasAuthority('ORDER_CREATE') or hasAnyRole('SALES', 'SALES_MANAGER', 'ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    public ApiResponse copyLastOrderToDraft(@PathVariable Long dealerId, Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        JsonNode draftNode = orderService.copyLastOrderToDraft(dealerId, username);
+        return ApiResponse.success("Đã thêm nhanh nhóm hàng mua lần trước vào bản nháp tạo đơn", draftNode);
+    }
 }

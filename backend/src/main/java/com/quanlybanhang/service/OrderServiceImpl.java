@@ -1182,6 +1182,61 @@ public class OrderServiceImpl implements OrderService {
         return draft;
     }
 
+    @Override
+    @Transactional
+    public JsonNode copyLastOrderToDraft(Long dealerId, String username) {
+        Dealer dealer = dealerRepository.findById(dealerId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + dealerId));
+
+        if (Boolean.TRUE.equals(dealer.getLocked())) {
+            throw new DealerLockedException(dealer.getCode(), dealer.getName(), dealer.getLockReason());
+        }
+        if (Boolean.FALSE.equals(dealer.getActive())) {
+            throw new IllegalArgumentException(String.format("Đại lý '%s' (%s) đã ngừng giao dịch, không thể sao chép đơn hàng.",
+                    dealer.getName(), dealer.getCode()));
+        }
+
+        validateSalesAccessForDealer(dealer, username);
+
+        List<Order> validOrders = orderRepository.findByDealerIdAndStatusNotInOrderByCreatedAtDesc(
+                dealerId, List.of("CANCELLED", "REJECTED", "PENDING_APPROVAL"));
+        if (validOrders.isEmpty()) {
+            throw new IllegalArgumentException(String.format("Đại lý '%s' chưa có đơn hàng nào trước đây để sao chép.", dealer.getName()));
+        }
+
+        Order lastOrder = validOrders.get(0);
+        return copyOrderToDraft(lastOrder.getId(), username);
+    }
+
+    private void validateSalesAccessForDealer(Dealer dealer, String username) {
+        if (username == null || username.isBlank() || "system".equalsIgnoreCase(username) || "admin".equalsIgnoreCase(username)) {
+            return;
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return;
+        }
+        boolean isAdminOrManager = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_SALES_MANAGER".equals(a.getAuthority()));
+        if (isAdminOrManager) {
+            return;
+        }
+
+        boolean isSales = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_SALES".equals(a.getAuthority()));
+        if (!isSales) {
+            return;
+        }
+
+        if (dealer.getAssignedUser() != null
+                && dealer.getAssignedUser().getUsername() != null
+                && dealer.getAssignedUser().getUsername().equalsIgnoreCase(username)) {
+            return;
+        }
+
+        throw new AccessDeniedException("Bạn không có quyền thao tác với đại lý này");
+    }
+
     private void validateSalesAccess(Order order, String username) {
         if (username == null || username.isBlank() || "system".equalsIgnoreCase(username) || "admin".equalsIgnoreCase(username)) {
             return;

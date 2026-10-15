@@ -17,11 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -539,6 +538,185 @@ public class DealerServiceImpl implements DealerService {
         return dealerAssignmentHistoryRepository.findByDealerIdOrderByTransferredAtDesc(dealerId).stream()
                 .map(this::mapToHistoryResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DealerPurchaseHistoryResponse> getDealerPurchaseHistory(Long dealerId, int months, boolean lastOrderOnly) {
+        Dealer dealer = dealerRepository.findById(dealerId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + dealerId));
+
+        // S4-04: Chỉ hiện với đại lý mà nhân viên được phân công
+        validateSalesAccess(dealer);
+
+        List<String> excludedStatuses = List.of("CANCELLED", "REJECTED", "PENDING_APPROVAL");
+
+        // Tìm đơn hàng hợp lệ gần nhất của đại lý
+        List<Order> latestOrders = orderRepository.findByDealerIdAndStatusNotInOrderByCreatedAtDesc(dealerId, excludedStatuses);
+        Order veryLastOrder = latestOrders.isEmpty() ? null : latestOrders.get(0);
+        Set<Long> lastOrderProductIds = new HashSet<>();
+        if (veryLastOrder != null && veryLastOrder.getItems() != null) {
+            for (OrderItem oi : veryLastOrder.getItems()) {
+                if (oi.getProduct() != null) {
+                    lastOrderProductIds.add(oi.getProduct().getId());
+                }
+            }
+        }
+
+        // Nếu chỉ lấy nhóm hàng trong đơn gần nhất
+        if (lastOrderOnly) {
+            if (veryLastOrder == null || veryLastOrder.getItems() == null || veryLastOrder.getItems().isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<DealerPurchaseHistoryResponse> lastOrderList = new ArrayList<>();
+            LocalDate lastOrderDate = veryLastOrder.getCreatedAt() != null ? veryLastOrder.getCreatedAt().toLocalDate() : LocalDate.now();
+            for (OrderItem item : veryLastOrder.getItems()) {
+                Product p = item.getProduct();
+                if (p == null) continue;
+                lastOrderList.add(DealerPurchaseHistoryResponse.builder()
+                        .productId(p.getId())
+                        .sku(p.getSku())
+                        .code(p.getCode())
+                        .name(p.getName())
+                        .unit(item.getUnit() != null ? item.getUnit() : p.getUnit())
+                        .avgQty(item.getQuantity())
+                        .orderCount(1)
+                        .totalQuantity(item.getQuantity())
+                        .lastOrderDate(lastOrderDate)
+                        .lastOrderQuantity(item.getQuantity())
+                        .lastOrderUnit(item.getUnit())
+                        .inLastOrder(true)
+                        .lastOrderCode(veryLastOrder.getOrderCode())
+                        .build());
+            }
+            return lastOrderList;
+        }
+
+        // Lấy các đơn hàng trong khoảng thời gian N tháng gần nhất (mặc định 3 tháng)
+        int effectiveMonths = months > 0 ? months : 3;
+        LocalDateTime cutoffDate = LocalDateTime.now().minusMonths(effectiveMonths);
+        List<Order> periodOrders = orderRepository.findPurchasedOrdersInPeriod(dealerId, excludedStatuses, cutoffDate);
+
+        if (periodOrders.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<Long, ProductPurchaseStats> statsMap = new LinkedHashMap<>();
+
+        for (Order order : periodOrders) {
+            if (order.getItems() == null) continue;
+            LocalDate orderDate = order.getRecordedAt() != null ? order.getRecordedAt().toLocalDate()
+                    : (order.getCreatedAt() != null ? order.getCreatedAt().toLocalDate() : LocalDate.now());
+            String orderCode = order.getOrderCode();
+
+            for (OrderItem item : order.getItems()) {
+                Product p = item.getProduct();
+                if (p == null) continue;
+
+                ProductPurchaseStats stats = statsMap.computeIfAbsent(p.getId(), id -> new ProductPurchaseStats(p));
+                stats.recordItem(order.getId(), orderDate, orderCode, item, lastOrderProductIds.contains(p.getId()));
+            }
+        }
+
+        List<DealerPurchaseHistoryResponse> result = new ArrayList<>();
+        for (ProductPurchaseStats stats : statsMap.values()) {
+            result.add(stats.toResponse());
+        }
+
+        // Sắp xếp: nhóm hàng trong đơn gần nhất lên đầu, tiếp theo là ngày mua gần nhất, sau đó là tần suất mua
+        result.sort(Comparator
+                .comparing((DealerPurchaseHistoryResponse r) -> Boolean.TRUE.equals(r.getInLastOrder()) ? 0 : 1)
+                .thenComparing(DealerPurchaseHistoryResponse::getLastOrderDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(DealerPurchaseHistoryResponse::getOrderCount, Comparator.reverseOrder())
+                .thenComparing(DealerPurchaseHistoryResponse::getName, String.CASE_INSENSITIVE_ORDER));
+
+        return result;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DealerPurchaseHistoryResponse> getDealerLastOrderItems(Long dealerId) {
+        return getDealerPurchaseHistory(dealerId, 3, true);
+    }
+
+    private void validateSalesAccess(Dealer dealer) {
+        if (isSalesOnlyUser()) {
+            User currentUser = getCurrentUser();
+            if (currentUser != null && (dealer.getAssignedUser() == null || !dealer.getAssignedUser().getId().equals(currentUser.getId()))) {
+                throw new AccessDeniedException("Bạn chỉ có quyền xem đại lý do mình phụ trách");
+            }
+        }
+    }
+
+    private static class ProductPurchaseStats {
+        private final Product product;
+        private String primaryUnit;
+        private BigDecimal primaryFactor;
+        private LocalDate lastOrderDate;
+        private BigDecimal lastOrderQuantity;
+        private String lastOrderUnit;
+        private String lastOrderCode;
+        private boolean inLastOrder;
+        private final Set<Long> distinctOrderIds = new HashSet<>();
+        private BigDecimal totalQtyInPrimaryUnit = BigDecimal.ZERO;
+
+        public ProductPurchaseStats(Product product) {
+            this.product = product;
+        }
+
+        public void recordItem(Long orderId, LocalDate orderDate, String orderCode, OrderItem item, boolean inLastOrder) {
+            this.inLastOrder = inLastOrder;
+            if (this.primaryUnit == null) {
+                this.primaryUnit = item.getUnit() != null ? item.getUnit() : product.getUnit();
+                this.primaryFactor = item.getConversionFactor() != null && item.getConversionFactor().compareTo(BigDecimal.ZERO) > 0
+                        ? item.getConversionFactor() : BigDecimal.ONE;
+                this.lastOrderDate = orderDate;
+                this.lastOrderQuantity = item.getQuantity();
+                this.lastOrderUnit = item.getUnit();
+                this.lastOrderCode = orderCode;
+            }
+
+            distinctOrderIds.add(orderId);
+
+            BigDecimal qty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+            if (item.getUnit() != null && item.getUnit().equalsIgnoreCase(primaryUnit)) {
+                totalQtyInPrimaryUnit = totalQtyInPrimaryUnit.add(qty);
+            } else if (item.getBaseQuantity() != null && primaryFactor != null && primaryFactor.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal converted = item.getBaseQuantity().divide(primaryFactor, 4, RoundingMode.HALF_UP);
+                totalQtyInPrimaryUnit = totalQtyInPrimaryUnit.add(converted);
+            } else {
+                totalQtyInPrimaryUnit = totalQtyInPrimaryUnit.add(qty);
+            }
+        }
+
+        public DealerPurchaseHistoryResponse toResponse() {
+            int orderCount = Math.max(1, distinctOrderIds.size());
+            BigDecimal avgQty = totalQtyInPrimaryUnit.divide(BigDecimal.valueOf(orderCount), 2, RoundingMode.HALF_UP).stripTrailingZeros();
+            if (avgQty.scale() < 0) {
+                avgQty = avgQty.setScale(0);
+            }
+
+            BigDecimal totalQty = totalQtyInPrimaryUnit.stripTrailingZeros();
+            if (totalQty.scale() < 0) {
+                totalQty = totalQty.setScale(0);
+            }
+
+            return DealerPurchaseHistoryResponse.builder()
+                    .productId(product.getId())
+                    .sku(product.getSku())
+                    .code(product.getCode())
+                    .name(product.getName())
+                    .unit(primaryUnit)
+                    .avgQty(avgQty)
+                    .orderCount(orderCount)
+                    .totalQuantity(totalQty)
+                    .lastOrderDate(lastOrderDate)
+                    .lastOrderQuantity(lastOrderQuantity)
+                    .lastOrderUnit(lastOrderUnit)
+                    .inLastOrder(inLastOrder)
+                    .lastOrderCode(lastOrderCode)
+                    .build();
+        }
     }
 
     // ── Helper methods ──

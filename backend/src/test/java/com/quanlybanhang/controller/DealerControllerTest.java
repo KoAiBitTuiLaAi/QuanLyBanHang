@@ -62,6 +62,9 @@ class DealerControllerTest {
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @MockBean
+    private com.quanlybanhang.service.OrderService orderService;
+
     @BeforeEach
     void passThroughJwtFilter() throws Exception {
         doAnswer(invocation -> {

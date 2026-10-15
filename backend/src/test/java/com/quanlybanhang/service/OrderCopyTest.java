@@ -42,6 +42,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -260,6 +261,63 @@ class OrderCopyTest {
         assertThatThrownBy(() -> orderService.copyOrder(1L, "sales02"))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("Bạn không có quyền sao chép đơn hàng này");
+    }
+
+    @Test
+    @DisplayName("S4-04: Thêm nhanh nhóm hàng từ đơn gần nhất vào bản nháp tạo đơn")
+    void copyLastOrderToDraft_Success() {
+        when(dealerRepository.findById(1L)).thenReturn(Optional.of(dealer));
+        when(orderRepository.findByDealerIdAndStatusNotInOrderByCreatedAtDesc(eq(1L), anyCollection()))
+                .thenReturn(List.of(sourceOrder));
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(sourceOrder));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "sales01", "pass", List.of(new SimpleGrantedAuthority("ROLE_SALES"), new SimpleGrantedAuthority("ORDER_CREATE"))
+                )
+        );
+
+        JsonNode draftNode = orderService.copyLastOrderToDraft(1L, "sales01");
+
+        assertThat(draftNode).isNotNull();
+        assertThat(draftNode.get("dealerId").asLong()).isEqualTo(1L);
+        assertThat(draftNode.get("items")).isNotEmpty();
+        assertThat(draftNode.get("items").get(0).get("productId").asLong()).isEqualTo(10L);
+        assertThat(draftNode.get("items").get(0).get("qty").asInt()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("S4-04: Báo lỗi khi đại lý chưa có đơn hàng nào trước đây để thêm nhanh")
+    void copyLastOrderToDraft_NoPreviousOrders_ThrowsIllegalArgument() {
+        when(dealerRepository.findById(1L)).thenReturn(Optional.of(dealer));
+        when(orderRepository.findByDealerIdAndStatusNotInOrderByCreatedAtDesc(eq(1L), anyCollection()))
+                .thenReturn(Collections.emptyList());
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "sales01", "pass", List.of(new SimpleGrantedAuthority("ROLE_SALES"), new SimpleGrantedAuthority("ORDER_CREATE"))
+                )
+        );
+
+        assertThatThrownBy(() -> orderService.copyLastOrderToDraft(1L, "sales01"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("chưa có đơn hàng nào trước đây");
+    }
+
+    @Test
+    @DisplayName("S4-04: Phân quyền RLS - Chặn nhân viên kinh doanh khác thêm nhanh đơn của đại lý không phụ trách")
+    void copyLastOrderToDraft_SalesNotAssigned_ThrowsAccessDenied() {
+        when(dealerRepository.findById(1L)).thenReturn(Optional.of(dealer));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "sales02", "pass", List.of(new SimpleGrantedAuthority("ROLE_SALES"), new SimpleGrantedAuthority("ORDER_CREATE"))
+                )
+        );
+
+        assertThatThrownBy(() -> orderService.copyLastOrderToDraft(1L, "sales02"))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Bạn không có quyền thao tác với đại lý này");
     }
 }
 

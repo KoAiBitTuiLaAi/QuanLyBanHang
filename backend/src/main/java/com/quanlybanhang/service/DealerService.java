@@ -83,4 +83,17 @@ public interface DealerService {
             Pageable pageable);
 
     List<DealerAssignmentHistoryResponse> getDealerAssignmentHistory(Long dealerId);
+
+    /**
+     * S4-04: Lấy lịch sử mua hàng của đại lý trong N tháng gần nhất kèm số lượng bình quân (mặc định 3 tháng).
+     * @param dealerId ID đại lý
+     * @param months Số tháng gần nhất (mặc định 3)
+     * @param lastOrderOnly Chỉ lấy nhóm hàng trong đơn gần nhất
+     */
+    List<com.quanlybanhang.dto.response.DealerPurchaseHistoryResponse> getDealerPurchaseHistory(Long dealerId, int months, boolean lastOrderOnly);
+
+    /**
+     * S4-04: Lấy nhóm hàng đã mua trong đơn hàng gần nhất của đại lý để thêm nhanh vào đơn mới.
+     */
+    List<com.quanlybanhang.dto.response.DealerPurchaseHistoryResponse> getDealerLastOrderItems(Long dealerId);
 }

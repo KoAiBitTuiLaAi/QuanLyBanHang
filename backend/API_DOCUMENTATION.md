@@ -424,6 +424,9 @@ Trạng thái dùng `active`, không dùng chuỗi `status`; người liên hệ
 | PUT | `/orders/{id}/cancel` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Hủy đơn hàng |
 | PUT | `/orders/{id}/approve` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Phê duyệt đơn hàng bán dưới giá sàn (chuyển trạng thái sang `RECORDED`) |
 | PUT | `/orders/{id}/reject?reason={ly_do}` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Từ chối đơn hàng bán dưới giá sàn (chuyển trạng thái sang `REJECTED`) |
+| POST | `/orders/{id}/copy` | `ORDER_CREATE`, `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Sao chép đơn cũ thành đơn mới ở trạng thái Nháp (áp lại giá và chiết khấu hiện hành) (S4-09) |
+| POST | `/orders/{id}/copy-to-draft` | `ORDER_CREATE`, `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Sao chép các dòng hàng của đơn cũ vào bản nháp tạo đơn của người dùng (S4-09) |
+| POST | `/orders/dealer/{dealerId}/last-order-to-draft` | `ORDER_CREATE`, `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Thêm nhanh cả nhóm hàng đã mua lần trước của đại lý vào bản nháp tạo đơn mới (S4-04) |
 
 ### Tự động áp dụng Bảng giá, Chiết khấu sản lượng & Kiểm soát Giá sàn khi Đặt hàng (S4-01)
 
@@ -902,6 +905,9 @@ Quy tắc nghiệp vụ:
 | GET | `/dealers/handover/pending` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Danh sách các đại lý đang cần bàn giao (có cờ `handoverRequired` do nhân viên bị khoá/nghỉ) |
 | GET | `/dealers/handover/history` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_ACCOUNTANT`, `ROLE_VIEWER` | Tra cứu lịch sử chuyển giao địa bàn và đại lý (phân trang, lọc theo người giao, người nhận, đại lý, khu vực, khoảng thời gian) |
 | GET | `/dealers/{id}/assignment-history` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_ACCOUNTANT`, `ROLE_SALES`, `ROLE_VIEWER` | Lịch sử phân công của riêng một đại lý cụ thể |
+| GET | `/dealers/{id}/purchase-history?months={n}&lastOrderOnly={true/false}` | `ORDER_CREATE`, `ORDER_VIEW`, `CUSTOMER_VIEW`, `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF` | Lấy lịch sử mua hàng trong N tháng gần nhất kèm số lượng bình quân (mặc định 3 tháng) và cờ `inLastOrder`. RLS: SALES chỉ xem đại lý mình phụ trách (S4-04) |
+| GET | `/dealers/{id}/last-order-items` | `ORDER_CREATE`, `ORDER_VIEW`, `CUSTOMER_VIEW`, `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF` | Lấy danh sách nhóm hàng đã mua trong đơn hàng gần nhất của đại lý (S4-04) |
+| POST | `/dealers/{id}/last-order-to-draft` | `ORDER_CREATE`, `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF` | Thêm nhanh cả nhóm hàng đã mua lần trước vào bản nháp tạo đơn của người dùng (S4-04) |
 
 #### Ví dụ Request Phân công một đại lý (`POST /api/dealers/1/assign`):
 ```json
@@ -1042,6 +1048,108 @@ Quy tắc nghiệp vụ:
     "maxDebtDays": 30,
     "overdueAmount": 15000000,
     "errorType": "DEALER_DEBT_OVERDUE"
+  }
+}
+```
+
+### Xem Lịch sử mua hàng & Thêm nhanh nhóm hàng mua lần trước vào đơn mới (S4-04)
+
+Hỗ trợ Nhân viên kinh doanh xem lịch sử mua hàng của đại lý ngay khi gõ đơn, giúp gợi ý đúng các mặt hàng khách hàng vẫn lấy đều đặn thay vì phải hỏi lại, đồng thời hỗ trợ thêm nhanh toàn bộ nhóm hàng đã mua trong đơn hàng gần nhất vào đơn mới.
+
+#### Quy tắc nghiệp vụ cốt lõi:
+1. **Lịch sử mua hàng 3 tháng gần nhất & Số lượng bình quân**:
+   - Khoảng thời gian mặc định: 3 tháng gần nhất tính từ thời điểm hiện tại (`months = 3`). Hỗ trợ tuỳ chỉnh số tháng qua tham số query `?months={n}`.
+   - Chỉ tổng hợp các đơn hàng hợp lệ đã ghi sổ (`RECORDED`). Đơn hàng bị huỷ (`CANCELLED`), bị từ chối (`REJECTED`) hoặc đang chờ duyệt (`PENDING_APPROVAL`) không được tính vào lịch sử mua hàng.
+   - Tính toán số lượng bình quân (`avgQty`): Số lượng bình quân mỗi đơn mà đại lý đã đặt cho từng sản phẩm trong kỳ (`totalQuantity / orderCount`), được quy về đơn vị đặt hàng phổ biến/gần nhất (ví dụ: thùng, lốc, lon, cái).
+2. **Thêm nhanh nhóm hàng mua lần trước**:
+   - Hệ thống tự động xác định đơn hàng hợp lệ gần nhất của đại lý và đánh dấu cờ `inLastOrder = true` cho các mặt hàng thuộc đơn này.
+   - Các mặt hàng thuộc đơn gần nhất được sắp xếp ưu tiên hiển thị lên đầu danh sách để nhân viên kinh doanh dễ nhận biết.
+   - Hỗ trợ lấy riêng nhóm hàng đơn gần nhất qua:
+     - `GET /api/dealers/{id}/purchase-history?lastOrderOnly=true`
+     - `GET /api/dealers/{id}/last-order-items`
+   - Hỗ trợ nạp thẳng nhóm hàng đơn gần nhất vào bản nháp tạo đơn qua:
+     - `POST /api/dealers/{id}/last-order-to-draft`
+     - `POST /api/orders/dealer/{dealerId}/last-order-to-draft`
+     Khi nạp vào bản nháp, hệ thống tự động áp lại bảng giá và chính sách chiết khấu sản lượng hiện hành theo S4-01/S4-09.
+3. **Phân quyền bảo mật theo đại lý phụ trách (Row-Level Security - RLS)**:
+   - Nhân viên kinh doanh (`ROLE_SALES`) **chỉ được phép xem lịch sử và thêm nhanh đơn của đại lý do chính mình phụ trách** (`dealer.assignedUser`).
+   - Nếu cố tình truy cập đại lý của nhân viên khác hoặc đại lý chưa phân công, hệ thống sẽ từ chối truy cập và trả về mã lỗi `403 Forbidden`.
+   - Quản lý kinh doanh (`ROLE_SALES_MANAGER`) và Quản trị viên (`ROLE_ADMIN`) có quyền xem lịch sử của mọi đại lý trên toàn hệ thống.
+
+#### Ví dụ Request lấy lịch sử mua hàng (`GET /api/dealers/1/purchase-history?months=3`):
+```http
+GET /api/dealers/1/purchase-history?months=3
+Authorization: Bearer <token_nhan_vien_sales>
+```
+Response:
+```json
+{
+  "success": true,
+  "message": "Lấy lịch sử mua hàng của đại lý thành công",
+  "data": [
+    {
+      "productId": 10,
+      "sku": "HEINEKEN-LON",
+      "code": "HEINEKEN-LON",
+      "name": "Bia Heineken Lon 330ml",
+      "unit": "thùng",
+      "avgQty": 15,
+      "orderCount": 2,
+      "totalQuantity": 30,
+      "lastOrderDate": "2026-10-10",
+      "lastOrderQuantity": 10,
+      "lastOrderUnit": "thùng",
+      "inLastOrder": true,
+      "lastOrderCode": "DH-20261010-001"
+    },
+    {
+      "productId": 20,
+      "sku": "TIGER-LON",
+      "code": "TIGER-LON",
+      "name": "Bia Tiger Lon 330ml",
+      "unit": "thùng",
+      "avgQty": 5,
+      "orderCount": 1,
+      "totalQuantity": 5,
+      "lastOrderDate": "2026-10-10",
+      "lastOrderQuantity": 5,
+      "lastOrderUnit": "thùng",
+      "inLastOrder": true,
+      "lastOrderCode": "DH-20261010-001"
+    }
+  ]
+}
+```
+
+#### Ví dụ Request thêm nhanh nhóm hàng mua lần trước vào bản nháp (`POST /api/dealers/1/last-order-to-draft`):
+```http
+POST /api/dealers/1/last-order-to-draft
+Authorization: Bearer <token_nhan_vien_sales>
+```
+Response:
+```json
+{
+  "success": true,
+  "message": "Đã thêm nhanh nhóm hàng mua lần trước vào bản nháp tạo đơn",
+  "data": {
+    "dealerId": 1,
+    "deliveryPointId": 2,
+    "deliveryDate": null,
+    "note": "",
+    "items": [
+      {
+        "_key": "copy-1001-0",
+        "productId": 10,
+        "selectedUnitId": "thùng",
+        "qty": 10,
+        "basePrice": 0,
+        "unitPrice": 0,
+        "floorPrice": 0,
+        "manualPrice": false,
+        "discountAmount": 0
+      }
+    ],
+    "_seq": 1
   }
 }
 ```
