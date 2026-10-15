@@ -31,6 +31,7 @@
   const CAN_MANAGE_DELIVERY_POINTS = Auth.hasAnyRole(
     'ROLE_ADMIN', 'ROLE_SALES_MANAGER', 'ROLE_ACCOUNTANT', 'ROLE_SALES',
   );
+  const CAN_COPY_ORDER = Auth.hasPermission('ORDER_CREATE');
 
   /* ── DOM helpers ────────────────────────────────────────── */
   const $ = (id) => document.getElementById(id);
@@ -441,6 +442,9 @@
             <button class="dlr-action-btn" data-action="orders" data-id="${dlr.id}" title="Đơn đang dở" aria-label="Đơn đang dở của ${escHtml(dlr.name)}">
               <svg viewBox="0 0 24 24"><path d="M9 5H5v16h14V5h-4M9 3h6v4H9zM8 12h8M8 16h5"/></svg>
             </button>
+            <button class="dlr-action-btn" data-action="order-history" data-id="${dlr.id}" title="Lịch sử đơn hàng" aria-label="Lịch sử đơn hàng của ${escHtml(dlr.name)}">
+              <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5"/><path d="M7 3v4M17 3v4"/></svg>
+            </button>
             ${CAN_ASSIGN ? `
             <button class="dlr-action-btn dlr-action-btn--assign" data-action="assign" data-id="${dlr.id}" title="Phân công người phụ trách" aria-label="Phân công người phụ trách cho ${escHtml(dlr.name)}">
               <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M19 8v6M22 11h-6"/></svg>
@@ -554,6 +558,9 @@
     });
     tbody.querySelectorAll('[data-action="orders"]').forEach((btn) => {
       btn.addEventListener('click', () => openInProgressOrders(Number(btn.dataset.id)));
+    });
+    tbody.querySelectorAll('[data-action="order-history"]').forEach((btn) => {
+      btn.addEventListener('click', () => openOrderHistory(Number(btn.dataset.id)));
     });
     tbody.querySelectorAll('[data-action="assign"]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1213,10 +1220,45 @@
     return `<span class="order-status-badge ${config.cls}"><span class="order-status-badge__dot"></span>${escHtml(config.label)}</span>`;
   }
 
-  async function openInProgressOrders(id) {
+  function renderDealerOrders(orders) {
+    const canApprove = Auth.hasAnyRole('ROLE_ADMIN', 'ROLE_SALES_MANAGER');
+    const canCancelRole = Auth.hasAnyRole('ROLE_SALES', 'ROLE_SALES_MANAGER', 'ROLE_ADMIN');
+
+    $('dealer-orders-body').innerHTML = orders.length ? orders.map(order => {
+      const normStatus = String(order.status || '').toUpperCase();
+      const config = ORDER_LIFECYCLE_CONFIG[normStatus] || { canCancel: false, exported: false };
+
+      const actionButtons = [];
+      if (canApprove && normStatus === 'PENDING_APPROVAL') {
+        actionButtons.push(`<button class="btn btn--secondary" data-order-action="approve" data-order-id="${order.id}">Duyệt</button>`);
+        actionButtons.push(`<button class="btn btn--secondary" data-order-action="reject" data-order-id="${order.id}">Từ chối</button>`);
+      }
+
+      if (canCancelRole) {
+        if (config.canCancel) {
+          actionButtons.push(`<button class="btn btn--danger" data-order-cancel="${order.id}" data-order-code="${escHtml(order.orderCode)}">Huỷ đơn</button>`);
+        } else if (config.exported) {
+          actionButtons.push(`<span class="order-return-guide" title="Đơn đã xuất kho không thể huỷ trực tiếp, phải thực hiện thủ tục nhập trả hàng">Đã xuất kho (đi đường trả hàng)</span>`);
+        }
+      }
+
+      if (CAN_COPY_ORDER) {
+        actionButtons.push(`<button class="btn btn--secondary" data-order-copy="${order.id}">Sao chép</button>`);
+      }
+
+      return `<tr>
+        <td><strong>${escHtml(order.orderCode)}</strong></td>
+        <td>${formatOrderLifecycleBadge(order.status)}</td>
+        <td>${escHtml(Number(order.totalAmount || 0).toLocaleString('vi-VN'))} ₫</td>
+        <td><div class="order-actions-wrap">${actionButtons.length ? actionButtons.join(' ') : '—'}</div></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="4">Không có đơn hàng.</td></tr>';
+  }
+
+  async function openOrderList(id, history = false) {
     orderDealerId = id;
     const dealer = state.all.find(row => row.id === id);
-    $('dealer-orders-title').textContent = `Vòng đời đơn hàng · ${dealer?.name || ''}`;
+    $('dealer-orders-title').textContent = `${history ? 'Lịch sử đơn hàng' : 'Vòng đời đơn hàng'} · ${dealer?.name || ''}`;
     if ($('dealer-orders-modal').hidden) openTransactionModal('dealer-orders-modal');
     $('dealer-orders-message').hidden = true;
     $('dealer-orders-warning').hidden = !dealer?.locked;
@@ -1224,46 +1266,29 @@
       ? `Đại lý đang bị khoá: ${dealer.lockReason || ''}. Đơn đã tạo vẫn được xử lý tiếp, cần theo dõi công nợ.` : '';
     $('dealer-orders-body').innerHTML = '<tr><td colspan="4">Đang tải đơn hàng…</td></tr>';
     try {
-      const orders = await DealerTransactions.getInProgressOrders(id);
+      const orders = history
+        ? await DealerTransactions.getOrdersForDealer(id)
+        : await DealerTransactions.getInProgressOrders(id);
       if (orderDealerId !== id || $('dealer-orders-modal').hidden) return;
       const warning = orders.find(order => order.dealerLocked)?.dealerLockWarning;
       if (warning) {
         $('dealer-orders-warning').hidden = false;
         $('dealer-orders-warning').textContent = warning;
       }
-      const canApprove = Auth.hasAnyRole('ROLE_ADMIN', 'ROLE_SALES_MANAGER');
-      const canCancelRole = Auth.hasAnyRole('ROLE_SALES', 'ROLE_SALES_MANAGER', 'ROLE_ADMIN');
-
-      $('dealer-orders-body').innerHTML = orders.length ? orders.map(order => {
-        const normStatus = String(order.status || '').toUpperCase();
-        const config = ORDER_LIFECYCLE_CONFIG[normStatus] || { canCancel: false, exported: false };
-
-        const actionButtons = [];
-        if (canApprove && normStatus === 'PENDING_APPROVAL') {
-          actionButtons.push(`<button class="btn btn--secondary" data-order-action="approve" data-order-id="${order.id}">Duyệt</button>`);
-          actionButtons.push(`<button class="btn btn--secondary" data-order-action="reject" data-order-id="${order.id}">Từ chối</button>`);
-        }
-
-        if (canCancelRole) {
-          if (config.canCancel) {
-            actionButtons.push(`<button class="btn btn--danger" data-order-cancel="${order.id}" data-order-code="${escHtml(order.orderCode)}">Huỷ đơn</button>`);
-          } else if (config.exported) {
-            actionButtons.push(`<span class="order-return-guide" title="Đơn đã xuất kho không thể huỷ trực tiếp, phải thực hiện thủ tục nhập trả hàng">Đã xuất kho (đi đường trả hàng)</span>`);
-          }
-        }
-
-        return `<tr>
-          <td><strong>${escHtml(order.orderCode)}</strong></td>
-          <td>${formatOrderLifecycleBadge(order.status)}</td>
-          <td>${escHtml(Number(order.totalAmount || 0).toLocaleString('vi-VN'))} ₫</td>
-          <td><div class="order-actions-wrap">${actionButtons.length ? actionButtons.join(' ') : '—'}</div></td>
-        </tr>`;
-      }).join('') : '<tr><td colspan="4">Không có đơn đang dở.</td></tr>';
+      renderDealerOrders(orders);
     } catch (error) {
       if (orderDealerId !== id) return;
       $('dealer-orders-body').innerHTML = '<tr><td colspan="4">Không tải được đơn hàng.</td></tr>';
       showFormError('dealer-orders-message', error.message);
     }
+  }
+
+  function openInProgressOrders(id) {
+    return openOrderList(id, false);
+  }
+
+  function openOrderHistory(id) {
+    return openOrderList(id, true);
   }
 
   function openCancelOrderModal(orderId, orderCode) {
@@ -1283,6 +1308,20 @@
   }
 
   $('dealer-orders-body').addEventListener('click', async event => {
+    const copyBtn = event.target.closest('[data-order-copy]');
+    if (copyBtn) {
+      if (!CAN_COPY_ORDER) return;
+      copyBtn.disabled = true;
+      try {
+        await DealerTransactions.copyOrderToDraft(Number(copyBtn.dataset.orderCopy));
+        window.location.href = '/create-order.html?copied=1';
+      } catch (error) {
+        showFormError('dealer-orders-message', error.message);
+        copyBtn.disabled = false;
+      }
+      return;
+    }
+
     const cancelBtn = event.target.closest('[data-order-cancel]');
     if (cancelBtn) {
       const orderId = Number(cancelBtn.dataset.orderCancel);

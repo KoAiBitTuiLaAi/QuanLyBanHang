@@ -1329,9 +1329,10 @@
       const result = await res.json();
       if (!res.ok || !result.success) throw new Error(result.message || 'Không tạo được đơn hàng');
 
+      const createdOrder = result.data;
+
       closeConfirmModal();
       clearDraft();
-      showToast('Đơn hàng đã được tạo thành công!', 'success');
 
       // Reset form
       $('order-form').reset();
@@ -1352,6 +1353,9 @@
       $('co-pricing-status').hidden = true;
       renderItems();
       updateSummary();
+
+      // Open print modal with order data
+      openPrintModal(createdOrder);
     } catch (err) {
       const msgEl = $('confirm-msg');
       msgEl.textContent = err.message || 'Lỗi không xác định. Vui lòng thử lại.';
@@ -1360,6 +1364,7 @@
       btn.textContent = 'Thử lại';
     }
   });
+
 
   function buildOrderPayload() {
     const dealerId = $('co-dealer').value;
@@ -1407,8 +1412,20 @@
     $('co-delivery-date').min = today;
     await loadDealers();
 
-    // Show draft banner if draft exists
-    if (await hasDraft()) {
+    const searchString = typeof window !== 'undefined' && window.location ? window.location.search : (typeof location !== 'undefined' ? location.search : '');
+    const query = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(searchString || '') : { get: () => null };
+    const copiedDraft = query.get('copied') === '1';
+
+    if (copiedDraft) {
+      // A copied order is already saved in the database as a draft.
+      // Loading it also recalculates current prices and discounts in selectDealer().
+      if (await loadDraft()) {
+        showToast('Đã sao chép đơn cũ thành bản nháp. Giá và chiết khấu đã được tính lại.', 'success');
+      } else {
+        showToast('Không tải được bản sao đơn hàng. Vui lòng thử lại.', 'error');
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (await hasDraft()) {
       showDraftBanner();
     }
   }

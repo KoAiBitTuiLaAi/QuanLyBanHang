@@ -28,6 +28,60 @@ const DealerTransactions = (() => {
     return rows;
   }
 
+  async function getOrdersForDealer(dealerId) {
+    const rows = await request('/orders');
+    if (!Array.isArray(rows)) throw new Error('Lịch sử đơn hàng không hợp lệ.');
+    return rows.filter((order) => Number(order.dealerId) === Number(dealerId));
+  }
+
+  async function getOrder(orderId) {
+    const order = await request(`/orders/${orderId}`);
+    if (!order || !Array.isArray(order.items)) {
+      throw new Error('Dữ liệu đơn hàng không hợp lệ.');
+    }
+    return order;
+  }
+
+  /** S4-09: copy only order inputs into the server-side draft. */
+  async function copyOrderToDraft(orderId) {
+    const order = await getOrder(orderId);
+    if (!order.items.length) {
+      throw new Error('Đơn hàng không có dòng hàng để sao chép.');
+    }
+
+    const draft = {
+      dealerId: order.dealerId || null,
+      deliveryPointId: order.deliveryPointId || null,
+      deliveryDate: null,
+      note: '',
+      items: order.items
+        .filter((item) => item.productId && Number(item.quantity) > 0)
+        .map((item, index) => ({
+          _key: `copy-${order.id}-${index}`,
+          productId: item.productId,
+          selectedUnitId: item.unit || null,
+          qty: Number(item.quantity),
+          // Do not carry the old price, floor price, or discount into the copy.
+          basePrice: 0,
+          unitPrice: 0,
+          floorPrice: 0,
+          manualPrice: false,
+          discountAmount: 0,
+        })),
+      _seq: order.items.length,
+    };
+
+    if (!draft.items.length) {
+      throw new Error('Đơn hàng không có dòng hàng hợp lệ để sao chép.');
+    }
+
+    await request('/orders/draft', {
+      method: 'PUT',
+      body: JSON.stringify(draft),
+    });
+    return order;
+  }
+
   async function processOrder(orderId, action) {
     if (!['approve', 'reject'].includes(action)) throw new Error('Thao tác đơn hàng không hợp lệ.');
     return request(`/orders/${orderId}/${action}`, { method: 'PUT' });
@@ -44,5 +98,14 @@ const DealerTransactions = (() => {
     });
   }
 
-  return { lock, unlock, getInProgressOrders, processOrder, cancelOrder };
+  return {
+    lock,
+    unlock,
+    getInProgressOrders,
+    getOrdersForDealer,
+    getOrder,
+    copyOrderToDraft,
+    processOrder,
+    cancelOrder,
+  };
 })();

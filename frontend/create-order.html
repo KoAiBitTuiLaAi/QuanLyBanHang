@@ -7,7 +7,10 @@
     <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/css/dashboard.css" />
     <link rel="stylesheet" href="/css/create-order.css" />
+    <link rel="stylesheet" href="/css/print-order.css" />
   <link rel="stylesheet" href="/css/app-navigation.css">
+  <!-- JsBarcode — lightweight barcode renderer, no build step needed -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js" defer></script>
 </head>
   <body>
     <div class="app-shell">
@@ -331,6 +334,120 @@
             <button class="btn btn--secondary" id="btn-cancel-confirm" type="button">Quay lại</button>
             <button class="btn btn--primary" id="btn-confirm-order" type="button">Xác nhận tạo đơn</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Print area (hidden from UI, shown only when printing) ── -->
+    <div id="order-print-area" hidden aria-hidden="true">
+      <!-- Header -->
+      <div class="op-header">
+        <div class="op-brand">
+          <img src="/assets/brand-mark.svg" alt="" class="op-brand__logo" />
+          <span class="op-brand__name">SaleStock</span>
+        </div>
+        <div class="op-meta">
+          <div class="op-meta__code" id="op-order-code">—</div>
+          <div class="op-meta__date" id="op-created-at">—</div>
+          <span class="op-meta__status">Chờ xử lý</span>
+        </div>
+      </div>
+
+      <!-- Info grid: Đại lý + Điểm giao -->
+      <div class="op-info-grid">
+        <div class="op-info-block">
+          <div class="op-info-block__label">Đại lý</div>
+          <div class="op-info-block__name" id="op-dealer-name">—</div>
+          <div class="op-info-block__sub" id="op-dealer-group">—</div>
+        </div>
+        <div class="op-info-block">
+          <div class="op-info-block__label">Điểm giao hàng</div>
+          <div class="op-info-block__name" id="op-delivery-point">—</div>
+          <div class="op-info-block__sub" id="op-delivery-date">—</div>
+        </div>
+      </div>
+
+      <!-- Items table -->
+      <table class="op-table">
+        <thead>
+          <tr>
+            <th>Tên sản phẩm</th>
+            <th>ĐVT</th>
+            <th class="num">SL</th>
+            <th class="num">Đơn giá</th>
+            <th class="num">Chiết khấu</th>
+            <th class="num">Thành tiền</th>
+          </tr>
+        </thead>
+        <tbody id="op-items-body">
+        </tbody>
+      </table>
+
+      <!-- Summary -->
+      <div class="op-summary-wrap">
+        <div class="op-summary">
+          <div class="op-summary__row">
+            <span>Tổng tiền hàng</span>
+            <span id="op-subtotal">—</span>
+          </div>
+          <div class="op-summary__row">
+            <span>Chiết khấu</span>
+            <span class="op-summary__discount" id="op-discount">—</span>
+          </div>
+          <div class="op-summary__row op-summary__row--total">
+            <span>Tổng phải thu</span>
+            <span id="op-total">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Note (shown only when present) -->
+      <div class="op-note" id="op-note-block" hidden>
+        <div class="op-note__label">Ghi chú</div>
+        <div id="op-note-text"></div>
+      </div>
+
+      <!-- Barcode -->
+      <div class="op-barcode-section">
+        <div class="op-barcode-section__label">Mã tra cứu kho</div>
+        <svg id="order-barcode"></svg>
+        <div class="op-barcode-code" id="op-barcode-code">—</div>
+      </div>
+
+      <!-- Footer / signatures -->
+      <div class="op-footer">
+        <div>
+          <div>Nhân viên kinh doanh: <span id="op-created-by">—</span></div>
+          <div id="op-print-time"></div>
+        </div>
+        <div class="op-sig-block">
+          <div class="op-sig-block__line"></div>
+          <div class="op-sig-block__label">Xác nhận đại lý</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Print-success modal ── -->
+    <div class="print-modal-overlay" id="print-modal" hidden>
+      <div class="print-modal" role="dialog" aria-labelledby="print-modal-title">
+        <div class="print-modal__header">
+          <h2 id="print-modal-title">Đơn hàng đã tạo thành công</h2>
+          <div class="print-modal__actions">
+            <button class="btn btn--secondary" id="btn-print-order" type="button">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <polyline points="6 9 6 2 18 2 18 9"/>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                <rect x="6" y="14" width="12" height="8"/>
+              </svg>
+              In đơn hàng
+            </button>
+            <button class="btn btn--primary" id="btn-close-print-modal" type="button">
+              Tạo đơn mới
+            </button>
+          </div>
+        </div>
+        <div class="print-modal__body">
+          <div id="order-print-area-preview"></div>
         </div>
       </div>
     </div>

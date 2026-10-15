@@ -19,6 +19,15 @@ public class ApiResponse {
     private String message;
     private Object data;
 
+    /** Tổng tiền của tập kết quả đang lọc (S4-07). */
+    private java.math.BigDecimal totalAmount;
+
+    /** Tổng số đơn hàng / phần tử trong tập kết quả lọc. */
+    private Long totalOrders;
+
+    /** Tổng số phần tử (dành cho phân trang). */
+    private Long totalElements;
+
     public static ApiResponse success(String message) {
         return ApiResponse.builder()
                 .success(true)

@@ -1,0 +1,330 @@
+/* print-order.css — S4-08 In / Xuất PDF đơn hàng
+   Handles both @media print and the in-page print-preview modal. */
+
+/* ── Print-preview modal ─────────────────────────────── */
+
+.print-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 26, 44, 0.55);
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px 16px;
+  overflow-y: auto;
+}
+
+.print-modal {
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 760px;
+}
+
+.print-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.print-modal__header h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+
+.print-modal__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.print-modal__body {
+  padding: 24px;
+}
+
+/* ── Order sheet (shared between preview + actual print) ─ */
+
+#order-print-area {
+  font-family: "Aptos", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 0.8125rem;
+  color: #182433;
+  line-height: 1.5;
+  background: #fff;
+  padding: 32px;
+}
+
+.op-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  gap: 16px;
+}
+
+.op-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-brand__logo {
+  width: 36px;
+  height: 36px;
+}
+
+.op-brand__name {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: #218a69;
+  letter-spacing: -0.02em;
+}
+
+.op-meta {
+  text-align: right;
+}
+
+.op-meta__code {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #182433;
+  margin-bottom: 2px;
+}
+
+.op-meta__date {
+  font-size: 0.75rem;
+  color: #617083;
+}
+
+.op-meta__status {
+  margin-top: 4px;
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: rgba(47, 184, 138, 0.12);
+  color: #218a69;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+/* ── Info grid ──────────────────────────────────────────── */
+
+.op-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.op-info-block {
+  background: #f4f7fa;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.op-info-block__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #617083;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.op-info-block__name {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #182433;
+  margin-bottom: 2px;
+}
+
+.op-info-block__sub {
+  font-size: 0.75rem;
+  color: #617083;
+}
+
+/* ── Items table ────────────────────────────────────────── */
+
+.op-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0;
+}
+
+.op-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #617083;
+  letter-spacing: 0.03em;
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid #dce4eb;
+  white-space: nowrap;
+}
+
+.op-table th.num { text-align: right; }
+
+.op-table td {
+  font-size: 0.8125rem;
+  color: #182433;
+  padding: 8px 8px;
+  border-bottom: 1px solid #ecf0f4;
+  vertical-align: middle;
+}
+
+.op-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.op-table td.sku { color: #617083; font-size: 0.75rem; }
+.op-table td.discount { color: #e6a23c; }
+.op-table tbody tr:last-child td { border-bottom: none; }
+
+/* ── Summary ────────────────────────────────────────────── */
+
+.op-summary-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  border-top: 2px solid #dce4eb;
+  padding-top: 16px;
+}
+
+.op-summary {
+  min-width: 260px;
+}
+
+.op-summary__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 4px 0;
+  font-size: 0.8125rem;
+  color: #3d4f5f;
+}
+
+.op-summary__row--total {
+  border-top: 1px solid #dce4eb;
+  margin-top: 8px;
+  padding-top: 8px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #182433;
+}
+
+.op-summary__discount { color: #e6a23c; }
+
+/* ── Note ───────────────────────────────────────────────── */
+
+.op-note {
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: #f4f7fa;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: #3d4f5f;
+}
+
+.op-note__label {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: #617083;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+/* ── Barcode section ────────────────────────────────────── */
+
+.op-barcode-section {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 20px;
+  border-top: 1px dashed #dce4eb;
+}
+
+.op-barcode-section__label {
+  font-size: 0.6875rem;
+  color: #617083;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+#order-barcode {
+  max-width: 100%;
+}
+
+.op-barcode-code {
+  font-size: 0.6875rem;
+  color: #617083;
+  letter-spacing: 0.1em;
+}
+
+/* ── Footer ─────────────────────────────────────────────── */
+
+.op-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #ecf0f4;
+  font-size: 0.6875rem;
+  color: #9ca7b3;
+}
+
+.op-sig-block {
+  text-align: center;
+}
+
+.op-sig-block__line {
+  width: 140px;
+  border-top: 1px solid #dce4eb;
+  margin: 32px auto 4px;
+}
+
+.op-sig-block__label {
+  font-size: 0.6875rem;
+  color: #617083;
+}
+
+/* ═══════════════════════════════════════════════════════
+   @media print — override everything for clean printing
+   ═══════════════════════════════════════════════════════ */
+
+@media print {
+  /* Hide everything except the print area */
+  body > * { display: none !important; }
+  #order-print-area { display: block !important; }
+
+  #order-print-area {
+    position: fixed;
+    inset: 0;
+    padding: 20mm 18mm;
+    font-size: 10pt;
+    color: #000;
+    background: #fff;
+  }
+
+  .op-brand__name { color: #000; }
+  .op-meta__status { border: 1px solid #000; background: none; color: #000; }
+  .op-info-block { background: none; border: 1px solid #ccc; }
+  .op-table th { border-bottom: 1.5pt solid #000; }
+  .op-table td { border-bottom: 0.5pt solid #ccc; }
+  .op-summary-wrap { border-top: 1.5pt solid #000; }
+  .op-summary__row--total { border-top: 0.5pt solid #000; }
+  .op-barcode-section { border-top: 0.5pt dashed #000; }
+  .op-footer { border-top: 0.5pt solid #ccc; }
+  .op-note { background: none; border: 0.5pt solid #ccc; }
+  .op-summary__discount { color: #000; }
+  .op-table td.discount { color: #000; }
+
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+}
+

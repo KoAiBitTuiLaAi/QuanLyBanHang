@@ -413,8 +413,9 @@ Trạng thái dùng `active`, không dùng chuỗi `status`; người liên hệ
 
 | Method | Endpoint | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/orders` | Đã đăng nhập | Xem danh sách đơn hàng |
-| GET | `/orders/{id}` | Đã đăng nhập | Xem chi tiết đơn hàng (kèm thông tin bảng giá, giá sàn và trạng thái phê duyệt) |
+| GET | `/orders` | `ORDER_VIEW` hoặc `ROLE_ADMIN`, `ROLE_SALES_MANAGER`, `ROLE_SALES`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF`, `ROLE_ACCOUNTANT`, `ROLE_VIEWER` | Xem danh sách đơn hàng kèm bộ lọc (trạng thái, đại lý, nhân viên, khu vực, khoảng thời gian) và tổng tiền tập kết quả đang lọc (S4-07). Quản lý kinh doanh xem toàn công ty; Sales chỉ thấy đơn của đại lý mình phụ trách. |
+| GET | `/orders/summary` | `ORDER_VIEW` hoặc các vai trò có quyền xem đơn | Thống kê nhanh tổng tiền và số lượng đơn hàng theo bộ lọc đang chọn (S4-07). |
+| GET | `/orders/{id}` | `ORDER_VIEW` hoặc các vai trò có quyền xem đơn | Xem chi tiết đơn hàng (kèm thông tin bảng giá, giá sàn, trạng thái phê duyệt và kiểm soát quyền đại lý cho Sales). |
 | GET | `/orders/draft` | Vai trò tạo đơn | Lấy bản nháp tạo đơn của người dùng hiện tại |
 | PUT | `/orders/draft` | Vai trò tạo đơn | Lưu đè bản nháp tạo đơn của người dùng hiện tại |
 | DELETE | `/orders/draft` | Vai trò tạo đơn | Xoá bản nháp tạo đơn của người dùng hiện tại |
@@ -424,6 +425,31 @@ Trạng thái dùng `active`, không dùng chuỗi `status`; người liên hệ
 | PUT | `/orders/{id}/cancel` | `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Hủy đơn hàng |
 | PUT | `/orders/{id}/approve` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Phê duyệt đơn hàng bán dưới giá sàn (chuyển trạng thái sang `RECORDED`) |
 | PUT | `/orders/{id}/reject?reason={ly_do}` | `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Từ chối đơn hàng bán dưới giá sàn (chuyển trạng thái sang `REJECTED`) |
+
+### Xem danh sách đơn hàng kèm bộ lọc & Tổng tiền bán hàng toàn công ty (S4-07)
+
+Dành cho vai trò **Quản lý kinh doanh (`ROLE_SALES_MANAGER`)** nhằm nắm bắt tình hình bán hàng toàn công ty trong một màn hình:
+1. **Bộ lọc đa tiêu chí phía Server**:
+   - `status`: Lọc theo trạng thái đơn hàng (`RECORDED`, `PENDING_APPROVAL`, `CANCELLED`, `DRAFT`, `REJECTED`).
+   - `dealerId`: Lọc theo ID đại lý.
+   - `salesUserId` (hoặc `assignedUserId`, `employeeId`, `userId`): Lọc theo ID nhân viên kinh doanh phụ trách đại lý.
+   - `territoryId`: Lọc theo ID khu vực / địa bàn của đại lý.
+   - `startDate`, `endDate` (hoặc `fromDate`, `toDate`): Lọc theo khoảng thời gian tạo đơn (`YYYY-MM-DD`).
+   - `keyword` (hoặc `search`): Tìm kiếm nhanh theo mã đơn hàng, tên khách hàng, tên hoặc mã đại lý.
+   - `approvalRequired`, `approvalReason`: Lọc các đơn cần phê duyệt hoặc theo lý do phê duyệt.
+2. **Hiển thị tổng tiền của tập kết quả đang lọc**:
+   - Trường `totalAmount` trong `ApiResponse` trả về chính xác tổng giá trị tiền hàng (`totalAmount`) của toàn bộ các đơn hàng thỏa mãn điều kiện lọc.
+   - Trường `totalOrders` / `totalElements` trả về tổng số đơn hàng trong tập kết quả lọc.
+   - Endpoint `GET /api/orders/summary` hỗ trợ lấy nhanh tổng tiền và số lượng mà không cần nạp toàn bộ danh sách.
+3. **Phân quyền dòng dữ liệu (Row-Level Security / RLS)**:
+   - **Quản lý kinh doanh (`ROLE_SALES_MANAGER`)** và **Quản trị viên (`ROLE_ADMIN`)**: Toàn quyền xem và lọc đơn hàng của tất cả đại lý trên toàn công ty.
+   - **Nhân viên kinh doanh (`ROLE_SALES`)**: Hệ thống tự động giới hạn chỉ hiển thị các đơn hàng thuộc đại lý mà nhân viên đó đang được phân công phụ trách (`dealer.assignedUser = currentUser`). Đơn hàng của đại lý khác hoặc đại lý chưa phân công sẽ tự động bị loại bỏ khỏi kết quả.
+   - Khi nhân viên kinh doanh truy cập chi tiết đơn hàng (`GET /api/orders/{id}`) của đại lý do người khác phụ trách: Hệ thống ném ngoại lệ `AccessDeniedException` và trả về `403 Forbidden`.
+4. **Làm giàu dữ liệu phản hồi (`OrderResponse`)**:
+   Mỗi đơn hàng trong danh sách được bổ sung đầy đủ thông tin:
+   - `dealerId`, `dealerCode`, `dealerName`
+   - `salesUserId`, `salesUserName`, `salesUserFullName`
+   - `territoryId`, `territoryCode`, `territoryName`
 
 ### Tự động áp dụng Bảng giá, Chiết khấu sản lượng & Kiểm soát Giá sàn khi Đặt hàng (S4-01)
 

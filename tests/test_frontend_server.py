@@ -51,6 +51,7 @@ class FrontendRoutingTest(unittest.TestCase):
             "/price-lists": "Bảng giá",
             "/dealers": "Đại lý",
             "/create-order": "Tạo đơn hàng",
+            "/dealer-orders": "Đơn hàng của tôi",
             "/suppliers": "Nhà cung cấp",
             "/profile": "Hồ sơ cá nhân",
             "/login": "Đăng nhập",

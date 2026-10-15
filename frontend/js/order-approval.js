@@ -208,10 +208,24 @@
   }
 
   function renderReasonTags(reasons) {
-    if (!reasons.length) return `<span class="oa-reason-tag oa-reason-tag--debt">Chờ xác nhận</span>`;
-    return reasons.map((r) => {
-      const info = REASON_MAP[r] || { label: r, tagClass: "oa-reason-tag--debt" };
-      return `<span class="oa-reason-tag ${info.tagClass}">${escapeHtml(info.label)}</span>`;
+    const values = Array.isArray(reasons) ? reasons : reasons ? [reasons] : [];
+    if (!values.length) return `<span class="oa-reason-tag oa-reason-tag--debt">Chờ xác nhận</span>`;
+
+    return values.map((reason) => {
+      const raw = String(reason ?? "").trim();
+      const upper = raw.toUpperCase();
+      const mapped = REASON_MAP[upper];
+      const inferred = mapped || (
+        upper.includes("DEBT") || /hạn mức công nợ/i.test(raw)
+          ? { label: "Vượt hạn mức công nợ", tagClass: "oa-reason-tag--debt" }
+          : upper.includes("FLOOR") || /giá sàn|dưới giá/i.test(raw)
+            ? { label: "Bán dưới giá sàn", tagClass: "oa-reason-tag--price" }
+            : upper.includes("QUANTITY") || /số lượng/i.test(raw)
+              ? { label: "Vượt hạn mức số lượng", tagClass: "oa-reason-tag--quantity" }
+              : { label: raw.length > 32 ? `${raw.slice(0, 32)}…` : raw, tagClass: "oa-reason-tag--debt" }
+      );
+      const title = raw && raw !== inferred.label ? ` title="${escapeHtml(raw)}"` : "";
+      return `<span class="oa-reason-tag ${inferred.tagClass}"${title}>${escapeHtml(inferred.label || "Chờ xác nhận")}</span>`;
     }).join(" ");
   }
 
@@ -233,7 +247,7 @@
       }
       return `<span style="color:var(--ink-500); font-size:.75rem">Xem chi tiết</span>`;
     }
-    return violations.map((v) => `<div class="oa-violation-detail">
+    return violations.map((v) => `<div class="oa-violation-detail" title="${escapeHtml(v.description || "")}">
       <span class="oa-violation-value">${escapeHtml(v.displayValue || v.value || "")}</span>
       <span class="oa-violation-label">${escapeHtml(v.description || "")}</span>
     </div>`).join("");
