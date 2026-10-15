@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /**
  * Chi tiết phiếu kho (S2-07).
@@ -71,6 +72,24 @@ public class WarehouseVoucherItem {
 
     @Column(name = "total_amount", precision = 15, scale = 2)
     private BigDecimal totalAmount;
+
+    /**
+     * Số lô hàng (S5-04).
+     */
+    @Column(name = "lot_number", length = 50)
+    private String lotNumber;
+
+    /**
+     * Hạn sử dụng của lô hàng (S5-04).
+     */
+    @Column(name = "expiry_date")
+    private LocalDate expiryDate;
+
+    /**
+     * Ngày sản xuất (S5-04).
+     */
+    @Column(name = "manufacturing_date")
+    private LocalDate manufacturingDate;
 
     @Column(length = 255)
     private String note;

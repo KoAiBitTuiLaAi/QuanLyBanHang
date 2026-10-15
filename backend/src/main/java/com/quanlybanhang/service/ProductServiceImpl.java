@@ -84,6 +84,7 @@ public class ProductServiceImpl implements ProductService {
                 .packingSpecification(request.getPackingSpecification() != null ? request.getPackingSpecification().trim() : null)
                 .imageUrl(request.getImageUrl() != null ? request.getImageUrl().trim() : null)
                 .active(request.getActive() != null ? request.getActive() : true)
+                .manageLot(request.getManageLot() != null ? request.getManageLot() : false)
                 .build();
 
         if (request.getUnitConversions() != null && !request.getUnitConversions().isEmpty()) {
@@ -175,6 +176,9 @@ public class ProductServiceImpl implements ProductService {
         }
         if (request.getActive() != null) {
             product.setActive(request.getActive());
+        }
+        if (request.getManageLot() != null) {
+            product.setManageLot(request.getManageLot());
         }
 
         Product saved = productRepository.save(product);
@@ -711,6 +715,7 @@ public class ProductServiceImpl implements ProductService {
                 .packingSpecification(product.getPackingSpecification())
                 .imageUrl(product.getImageUrl())
                 .active(product.getActive())
+                .manageLot(product.getManageLot() != null ? product.getManageLot() : false)
                 .unitConversions(conversions)
                 .status(Boolean.TRUE.equals(product.getActive()) ? "Đang kinh doanh" : "Ngừng kinh doanh")
                 .hasTransactions(hasTrans)

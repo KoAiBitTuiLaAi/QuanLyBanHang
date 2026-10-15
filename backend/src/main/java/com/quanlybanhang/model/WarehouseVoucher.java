@@ -46,6 +46,33 @@ public class WarehouseVoucher {
     @Builder.Default
     private String status = "RECORDED";
 
+    /**
+     * Số chứng từ đi kèm (hóa đơn, phiếu giao hàng NCC - S5-04).
+     */
+    @Column(name = "document_number", length = 100)
+    private String documentNumber;
+
+    /**
+     * Ngày nhập kho / ngày chứng từ (S5-04).
+     */
+    @Column(name = "voucher_date")
+    private LocalDateTime voucherDate;
+
+    /**
+     * Tham chiếu đến phiếu kho gốc nếu là phiếu điều chỉnh (S5-04).
+     */
+    @Column(name = "reference_voucher_id")
+    private Long referenceVoucherId;
+
+    @Column(name = "reference_voucher_code", length = 50)
+    private String referenceVoucherCode;
+
+    /**
+     * Lý do điều chỉnh (S5-04).
+     */
+    @Column(name = "adjustment_reason", length = 500)
+    private String adjustmentReason;
+
     @Column(length = 500)
     private String note;
 
@@ -74,6 +101,9 @@ public class WarehouseVoucher {
     protected void onCreate() {
         if (this.recordedAt == null) {
             this.recordedAt = LocalDateTime.now();
+        }
+        if (this.voucherDate == null) {
+            this.voucherDate = LocalDateTime.now();
         }
         if (this.status == null) {
             this.status = "RECORDED";

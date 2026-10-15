@@ -8,6 +8,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -22,6 +23,43 @@ public class WarehouseVoucherRequest {
     private Long warehouseId;
 
     private WarehouseVoucherType type;
+
+    /**
+     * Nhà cung cấp (S5-04).
+     */
+    private Long supplierId;
+    private String supplierCode;
+
+    /**
+     * Số chứng từ đi kèm (hóa đơn, phiếu giao hàng NCC - S5-04).
+     */
+    private String documentNumber;
+
+    /**
+     * Ngày nhập kho / ngày chứng từ (S5-04).
+     */
+    private LocalDateTime voucherDate;
+
+    /**
+     * Trạng thái phiếu: "DRAFT" (nháp), "CONFIRMED" (đã xác nhận) (S5-04).
+     */
+    private String status;
+
+    /**
+     * Cờ lưu nháp nhanh: nếu true tương đương status = "DRAFT".
+     */
+    private Boolean draft;
+
+    /**
+     * Tham chiếu đến phiếu gốc khi lập phiếu điều chỉnh (S5-04).
+     */
+    private Long referenceVoucherId;
+    private String referenceVoucherCode;
+
+    /**
+     * Lý do điều chỉnh (S5-04).
+     */
+    private String adjustmentReason;
 
     private String note;
 

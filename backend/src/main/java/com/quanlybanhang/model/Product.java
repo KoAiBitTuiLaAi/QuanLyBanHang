@@ -89,6 +89,14 @@ public class Product {
     private Boolean hasTransactions = false;
 
     /**
+     * Cờ quản lý theo số lô và hạn sử dụng (S5-04).
+     * Nếu true, khi nhập kho bắt buộc phải ghi nhận số lô và hạn sử dụng.
+     */
+    @Column(name = "manage_lot", nullable = false)
+    @Builder.Default
+    private Boolean manageLot = false;
+
+    /**
      * Danh sách các đơn vị quy đổi của SKU (S2-07).
      * Ví dụ: SKU có đơn vị cơ sở "lon", có thể thêm "lốc" (hệ số 6), "thùng" (hệ số 24).
      */
@@ -147,6 +155,9 @@ public class Product {
         }
         if (this.hasTransactions == null) {
             this.hasTransactions = false;
+        }
+        if (this.manageLot == null) {
+            this.manageLot = false;
         }
     }
 

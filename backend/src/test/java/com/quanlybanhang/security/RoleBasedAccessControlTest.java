@@ -199,6 +199,32 @@ class RoleBasedAccessControlTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    @WithMockUser(username = "warehouse_staff", roles = {"WAREHOUSE_STAFF"})
+    @DisplayName("[ROLE_WAREHOUSE_STAFF] Thủ kho KHÔNG ĐƯỢC PHÉP lập phiếu điều chỉnh cho phiếu kho đã xác nhận (403 Forbidden)")
+    void warehouseStaffCannotAdjustVoucher() throws Exception {
+        mockMvc.perform(post("/api/warehouse/vouchers/1/adjust")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productId\": 1, \"delta\": 5}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(username = "warehouse_staff", roles = {"WAREHOUSE_STAFF"})
+    @DisplayName("[ROLE_WAREHOUSE_STAFF] Thủ kho ĐƯỢC PHÉP xác nhận phiếu nhập kho (200 OK)")
+    void warehouseStaffCanConfirmVoucher() throws Exception {
+        mockMvc.perform(post("/api/warehouse/vouchers/1/confirm"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(username = "warehouse_staff", roles = {"WAREHOUSE_STAFF"})
+    @DisplayName("[ROLE_WAREHOUSE_STAFF] Thủ kho ĐƯỢC PHÉP xem tồn kho theo lô (200 OK)")
+    void warehouseStaffCanViewLotInventory() throws Exception {
+        mockMvc.perform(get("/api/warehouse/inventory/lots"))
+                .andExpect(status().isOk());
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // VAI TRÒ 3: QUẢN LÝ KINH DOANH (ROLE_SALES_MANAGER)
     // ═══════════════════════════════════════════════════════════════
@@ -318,6 +344,16 @@ class RoleBasedAccessControlTest {
         mockMvc.perform(post("/api/warehouse/adjust")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\": 1, \"delta\": 20}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(username = "warehouse_manager", roles = {"WAREHOUSE_MANAGER"})
+    @DisplayName("[ROLE_WAREHOUSE_MANAGER] Quản lý kho ĐƯỢC PHÉP lập phiếu điều chỉnh cho phiếu kho đã xác nhận (200 OK)")
+    void warehouseManagerCanAdjustVoucher() throws Exception {
+        mockMvc.perform(post("/api/warehouse/vouchers/1/adjust")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productId\": 1, \"delta\": 5}"))
                 .andExpect(status().isOk());
     }
 

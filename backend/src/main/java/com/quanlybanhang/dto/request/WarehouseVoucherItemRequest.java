@@ -29,5 +29,20 @@ public class WarehouseVoucherItemRequest {
 
     private BigDecimal price;
 
+    /**
+     * Số lô hàng (S5-04). Bắt buộc nếu sản phẩm có manageLot = true.
+     */
+    private String lotNumber;
+
+    /**
+     * Hạn sử dụng (S5-04). Bắt buộc nếu sản phẩm có manageLot = true.
+     */
+    private java.time.LocalDate expiryDate;
+
+    /**
+     * Ngày sản xuất (S5-04). Tùy chọn.
+     */
+    private java.time.LocalDate manufacturingDate;
+
     private String note;
 }

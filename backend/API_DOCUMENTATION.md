@@ -362,20 +362,53 @@ Hỗ trợ Nhân viên kho khai báo đơn vị quy đổi theo cách kho đang 
 
 | Method | Endpoint | Quyền | Mô tả |
 |---|---|---|---|
-| POST | `/warehouse/import` | `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu nhập kho (hỗ trợ nhập theo thùng/lốc, tự động quy về đơn vị cơ sở khi ghi sổ) |
-| POST | `/warehouse/export` | `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu xuất kho (quy về đơn vị cơ sở và kiểm tra tồn kho theo đơn vị cơ sở) |
-| POST | `/warehouse/adjust` | `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Điều chỉnh tồn kho |
-| GET | `/warehouse/inventory` | `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_VIEWER` | Xem tồn kho sổ sách theo đơn vị cơ sở (số lon) kèm bảng quy đổi tương đương theo thùng, lốc |
-| GET | `/warehouse/vouchers` | `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_VIEWER` | Danh sách phiếu kho đã ghi sổ kèm thông tin đóng băng hệ số |
-| GET | `/warehouse/vouchers/{id}` | `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_VIEWER` | Chi tiết phiếu kho |
+| POST | `/warehouse/import` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu nhập kho từ nhà cung cấp (S5-04: hỗ trợ nhập theo thùng/lốc tự động quy về đơn vị cơ sở; khai báo NCC, số chứng từ, ngày nhập, kho nhập; ghi nhận số lô & HSD cho hàng có quản lý lô; `status="DRAFT"` hoặc `draft=true` để lưu nháp) |
+| POST | `/warehouse/import/draft` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Tạo nhanh phiếu nhập kho ở trạng thái Nháp (DRAFT) — phiếu nháp không ảnh hưởng tồn kho |
+| POST | `/warehouse/vouchers/{id}/confirm` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Xác nhận phiếu nhập kho nháp — lúc này hệ thống mới thực hiện cộng tồn kho và cập nhật sổ tồn kho theo lô |
+| PUT | `/warehouse/vouchers/{id}` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Sửa phiếu nhập kho nháp (Phiếu đã xác nhận BỊ CHẶN sửa, trả lỗi yêu cầu lập phiếu điều chỉnh) |
+| DELETE | `/warehouse/vouchers/{id}` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Xóa phiếu nhập kho nháp (Phiếu đã xác nhận BỊ CHẶN xóa) |
+| POST | `/warehouse/vouchers/{id}/adjust` | `WAREHOUSE_ADJUST` hoặc `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu điều chỉnh cho phiếu kho đã xác nhận (chỉ Quản lý kho và Quản trị viên) |
+| POST | `/warehouse/export` | `WAREHOUSE_EXPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu xuất kho (quy về đơn vị cơ sở và kiểm tra tồn kho theo đơn vị cơ sở) |
+| POST | `/warehouse/adjust` | `WAREHOUSE_ADJUST` hoặc `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Điều chỉnh tồn kho trực tiếp |
+| GET | `/warehouse/inventory` | `WAREHOUSE_VIEW` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN`, `ROLE_VIEWER` | Xem tồn kho sổ sách theo đơn vị cơ sở kèm bảng quy đổi tương đương theo thùng, lốc |
+| GET | `/warehouse/inventory/lots` | `WAREHOUSE_VIEW` hoặc các vai trò có quyền xem kho | Xem danh sách tồn kho chi tiết theo từng Số lô và Hạn sử dụng (S5-04) |
+| GET | `/warehouse/vouchers` | `WAREHOUSE_VIEW` hoặc các vai trò có quyền xem kho | Danh sách phiếu kho (hỗ trợ lọc theo `warehouseId`, `type`, `status`: DRAFT/CONFIRMED/ADJUSTED, `supplierId`) |
+| GET | `/warehouse/vouchers/{id}` | `WAREHOUSE_VIEW` hoặc các vai trò có quyền xem kho | Chi tiết phiếu kho kèm thông tin NCC, số chứng từ, số lô, HSD và đóng băng quy đổi |
 
-`GET /warehouse/inventory?warehouseId={id}` chỉ đọc tồn đã ghi nhận. Kho chưa có
-tồn trả danh sách rỗng; endpoint không tạo tồn mặc định hoặc ghi dữ liệu khi đọc.
-Frontend chọn kho từ `/warehouse/options` và hiển thị 0 cho SKU chưa có bản ghi tồn.
-Khi chưa cấu hình kho, trang vẫn tải sản phẩm và đơn vị quy đổi, báo thiếu kho
-trên màn lập phiếu và tồn kho, đồng thời khoá nút ghi phiếu. Chưa có dữ liệu định
-mức tồn kho thì hiển thị `Chưa thiết lập`; không gán ngưỡng 200 hoặc nhãn an toàn
-cho tất cả SKU.
+### Lập phiếu nhập kho từ nhà cung cấp & Quản lý lô, hạn sử dụng (S5-04)
+
+Dành cho vai trò **Nhân viên kho (`ROLE_WAREHOUSE_STAFF`)** và Quản lý kho (`ROLE_WAREHOUSE_MANAGER`):
+1. **Khai báo thông tin chứng từ khi xe dỡ hàng**:
+   - `supplierId` hoặc `supplierCode`: Nhà cung cấp giao hàng (phải tồn tại và đang hoạt động `active = true`).
+   - `documentNumber`: Số chứng từ đi kèm (số hóa đơn đỏ, biên bản giao nhận hàng).
+   - `voucherDate`: Ngày nhập kho thực tế (mặc định là thời điểm lập phiếu nếu không cung cấp).
+   - `warehouseId`: Kho nhập hàng (phải tồn tại và đang hoạt động).
+   - `voucherCode`: Mã phiếu nhập kho (nếu không cung cấp, hệ thống tự động sinh dạng `PNK-yyyyMMddHHmmssSSS`).
+2. **Nhập theo đơn vị tính bất kỳ, quy về đơn vị cơ sở khi ghi sổ**:
+   - Dòng hàng có thể chọn bất kỳ đơn vị tính nào đã được cấu hình trong bảng quy đổi của SKU (vd: thùng, lốc, bao, chai, lon...).
+   - Hệ thống tự động nhân với hệ số quy đổi đóng băng `conversionFactor` để tính `baseQuantity = quantity * factor`.
+   - Toàn bộ thông tin đơn vị, hệ số và số lượng cơ sở được đóng băng vĩnh viễn trên dòng phiếu kho.
+3. **Quản lý Số lô và Hạn sử dụng**:
+   - Trên sản phẩm (`Product`), cờ `manageLot = true` xác định mặt hàng được quản lý theo lô (vd: bia, nước giải khát, thực phẩm...).
+   - Khi lập phiếu nhập kho:
+     - Nếu `manageLot == true`: Bắt buộc phải nhập `lotNumber` (số lô) và `expiryDate` (hạn sử dụng dạng `YYYY-MM-DD`). Thiếu một trong hai sẽ bị chặn và báo lỗi rõ ràng. Nếu có `manufacturingDate` (ngày sản xuất), hạn sử dụng phải sau ngày sản xuất.
+     - Nếu `manageLot == false`: Số lô và hạn sử dụng không bắt buộc.
+4. **Vòng đời phiếu: Nháp vs Xác nhận**:
+   - **Phiếu nháp (`status = "DRAFT"` hoặc `draft: true`)**:
+     - Lưu lại thông tin kiểm đếm tại cửa kho.
+     - **Hoàn toàn KHÔNG cộng tồn kho** (`WarehouseInventory` và `WarehouseLotInventory` không đổi).
+     - Cho phép chỉnh sửa thông tin, đổi hàng hóa, đổi số lượng qua `PUT /api/warehouse/vouchers/{id}`.
+     - Cho phép xóa bỏ phiếu nháp qua `DELETE /api/warehouse/vouchers/{id}`.
+   - **Xác nhận phiếu (`POST /api/warehouse/vouchers/{id}/confirm`)**:
+     - Sau khi xe dỡ hàng xong và kiểm đếm đủ, nhân viên kho bấm xác nhận.
+     - Hệ thống kiểm tra hợp lệ toàn bộ phiếu, sau đó **cộng tồn kho tổng** và **cập nhật số lượng vào sổ theo dõi tồn theo lô** (`WarehouseLotInventory`).
+     - Trạng thái phiếu chuyển thành `CONFIRMED`.
+5. **Phiếu đã xác nhận không sửa được, chỉ lập phiếu điều chỉnh**:
+   - Mọi hành vi cố tình gọi `PUT` hoặc `DELETE` trên phiếu đã ở trạng thái `CONFIRMED` / `RECORDED` đều bị hệ thống chặn với ngoại lệ `IllegalStateException` ("Phiếu đã xác nhận không sửa được, chỉ lập phiếu điều chỉnh").
+   - Khi có sai sót (hàng vỡ, hàng trả lại...): Quản lý kho (`ROLE_WAREHOUSE_MANAGER`) hoặc Admin (`ROLE_ADMIN`) sử dụng API `POST /api/warehouse/vouchers/{id}/adjust` để lập phiếu điều chỉnh:
+     - Phiếu điều chỉnh tự động liên kết đến `referenceVoucherId` và `referenceVoucherCode`.
+     - Ghi nhận `adjustmentReason` (lý do điều chỉnh).
+     - Điều chỉnh lại số lượng tồn kho theo chênh lệch và cập nhật trạng thái phiếu gốc sang `ADJUSTED`.
 
 ### Danh sách API Danh mục nhà cung cấp (S2-09)
 
