@@ -12,13 +12,32 @@ import com.quanlybanhang.repository.DealerDeliveryPointRepository;
 import com.quanlybanhang.repository.OrderRepository;
 import com.quanlybanhang.repository.PriceListRepository;
 import com.quanlybanhang.repository.ProductRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.quanlybanhang.dto.request.OrderFilterRequest;
+import com.quanlybanhang.dto.response.OrderFilterResult;
+import com.quanlybanhang.model.OrderDraft;
+import com.quanlybanhang.repository.OrderDraftRepository;
+import com.quanlybanhang.repository.UserRepository;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -36,6 +55,35 @@ public class OrderServiceImpl implements OrderService {
     private final AuditLogService auditLogService;
     private final VolumeDiscountPolicyService volumeDiscountPolicyService;
     private final DealerDebtService dealerDebtService;
+
+    @Autowired(required = false)
+    private UserRepository userRepository;
+
+    @Autowired(required = false)
+    public void setUserRepository(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    @Autowired(required = false)
+    private OrderDraftRepository orderDraftRepository;
+
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
+
+    @Autowired(required = false)
+    private OrderPdfService orderPdfService;
+
+    @Autowired(required = false)
+    public void setOrderPdfService(OrderPdfService orderPdfService) {
+        this.orderPdfService = orderPdfService;
+    }
+
+    private OrderPdfService getPdfService() {
+        if (this.orderPdfService == null) {
+            this.orderPdfService = new OrderPdfServiceImpl(orderRepository);
+        }
+        return this.orderPdfService;
+    }
 
     private record ItemPreData(
             Product product,
@@ -345,17 +393,126 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<OrderResponse> getAllOrders() {
-        return orderRepository.findAllByOrderByCreatedAtDesc().stream()
+    public OrderFilterResult getOrders(OrderFilterRequest filter) {
+        if (filter == null) {
+            filter = new OrderFilterRequest();
+        }
+
+        final OrderFilterRequest f = filter;
+        final boolean salesOnly = isSalesOnlyUser();
+        final User currentUser = salesOnly ? getCurrentUser() : null;
+        final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        final String currentUsername = auth != null ? auth.getName() : null;
+
+        Specification<Order> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            // 1. Phân quyền dữ liệu (RLS): Nhân viên kinh doanh chỉ thấy đơn của đại lý mình phụ trách (S4-07)
+            if (salesOnly) {
+                Join<Order, Dealer> dealerJoin = root.join("dealer", JoinType.INNER);
+                if (currentUser != null && currentUser.getId() != null) {
+                    predicates.add(cb.equal(dealerJoin.get("assignedUser").get("id"), currentUser.getId()));
+                } else if (currentUsername != null && !currentUsername.isBlank()) {
+                    predicates.add(cb.equal(dealerJoin.get("assignedUser").get("username"), currentUsername));
+                } else {
+                    predicates.add(cb.disjunction());
+                }
+            }
+
+            // 2. Lọc theo trạng thái đơn hàng (status)
+            if (f.getStatus() != null && !f.getStatus().isBlank()) {
+                predicates.add(cb.equal(cb.upper(root.get("status")), f.getStatus().trim().toUpperCase()));
+            }
+
+            // 3. Lọc theo đại lý (dealerId)
+            if (f.getDealerId() != null) {
+                predicates.add(cb.equal(root.get("dealer").get("id"), f.getDealerId()));
+            }
+
+            // 4. Lọc theo nhân viên kinh doanh phụ trách (salesUserId)
+            if (!salesOnly && f.getResolvedSalesUserId() != null) {
+                Join<Order, Dealer> dealerJoin = root.join("dealer", JoinType.INNER);
+                predicates.add(cb.equal(dealerJoin.get("assignedUser").get("id"), f.getResolvedSalesUserId()));
+            }
+
+            // 5. Lọc theo khu vực / địa bàn (territoryId)
+            if (f.getTerritoryId() != null) {
+                Join<Order, Dealer> dealerJoin = root.join("dealer", JoinType.INNER);
+                predicates.add(cb.equal(dealerJoin.get("territory").get("id"), f.getTerritoryId()));
+            }
+
+            // 6. Lọc theo khoảng thời gian tạo đơn
+            if (f.getResolvedStartDate() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), f.getResolvedStartDate().atStartOfDay()));
+            }
+            if (f.getResolvedEndDate() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), f.getResolvedEndDate().atTime(LocalTime.MAX)));
+            }
+
+            // 7. Lọc theo điều kiện phê duyệt
+            if (f.getApprovalRequired() != null) {
+                predicates.add(cb.equal(root.get("requiresApproval"), f.getApprovalRequired()));
+            }
+            if (f.getApprovalReason() != null && !f.getApprovalReason().isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("approvalReason")), "%" + f.getApprovalReason().trim().toLowerCase() + "%"));
+            }
+
+            // 8. Tìm kiếm nhanh từ khóa (mã đơn, tên khách, tên/mã đại lý)
+            String kw = f.getResolvedKeyword();
+            if (kw != null && !kw.isBlank()) {
+                String pattern = "%" + kw.toLowerCase() + "%";
+                Join<Order, Dealer> dealerJoin = root.join("dealer", JoinType.LEFT);
+                Predicate kwPredicate = cb.or(
+                        cb.like(cb.lower(root.get("orderCode")), pattern),
+                        cb.like(cb.lower(root.get("customerName")), pattern),
+                        cb.like(cb.lower(dealerJoin.get("name")), pattern),
+                        cb.like(cb.lower(dealerJoin.get("code")), pattern)
+                );
+                predicates.add(kwPredicate);
+            }
+
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        List<Order> orders = orderRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        // Tính tổng tiền của tập kết quả đang lọc (S4-07)
+        BigDecimal totalAmount = orders.stream()
+                .map(Order::getTotalAmount)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        List<OrderResponse> responses = orders.stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+
+        return OrderFilterResult.builder()
+                .orders(responses)
+                .totalAmount(totalAmount)
+                .totalOrders((long) responses.size())
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getAllOrders() {
+        return getOrders(new OrderFilterRequest()).getOrders();
     }
 
     @Override
     @Transactional(readOnly = true)
     public OrderResponse getOrderById(Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth != null ? auth.getName() : null;
+        return getOrderById(id, username);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderById(Long id, String username) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+        validateSalesViewAccess(order, username);
         return mapToResponse(order);
     }
 
@@ -465,12 +622,31 @@ public class OrderServiceImpl implements OrderService {
             warning = order.getApprovalReason();
         }
 
+        String dealerCode = dealer != null ? dealer.getCode() : null;
+        String dealerName = dealer != null ? dealer.getName() : null;
+        User assignedUser = dealer != null ? dealer.getAssignedUser() : null;
+        Long salesUserId = assignedUser != null ? assignedUser.getId() : null;
+        String salesUserName = assignedUser != null ? assignedUser.getUsername() : null;
+        String salesUserFullName = assignedUser != null ? assignedUser.getFullName() : null;
+        Territory territory = dealer != null ? dealer.getTerritory() : null;
+        Long territoryId = territory != null ? territory.getId() : null;
+        String territoryCode = territory != null ? territory.getCode() : null;
+        String territoryName = territory != null ? territory.getName() : null;
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .orderCode(order.getOrderCode())
                 .customerName(order.getCustomerName())
                 .customerGroup(order.getCustomerGroup())
-                .dealerId(order.getDealer() != null ? order.getDealer().getId() : null)
+                .dealerId(dealer != null ? dealer.getId() : null)
+                .dealerCode(dealerCode)
+                .dealerName(dealerName)
+                .salesUserId(salesUserId)
+                .salesUserName(salesUserName)
+                .salesUserFullName(salesUserFullName)
+                .territoryId(territoryId)
+                .territoryCode(territoryCode)
+                .territoryName(territoryName)
                 .deliveryPointId(order.getDeliveryPoint() != null ? order.getDeliveryPoint().getId() : null)
                 .expectedDeliveryDate(order.getExpectedDeliveryDate())
                 .priceListId(order.getPriceList() != null ? order.getPriceList().getId() : null)
@@ -896,5 +1072,414 @@ public class OrderServiceImpl implements OrderService {
                 .approvalReason(orderRequiresApproval ? String.join("; ", belowFloorReasons) : null)
                 .items(calculatedItems)
                 .build();
+    }
+
+    /**
+     * S4-09: Sao chép một đơn cũ thành đơn mới ở trạng thái Nháp (DRAFT).
+     * Toàn bộ dòng hàng của đơn đã chọn được sao chép.
+     * Giá và chiết khấu được áp lại theo bảng giá và chính sách hiện hành, không kế thừa giá cũ.
+     * Bản sao luôn bắt đầu ở trạng thái Nháp.
+     */
+    @Override
+    @Transactional
+    public OrderResponse copyOrder(Long id, String username) {
+        Order sourceOrder = orderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+
+        validateSalesAccess(sourceOrder, username);
+
+        if (sourceOrder.getItems() == null || sourceOrder.getItems().isEmpty()) {
+            throw new IllegalArgumentException("Đơn hàng không có dòng hàng nào để sao chép");
+        }
+
+        Dealer dealer = sourceOrder.getDealer();
+        if (dealer != null) {
+            if (Boolean.TRUE.equals(dealer.getLocked())) {
+                throw new DealerLockedException(dealer.getCode(), dealer.getName(), dealer.getLockReason());
+            }
+            if (Boolean.FALSE.equals(dealer.getActive())) {
+                throw new IllegalArgumentException(String.format("Đại lý '%s' (%s) đã ngừng giao dịch, không thể sao chép đơn hàng.",
+                        dealer.getName(), dealer.getCode()));
+            }
+        }
+
+        CustomerGroup customerGroup = sourceOrder.getCustomerGroup();
+        if (customerGroup == null && dealer != null) {
+            customerGroup = dealer.getCustomerGroup();
+        }
+
+        LocalDate today = LocalDate.now();
+        PriceList priceList = null;
+        if (customerGroup != null) {
+            List<PriceList> effectivePriceLists = priceListRepository.findEffectivePriceLists(customerGroup, today);
+            if (!effectivePriceLists.isEmpty()) {
+                priceList = effectivePriceLists.get(0);
+            } else {
+                throw new IllegalArgumentException(String.format("Không tìm thấy bảng giá hiệu lực cho nhóm khách hàng '%s' tại thời điểm %s. Không thể tính giá cho đơn sao chép.",
+                        customerGroup.getDisplayName(), today));
+            }
+        }
+
+        Map<Long, PriceListItem> priceItemMap = new HashMap<>();
+        if (priceList != null && priceList.getItems() != null) {
+            for (PriceListItem pli : priceList.getItems()) {
+                if (pli.getProduct() != null) {
+                    priceItemMap.put(pli.getProduct().getId(), pli);
+                }
+            }
+        }
+
+        String newOrderCode = "DH-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
+
+        Order newOrder = Order.builder()
+                .orderCode(newOrderCode)
+                .customerName(sourceOrder.getCustomerName())
+                .customerGroup(customerGroup)
+                .dealer(dealer)
+                .deliveryPoint(sourceOrder.getDeliveryPoint())
+                .expectedDeliveryDate(today.plusDays(3))
+                .priceList(priceList)
+                .note(sourceOrder.getNote() != null ? sourceOrder.getNote() : "")
+                .status("DRAFT")
+                .requiresApproval(false)
+                .createdBy(username != null ? username : "system")
+                .createdAt(LocalDateTime.now())
+                .recordedAt(null)
+                .items(new ArrayList<>())
+                .build();
+
+        List<VolumeDiscountPolicyService.OrderItemDiscountInput> discountInputs = new ArrayList<>();
+        List<ItemPreData> preDataList = new ArrayList<>();
+
+        for (int i = 0; i < sourceOrder.getItems().size(); i++) {
+            OrderItem sourceItem = sourceOrder.getItems().get(i);
+            Product product = sourceItem.getProduct();
+            if (product == null && sourceItem.getId() != null) {
+                continue;
+            }
+
+            if (customerGroup != null) {
+                PriceListItem pli = priceItemMap.get(product.getId());
+                if (pli == null) {
+                    throw new IllegalArgumentException(String.format("Sản phẩm '%s' (mã: %s) chưa có trong bảng giá hiệu lực hiện hành của nhóm khách hàng '%s'. Không thể sao chép dòng hàng.",
+                            product.getName(), product.getCode(), customerGroup.getDisplayName()));
+                }
+            }
+
+            String inputUnit = sourceItem.getUnit();
+            if (inputUnit == null || inputUnit.isBlank()) {
+                inputUnit = product.getUnit();
+            } else {
+                inputUnit = inputUnit.trim();
+            }
+
+            BigDecimal qty = sourceItem.getQuantity();
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Số lượng cho sản phẩm '" + product.getCode() + "' phải lớn hơn 0");
+            }
+
+            BigDecimal factor = unitConversionService.getConversionFactor(product, inputUnit);
+            BigDecimal baseQty = qty.multiply(factor);
+
+            PriceListItem priceListItem = priceItemMap.get(product.getId());
+            BigDecimal unitSellingPrice = null;
+            BigDecimal unitFloorPrice = null;
+            if (priceListItem != null) {
+                unitSellingPrice = priceListItem.getSellingPrice().multiply(factor);
+                unitFloorPrice = priceListItem.getFloorPrice().multiply(factor);
+            }
+
+            BigDecimal price;
+            if (unitSellingPrice != null) {
+                price = unitSellingPrice;
+            } else {
+                price = product.getPrice() != null ? product.getPrice().multiply(factor) : BigDecimal.ZERO;
+            }
+
+            BigDecimal subtotalAmount = price.multiply(qty);
+
+            discountInputs.add(VolumeDiscountPolicyService.OrderItemDiscountInput.builder()
+                    .index(i)
+                    .product(product)
+                    .unit(inputUnit)
+                    .quantity(qty)
+                    .conversionFactor(factor)
+                    .baseQuantity(baseQty)
+                    .baseUnit(product.getUnit())
+                    .price(price)
+                    .subtotalAmount(subtotalAmount)
+                    .build());
+
+            preDataList.add(new ItemPreData(product, inputUnit, qty, factor, baseQty, price, unitFloorPrice, false, subtotalAmount, sourceItem.getNote()));
+        }
+
+        VolumeDiscountPolicyService.OrderDiscountSummary discountSummary = null;
+        if (volumeDiscountPolicyService != null) {
+            discountSummary = volumeDiscountPolicyService.calculateOrderDiscount(discountInputs, customerGroup, today);
+        }
+
+        BigDecimal grandSubtotal = BigDecimal.ZERO;
+        BigDecimal grandDiscount = BigDecimal.ZERO;
+
+        for (int i = 0; i < preDataList.size(); i++) {
+            ItemPreData pre = preDataList.get(i);
+            BigDecimal itemDiscount = BigDecimal.ZERO;
+            BigDecimal itemDiscountPercent = BigDecimal.ZERO;
+            Long appliedPolicyId = null;
+            String appliedPolicyCode = null;
+            String appliedPolicyName = null;
+
+            if (discountSummary != null && discountSummary.getItemResults() != null) {
+                VolumeDiscountPolicyService.ItemDiscountResult disRes = discountSummary.getItemResults().get(i);
+                if (disRes != null) {
+                    itemDiscount = disRes.getDiscountAmount() != null ? disRes.getDiscountAmount() : BigDecimal.ZERO;
+                    itemDiscountPercent = disRes.getDiscountPercent() != null ? disRes.getDiscountPercent() : BigDecimal.ZERO;
+                    appliedPolicyId = disRes.getAppliedPolicyId();
+                    appliedPolicyCode = disRes.getAppliedPolicyCode();
+                    appliedPolicyName = disRes.getAppliedPolicyName();
+                }
+            }
+
+            BigDecimal itemTotal = pre.subtotal().subtract(itemDiscount);
+            if (itemTotal.compareTo(BigDecimal.ZERO) < 0) {
+                itemTotal = BigDecimal.ZERO;
+            }
+
+            OrderItem orderItem = OrderItem.builder()
+                    .order(newOrder)
+                    .product(pre.product())
+                    .unit(pre.unit())
+                    .quantity(pre.quantity())
+                    .conversionFactor(pre.conversionFactor())
+                    .baseUnit(pre.product().getUnit())
+                    .baseQuantity(pre.baseQuantity())
+                    .price(pre.price())
+                    .floorPrice(pre.floorPrice())
+                    .belowFloorPrice(false)
+                    .subtotalAmount(pre.subtotal())
+                    .discountAmount(itemDiscount)
+                    .discountPercent(itemDiscountPercent)
+                    .appliedPolicyId(appliedPolicyId)
+                    .appliedPolicyCode(appliedPolicyCode)
+                    .appliedPolicyName(appliedPolicyName)
+                    .totalAmount(itemTotal)
+                    .note(pre.note())
+                    .build();
+
+            newOrder.getItems().add(orderItem);
+            grandSubtotal = grandSubtotal.add(pre.subtotal());
+            grandDiscount = grandDiscount.add(itemDiscount);
+        }
+
+        newOrder.setSubtotalAmount(grandSubtotal);
+        newOrder.setDiscountAmount(grandDiscount);
+        newOrder.setTotalAmount(grandSubtotal.subtract(grandDiscount));
+
+        Order saved = orderRepository.save(newOrder);
+
+        auditLogService.logAction("INVOICE", saved.getOrderCode(), "COPY_FROM",
+                sourceOrder.getOrderCode(), saved.getStatus(), username != null ? username : "system");
+
+        syncToDraft(saved, username);
+
+        return mapToResponse(saved);
+    }
+
+    /**
+     * S4-09: Sao chép các dòng hàng của đơn cũ trực tiếp vào bản nháp tạo đơn của người dùng.
+     */
+    @Override
+    @Transactional
+    public JsonNode copyOrderToDraft(Long id, String username) {
+        Order sourceOrder = orderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
+
+        validateSalesAccess(sourceOrder, username);
+
+        if (sourceOrder.getItems() == null || sourceOrder.getItems().isEmpty()) {
+            throw new IllegalArgumentException("Đơn hàng không có dòng hàng để sao chép.");
+        }
+
+        ObjectMapper mapper = this.objectMapper != null ? this.objectMapper : new ObjectMapper();
+        ObjectNode draft = mapper.createObjectNode();
+        draft.put("dealerId", sourceOrder.getDealer() != null ? sourceOrder.getDealer().getId() : null);
+        draft.put("deliveryPointId", sourceOrder.getDeliveryPoint() != null ? sourceOrder.getDeliveryPoint().getId() : null);
+        draft.putNull("deliveryDate");
+        draft.put("note", "");
+
+        ArrayNode itemsNode = draft.putArray("items");
+        int seq = 0;
+        for (int i = 0; i < sourceOrder.getItems().size(); i++) {
+            OrderItem item = sourceOrder.getItems().get(i);
+            if (item.getProduct() == null || item.getQuantity() == null || item.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            ObjectNode itemNode = itemsNode.addObject();
+            itemNode.put("_key", "copy-" + sourceOrder.getId() + "-" + i);
+            itemNode.put("productId", item.getProduct().getId());
+            itemNode.put("selectedUnitId", item.getUnit() != null ? item.getUnit() : item.getProduct().getUnit());
+            itemNode.put("qty", item.getQuantity());
+            itemNode.put("basePrice", 0);
+            itemNode.put("unitPrice", 0);
+            itemNode.put("floorPrice", 0);
+            itemNode.put("manualPrice", false);
+            itemNode.put("discountAmount", 0);
+            seq++;
+        }
+        draft.put("_seq", seq);
+
+        if (seq == 0) {
+            throw new IllegalArgumentException("Đơn hàng không có dòng hàng hợp lệ để sao chép.");
+        }
+
+        if (orderDraftRepository != null && username != null && !username.isBlank()) {
+            OrderDraft orderDraft = orderDraftRepository.findByUsername(username)
+                    .orElseGet(() -> OrderDraft.builder().username(username).build());
+            orderDraft.setDraftData(draft.toString());
+            orderDraftRepository.save(orderDraft);
+        }
+
+        return draft;
+    }
+
+    private void validateSalesAccess(Order order, String username) {
+        if (username == null || username.isBlank() || "system".equalsIgnoreCase(username) || "admin".equalsIgnoreCase(username)) {
+            return;
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return;
+        }
+        boolean isAdminOrManager = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_SALES_MANAGER".equals(a.getAuthority()));
+        if (isAdminOrManager) {
+            return;
+        }
+
+        boolean isSales = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_SALES".equals(a.getAuthority()));
+        if (!isSales) {
+            return;
+        }
+
+        if (order.getCreatedBy() != null && order.getCreatedBy().equalsIgnoreCase(username)) {
+            return;
+        }
+
+        Dealer dealer = order.getDealer();
+        if (dealer != null && dealer.getAssignedUser() != null
+                && dealer.getAssignedUser().getUsername() != null
+                && dealer.getAssignedUser().getUsername().equalsIgnoreCase(username)) {
+            return;
+        }
+
+        throw new AccessDeniedException("Bạn không có quyền sao chép đơn hàng này");
+    }
+
+    private void syncToDraft(Order saved, String username) {
+        if (orderDraftRepository == null || username == null || username.isBlank()) {
+            return;
+        }
+        try {
+            ObjectMapper mapper = this.objectMapper != null ? this.objectMapper : new ObjectMapper();
+            ObjectNode draft = mapper.createObjectNode();
+            draft.put("dealerId", saved.getDealer() != null ? saved.getDealer().getId() : null);
+            draft.put("deliveryPointId", saved.getDeliveryPoint() != null ? saved.getDeliveryPoint().getId() : null);
+            draft.putNull("deliveryDate");
+            draft.put("note", saved.getNote() != null ? saved.getNote() : "");
+
+            ArrayNode itemsNode = draft.putArray("items");
+            if (saved.getItems() != null) {
+                for (int i = 0; i < saved.getItems().size(); i++) {
+                    OrderItem item = saved.getItems().get(i);
+                    ObjectNode itemNode = itemsNode.addObject();
+                    itemNode.put("_key", "copy-" + saved.getId() + "-" + i);
+                    itemNode.put("productId", item.getProduct() != null ? item.getProduct().getId() : null);
+                    itemNode.put("selectedUnitId", item.getUnit());
+                    itemNode.put("qty", item.getQuantity());
+                    itemNode.put("basePrice", 0);
+                    itemNode.put("unitPrice", item.getPrice());
+                    itemNode.put("floorPrice", item.getFloorPrice());
+                    itemNode.put("manualPrice", false);
+                    itemNode.put("discountAmount", item.getDiscountAmount());
+                }
+                draft.put("_seq", saved.getItems().size());
+            }
+            OrderDraft orderDraft = orderDraftRepository.findByUsername(username)
+                    .orElseGet(() -> OrderDraft.builder().username(username).build());
+            orderDraft.setDraftData(draft.toString());
+            orderDraftRepository.save(orderDraft);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private boolean isSalesOnlyUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        boolean hasSales = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_SALES".equals(a.getAuthority()));
+        boolean hasElevated = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority())
+                        || "ROLE_SALES_MANAGER".equals(a.getAuthority())
+                        || "ROLE_ACCOUNTANT".equals(a.getAuthority())
+                        || "ROLE_VIEWER".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_MANAGER".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_STAFF".equals(a.getAuthority()));
+        return hasSales && !hasElevated;
+    }
+
+    private User getCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || userRepository == null) return null;
+        return userRepository.findByUsername(auth.getName()).orElse(null);
+    }
+
+    private void validateSalesViewAccess(Order order, String username) {
+        if (username == null || username.isBlank() || "system".equalsIgnoreCase(username) || "admin".equalsIgnoreCase(username)) {
+            return;
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return;
+        }
+        boolean isElevated = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority())
+                        || "ROLE_SALES_MANAGER".equals(a.getAuthority())
+                        || "ROLE_ACCOUNTANT".equals(a.getAuthority())
+                        || "ROLE_VIEWER".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_MANAGER".equals(a.getAuthority())
+                        || "ROLE_WAREHOUSE_STAFF".equals(a.getAuthority()));
+        if (isElevated) {
+            return;
+        }
+
+        boolean isSales = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_SALES".equals(a.getAuthority()));
+        if (!isSales) {
+            return;
+        }
+
+        if (order.getCreatedBy() != null && order.getCreatedBy().equalsIgnoreCase(username)) {
+            return;
+        }
+
+        Dealer dealer = order.getDealer();
+        if (dealer != null && dealer.getAssignedUser() != null
+                && dealer.getAssignedUser().getUsername() != null
+                && dealer.getAssignedUser().getUsername().equalsIgnoreCase(username)) {
+            return;
+        }
+
+        throw new AccessDeniedException("Bạn chỉ có quyền xem đơn hàng của đại lý do mình phụ trách");
+    }
+
+    @Override
+    public byte[] generateOrderPdf(Long id, String username) {
+        return getPdfService().generateOrderPdf(id, username);
+    }
+
+    @Override
+    public byte[] generateOrderBarcode(Long id, String username) {
+        return getPdfService().generateOrderBarcode(id, username);
     }
 }
