@@ -296,6 +296,15 @@ const MenuConfig = (() => {
       permission: "FINANCE_VIEW_DEBT",
     },
     {
+      id: "invoices",
+      section: "Tài chính",
+      label: "Hóa đơn bán hàng",
+      icon: '<path d="M5 3h14v18l-3-2-4 2-4-2-3 2zM8 7h8M8 11h8M8 15h5"/>',
+      href: "/invoices",
+      roles: ALL_ROLES,
+      permission: "INVOICE_VIEW",
+    },
+    {
       id: "users",
       section: "Hệ thống",
       label: "Quản lý tài khoản",

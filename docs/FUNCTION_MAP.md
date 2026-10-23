@@ -81,7 +81,7 @@
 
 ## Phần S7 đã có trên develop
 
-- S7-01: Chỉ backend → `/api/invoices` → Xem trước/phát hành, gộp phiếu đã giao, điều chỉnh, in/PDF; chưa có menu hoá đơn.
+- S7-01: Tài chính → Hóa đơn bán hàng → Gộp phiếu đã giao, xem trước/phát hành theo thực giao, xem hóa đơn, lập chứng từ điều chỉnh, in/PDF.
 - S7-02: Một phần, chỉ backend → `/api/finance/debt-payments` → Ghi nhận/tra cứu thu tiền theo đại lý; chưa có màn hình đối trừ từng hoá đơn.
 - S7-04: Tự đánh giá rủi ro nợ định kỳ và sau thu tiền; chỉ backend → `/api/finance/debt/config` (cấu hình), `/api/finance/debt/flagged-dealers` (cảnh báo).
 - S7-07: Một phần: Kinh doanh → Cổng đại lý → Xem giỏ hàng → Tổng kết & Công nợ; chưa có danh sách/tải hoá đơn cho đại lý.

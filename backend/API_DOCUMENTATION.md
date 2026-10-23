@@ -3445,6 +3445,8 @@ Tài liệu hợp đồng API phục vụ Bộ phận Kế toán - Tài chính v
 
 ## S7-01 — Phát hành hóa đơn bán hàng từ phiếu đã giao (22/10/2026)
 
+**Bổ sung 23/10/2026:** `GET /api/invoices/{id}/adjustments/{adjustmentId}/pdf` kiểm tra chứng từ thuộc đúng hóa đơn `{id}` trước khi tạo PDF. Sai cặp hóa đơn/chứng từ trả `400 Bad Request`, không gọi dịch vụ xuất PDF. Quyền đọc vẫn là `INVOICE_VIEW` hoặc ADMIN; không đổi schema hay hợp đồng phát hành.
+
 Tài liệu hợp đồng API phục vụ Kế toán công nợ phát hành hóa đơn bán hàng từ các phiếu giao hàng đã hoàn thành, xuất đúng số lượng thực giao thay vì số lượng đặt, quản lý dãy số hóa đơn liên tục không nhảy cóc, và hỗ trợ chứng từ điều chỉnh cho hóa đơn bất biến.
 
 ### 1. Nguyên tắc nghiệp vụ cốt lõi
