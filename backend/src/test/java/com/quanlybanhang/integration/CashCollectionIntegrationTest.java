@@ -167,4 +167,23 @@ class CashCollectionIntegrationTest {
   var result=call(query("/reconciliation"),salesToken,200).path("data");
   assertThat(result.size()).isEqualTo(1); assertThat(result.get(0).path("collected").decimalValue()).isEqualByComparingTo("20");
  }
+ @Test void dealerPickerUsesCollectionPermissionAndStrictOwnership() throws Exception {
+  String marker = "picker-" + UUID.randomUUID();
+  dealer.setName(marker + " owned"); dealers.save(dealer);
+  dealers.save(Dealer.builder().code(UUID.randomUUID().toString()).name(marker + " other").assignedUser(other).build());
+  dealers.save(Dealer.builder().code(UUID.randomUUID().toString()).name(marker + " inactive").assignedUser(sales).active(false).build());
+  var result = call(get("/api/finance/cash-collections/dealers").param("keyword", marker),salesToken,200).path("data");
+  assertThat(result.path("totalElements").asInt()).isEqualTo(1);
+  assertThat(result.path("content").get(0).path("id").asLong()).isEqualTo(dealer.getId());
+  assertThat(result.path("content").get(0).has("debtLimit")).isFalse();
+  assertThat(call(get("/api/finance/cash-collections/dealers").param("keyword", marker).param("size","1"),adminToken,200)
+    .path("data").path("totalElements").asInt()).isEqualTo(2);
+  call(get("/api/finance/cash-collections/dealers"),accountantToken,403);
+  call(get("/api/finance/cash-collections/dealers").param("size","101"),salesToken,400);
+  call(get("/api/finance/cash-collections/dealers").param("page","-1"),salesToken,400);
+  matrix.updateRolePermissions(ERole.ROLE_SALES,Set.of());
+  call(get("/api/finance/cash-collections/dealers"),salesToken,403);
+  matrix.updateRolePermissions(ERole.ROLE_SALES,Set.of(Permission.COLLECTION_CREATE));
+  call(get("/api/finance/cash-collections/dealers").param("keyword",marker),salesToken,200);
+ }
 }

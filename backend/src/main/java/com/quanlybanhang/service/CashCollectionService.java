@@ -29,6 +29,17 @@ public class CashCollectionService {
     private final UserRepository users;
     private final AuditLogService audit;
 
+    public record DealerOption(Long id, String code, String name, String routeName) {}
+    public Page<DealerOption> dealerOptions(String keyword, int page, int size, Authentication a) {
+        if (page < 0 || size < 1 || size > 100 || keyword.length() > 150)
+            throw bad("Bộ lọc cửa hàng không hợp lệ");
+        Long owner = has(a, "ROLE_ADMIN") ? null : actor(a).getId();
+        return dealers.searchDealers(keyword.trim(), null, null, owner, true, null,
+                PageRequest.of(page, size, Sort.by("name").ascending().and(Sort.by("id"))))
+                .map(d -> new DealerOption(d.getId(), d.getCode(), d.getName(),
+                        d.getTerritory() == null ? null : d.getTerritory().getName()));
+    }
+
     private boolean has(Authentication a, String permission) {
         return a.getAuthorities().stream().anyMatch(g -> g.getAuthority().equals("ROLE_ADMIN") || g.getAuthority().equals(permission));
     }

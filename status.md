@@ -878,18 +878,18 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
 
-## S7-05 — Ghi nhận khoản thu theo tuyến (2026-10-23)
+## S7-05 — Ghi nhận khoản thu theo tuyến (cập nhật 2026-10-24)
 
-Branch `feature/S7-05/ghi-nhan-khoan-thu` tạo từ `develop`. Chỉ triển khai backend theo yêu cầu.
+Backend đã có trên `develop`; frontend nối API tại nhánh `feature/frontend/S7-05/thu-tien-theo-tuyen`. Vị trí: **Tài chính → Thu tiền theo tuyến**, `/cash-collections`.
 
 | Yêu cầu | Backend | Frontend | Kết nối và phân quyền |
 |---|---|---|---|
-| Ghi khoản thu tại cửa hàng kèm ảnh biên lai | Hoàn thành: multipart JSON + JPEG/PNG; khoản thu và ảnh lưu DB; lấy nhân viên từ JWT, kiểm tra cửa hàng phụ trách | Chưa làm theo phạm vi yêu cầu | API POST `/api/finance/cash-collections`, quyền `COLLECTION_CREATE`; FE nghiệp vụ chưa nối |
-| Chờ nộp đến khi kế toán xác nhận nhận tiền | Hoàn thành: `PENDING` → `RECEIVED`, lưu người/thời điểm, audit; khóa dòng chống xác nhận trùng; không cho tự xác nhận | Chưa làm | POST `/{id}/confirm`, quyền `COLLECTION_CONFIRM`; thu hồi quyền trả 403 với cùng token |
-| Đối chiếu theo từng nhân viên và ngày | Hoàn thành: tổng thu, đã nhận, còn chờ; lọc ngày/nhân viên; snapshot địa bàn tại lúc thu | Chưa làm | GET `/reconciliation`, `COLLECTION_RECONCILE` xem toàn bộ; `COLLECTION_CREATE` chỉ xem của mình |
-| Danh sách, chi tiết, ảnh riêng tư | Hoàn thành: phân trang, kiểm tra chủ sở hữu ở cả chi tiết và ảnh, ảnh không public | Chưa làm | CREATE chỉ xem mình; CONFIRM/RECONCILE xem toàn bộ; ADMIN có quyền API |
-| Ma trận quyền DB | Hoàn thành: ba quyền mới, cấp/thu hồi có hiệu lực request kế tiếp; không fallback theo vai trò | Màn hình ma trận hiện có tải catalog quyền động, nhận được quyền mới; menu/nút nghiệp vụ S7-05 chưa có | Đã đọc `frontend/js/admin-users.js`; chưa thể nghiệm thu ẩn/hiện nút S7-05 khi frontend chưa triển khai |
-| Tài liệu và kiểm thử | Đã cập nhật `backend/API_DOCUMENTATION.md`; 42/42 tests của 5 bộ kiểm thử qua, không fail/error/skip | Không sửa frontend | 8 bài tích hợp S7-05 kiểm DB/JWT, quyền, ownership, ảnh, đối chiếu, lịch sử tuyến và xác nhận đồng thời |
+| Ghi khoản thu tại cửa hàng kèm ảnh biên lai | Multipart JSON + JPEG/PNG lưu DB; nhân viên từ JWT; bổ sung picker `/dealers` có phân trang, chỉ cửa hàng hoạt động được giao (ADMIN toàn bộ) | Đã nối: tìm/chọn cửa hàng, ngày thu, tiền chính xác tới 17+2 chữ số, ghi chú, kiểm tra/xem trước ảnh 5 MiB/20 MP, xác nhận trước lưu | POST `/api/finance/cash-collections`, `COLLECTION_CREATE`; không yêu cầu thêm CUSTOMER_VIEW/ORDER_VIEW, không lưu dữ liệu nghiệp vụ trong browser storage |
+| Chờ nộp đến khi kế toán xác nhận nhận tiền | `PENDING` → `RECEIVED`, lưu người/thời điểm, audit; khóa dòng chống xác nhận trùng; không tự xác nhận | Đã nối: trạng thái Chờ nộp/Đã nhận tiền; xem chi tiết, biên lai, tích đã nhận đủ; ẩn xác nhận cho khoản thu của mình kể cả ADMIN | POST `/{id}/confirm`, `COLLECTION_CONFIRM`; chặn bấm kép, xử lý 409 không tự retry; lỗi chưa xác định kết quả yêu cầu tải lại kiểm tra |
+| Đối chiếu theo từng nhân viên và ngày | Tổng thu, đã nhận, còn chờ; lọc ngày/nhân viên; snapshot địa bàn tại lúc thu | Đã nối bảng và tổng tiền theo ngày thu gốc, lọc mã nhân viên/khoảng ngày; không cộng tiền qua Number | GET `/reconciliation`, RECONCILE xem toàn bộ, CREATE đơn lẻ chỉ mình; CONFIRM đơn lẻ không gọi API này |
+| Danh sách, chi tiết, ảnh riêng tư | Phân trang, kiểm tra chủ sở hữu ở chi tiết và ảnh, ảnh không public | Đã nối phân trang server, ngày thu/tuyến/nhân viên/số tiền/trạng thái; ảnh tải bằng Bearer + blob và được giải phóng khi đóng | CREATE chỉ xem mình; CONFIRM/RECONCILE xem toàn bộ; không sửa/xóa khoản thu, không để dữ liệu cũ giả thành kết quả rỗng khi lỗi |
+| Ma trận quyền DB | Ba quyền COLLECTION, cấp/thu hồi có hiệu lực request kế tiếp; không fallback theo vai trò | Menu/trang/nút theo quyền, đóng form/xóa dữ liệu nhạy cảm/chặn phản hồi cũ khi đổi quyền, ADMIN luôn có quyền nhưng vẫn không tự xác nhận | Đã kiểm thử non-admin một vai trò VIEWER nhận/thu hồi quyền trên cùng phiên; API thu hồi cùng JWT trả 403, picker không lộ cửa hàng khác |
+| Tài liệu và kiểm thử | 43/43 tests của 5 bộ qua; 9 bài tích hợp S7-05 gồm picker, ownership, ảnh, đối chiếu, lịch sử tuyến và xác nhận đồng thời | 181 unit tests frontend, 11 tests route, 11 kịch bản Chrome HTTP fixtures cách ly và 198 kiểm tra bố cục của 33 trang; kiểm tra desktop/tablet/mobile, ảnh, multipart, XSS, cấp/thu hồi quyền, bấm kép và lỗi API | Cập nhật API_DOCUMENTATION, FRONTEND_ROUTES và FUNCTION_MAP; backend H2 MySQL mode, chưa nghiệm thu MySQL thật; không tạo khoản thu trong DB nghiệp vụ |
 
 DB đã có cấu hình phải được ADMIN cấp quyền mới từ ma trận; không tự chèn quyền vào vai trò đã cấu hình. DB mới khởi tạo SALES=CREATE, ACCOUNTANT=CONFIRM+RECONCILE, SALES_MANAGER=RECONCILE. Kiểm thử trên H2 MySQL mode, chưa kiểm thử MySQL thật. Tuyến dùng địa bàn hiện có (`Dealer.territory`); đối chiếu theo ngày thu gốc. Xác nhận nhận đủ từng khoản, không có nộp một phần hoặc tự đối trừ công nợ S7-02.
 

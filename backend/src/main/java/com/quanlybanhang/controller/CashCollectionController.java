@@ -16,6 +16,13 @@ import java.time.LocalDate;
 @RequestMapping("/api/finance/cash-collections")
 public class CashCollectionController {
     private final CashCollectionService service;
+    @GetMapping("/dealers")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('COLLECTION_CREATE')")
+    public ApiResponse dealers(@RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size,
+            Authentication a) {
+        return ApiResponse.success("Cửa hàng có thể ghi thu", service.dealerOptions(keyword, page, size, a));
+    }
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('COLLECTION_CREATE')")
     public ResponseEntity<ApiResponse> create(@Valid @RequestPart("data") CashCollectionRequest data,
