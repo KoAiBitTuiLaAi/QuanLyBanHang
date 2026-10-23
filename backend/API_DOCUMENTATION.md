@@ -3562,6 +3562,72 @@ Response:
 }
 ```
 
+## S7-05 — Ghi nhận khoản thu theo tuyến và đối chiếu tiền nộp
+
+Base URL: `/api/finance/cash-collections`. Tất cả API yêu cầu Bearer access token.
+
+### Quyền và phạm vi dữ liệu
+
+| Quyền từ ma trận DB | Thao tác |
+|---|---|
+| `COLLECTION_CREATE` | Ghi thu tại cửa hàng do chính nhân viên đang đăng nhập phụ trách; xem khoản thu/biên lai và đối chiếu của chính mình |
+| `COLLECTION_CONFIRM` | Xem khoản thu/biên lai toàn bộ nhân viên; xác nhận đã nhận đủ tiền |
+| `COLLECTION_RECONCILE` | Xem khoản thu/biên lai và báo cáo toàn bộ nhân viên |
+| `ROLE_ADMIN` | Toàn quyền API; quy tắc không tự xác nhận khoản thu của chính mình vẫn áp dụng |
+
+Mỗi request nạp quyền qua cơ chế JWT/ma trận DB hiện có. Không fallback theo vai trò SALES/ACCOUNTANT. Thu hồi quyền có hiệu lực ở request kế tiếp với cùng JWT. Người có nhiều vai trò nhận hợp quyền: để kiểm tra thu hồi phải bỏ quyền từ tất cả vai trò liên quan.
+
+DB mới khởi tạo quyền: SALES được CREATE, ACCOUNTANT được CONFIRM + RECONCILE, SALES_MANAGER được RECONCILE. **DB đã có cấu hình giữ nguyên ma trận**: ADMIN cần cấp các quyền mới ở màn hình quản trị quyền; không tự thêm lại quyền đã bị thu hồi. Danh mục quyền trong màn hình hiện tại được tải động từ backend.
+
+### Endpoints
+
+| Method | Path | Input | Output |
+|---|---|---|---|
+| POST | `/` (không cần dấu `/` cuối) | multipart: `data` là JSON, `receipt` là file | 201, khoản thu ở trạng thái `PENDING` |
+| GET | `/` | `from`, `to` bắt buộc YYYY-MM-DD; `employeeId` tùy chọn; `page=0`, `size=20` | Page khoản thu mới nhất trước; size giới hạn 1–100 |
+| GET | `/{id}` | ID khoản thu | Chi tiết khoản thu |
+| GET | `/{id}/receipt` | ID khoản thu | Bytes JPEG/PNG, `Cache-Control: no-store`, yêu cầu quyền và kiểm tra chủ sở hữu |
+| POST | `/{id}/confirm` | Không có body | Xác nhận kế toán đã nhận đủ tiền, chuyển `PENDING` → `RECEIVED` |
+| GET | `/reconciliation` | `from`, `to`, `employeeId` tùy chọn | Mảng tổng hợp theo nhân viên và ngày thu |
+
+Ví dụ phần `data` (Content-Type `application/json`):
+
+```json
+{"dealerId":12,"amount":250000.00,"collectionDate":"2026-10-23","note":"Thu tiền tại cửa hàng"}
+```
+
+- `dealerId`: ID dương, cửa hàng đang hoạt động và do người ghi thu phụ trách; ADMIN được ghi ngoài phạm vi phụ trách.
+- `amount`: bắt buộc > 0, tối đa 17 chữ số phần nguyên, 2 chữ số thập phân; dùng BigDecimal.
+- `collectionDate`: bắt buộc, không ở tương lai. Service kiểm tra theo Asia/Ho_Chi_Minh.
+- `note`: tùy chọn, tối đa 500 ký tự.
+- `receipt`: bắt buộc, tối đa 5 MiB; nội dung thực phải giải mã được bằng JPEG/PNG, tối đa 20 megapixel. Không tin tên file hoặc MIME do client khai báo.
+- Nhân viên ghi thu lấy từ danh tính JWT, không nhận employeeId/status/receivedBy từ client khi tạo.
+- `routeName`: lưu snapshot tên địa bàn (`Dealer.territory`) của cửa hàng tại thời điểm thu. Dự án chưa có entity tuyến riêng. Phân công cửa hàng thay đổi không đổi lịch sử khoản thu.
+- Biên lai và dữ liệu khoản thu lưu trong DB; Hibernate tạo bảng `cash_collections` theo cơ chế `ddl-auto=update` hiện tại.
+
+Các response JSON dùng envelope `ApiResponse` hiện có. Chi tiết gồm `id`, `dealerId`, `dealerName`, `employeeId`, `employeeName`, `routeName`, `amount`, `collectionDate`, `note`, `status`, `createdAt`, `receivedAt`, `receivedBy`, `receiptUrl`. Ảnh chỉ trả qua endpoint riêng đã xác thực.
+
+Ví dụ `data` đối chiếu:
+
+```json
+[{"employeeId":8,"employeeName":"Nguyễn Văn A","date":"2026-10-23","collected":350000.00,"received":250000.00,"pending":100000.00,"count":2}]
+```
+
+`received` là tiền thuộc các khoản thu đã được kế toán xác nhận, được nhóm theo **ngày thu gốc**, không phải ngày kế toán nhận tiền. `pending = collected - received`. Khoảng ngày tối đa chênh lệch 366 ngày, from <= to. Không truyền employeeId: nhân viên chỉ thấy mình, người có quyền đối chiếu thấy tất cả. Ngày không có khoản thu không có dòng tổng hợp. Tổng được tính bằng truy vấn GROUP BY trong DB.
+
+### Kiểm soát ghi nhận và mã lỗi
+
+- Khoản thu không có API sửa/xóa. CREATE và CONFIRM_RECEIVED ghi audit trong transaction, lưu người và thời điểm thao tác.
+- Xác nhận nhận đủ toàn bộ khoản thu một lần. Không tự xác nhận khoản thu của chính mình. Khóa dòng DB ngăn hai request xác nhận đồng thời; chỉ một request thành công.
+- 400: dữ liệu/ảnh không hợp lệ, thiếu multipart part, thiếu hoặc sai tham số lọc.
+- 401: chưa xác thực. 403: thiếu quyền, cửa hàng ngoài phạm vi, xem dữ liệu người khác hoặc tự xác nhận.
+- 404: không tìm thấy cửa hàng/khoản thu. 409: khoản thu đã được xác nhận.
+- Request vượt giới hạn multipart chung dùng xử lý lỗi upload hiện tại (giới hạn toàn ứng dụng 20 MB/file, 21 MB/request); S7-05 kiểm tra thêm ngưỡng ảnh 5 MiB.
+
+Phạm vi S7-05 là đối chiếu khoản thu với tiền nhân viên nộp. Không tự tạo DebtPayment hoặc đối trừ hóa đơn/công nợ S7-02; không hỗ trợ nộp một phần. Frontend nghiệp vụ chưa triển khai theo yêu cầu chỉ làm backend.
+
+Kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,FinanceControllerTest,DebtRiskSecurityTest" test` — 42 tests passed (8 test tích hợp S7-05); DB kiểm thử H2 MySQL mode, chưa chạy MySQL thực tế.
+
 ---
 
 ## S7-07 — Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn (23/10/2026)

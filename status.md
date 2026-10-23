@@ -878,6 +878,23 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
 
+## S7-05 — Ghi nhận khoản thu theo tuyến (2026-10-23)
+
+Branch `feature/S7-05/ghi-nhan-khoan-thu` tạo từ `develop`. Chỉ triển khai backend theo yêu cầu.
+
+| Yêu cầu | Backend | Frontend | Kết nối và phân quyền |
+|---|---|---|---|
+| Ghi khoản thu tại cửa hàng kèm ảnh biên lai | Hoàn thành: multipart JSON + JPEG/PNG; khoản thu và ảnh lưu DB; lấy nhân viên từ JWT, kiểm tra cửa hàng phụ trách | Chưa làm theo phạm vi yêu cầu | API POST `/api/finance/cash-collections`, quyền `COLLECTION_CREATE`; FE nghiệp vụ chưa nối |
+| Chờ nộp đến khi kế toán xác nhận nhận tiền | Hoàn thành: `PENDING` → `RECEIVED`, lưu người/thời điểm, audit; khóa dòng chống xác nhận trùng; không cho tự xác nhận | Chưa làm | POST `/{id}/confirm`, quyền `COLLECTION_CONFIRM`; thu hồi quyền trả 403 với cùng token |
+| Đối chiếu theo từng nhân viên và ngày | Hoàn thành: tổng thu, đã nhận, còn chờ; lọc ngày/nhân viên; snapshot địa bàn tại lúc thu | Chưa làm | GET `/reconciliation`, `COLLECTION_RECONCILE` xem toàn bộ; `COLLECTION_CREATE` chỉ xem của mình |
+| Danh sách, chi tiết, ảnh riêng tư | Hoàn thành: phân trang, kiểm tra chủ sở hữu ở cả chi tiết và ảnh, ảnh không public | Chưa làm | CREATE chỉ xem mình; CONFIRM/RECONCILE xem toàn bộ; ADMIN có quyền API |
+| Ma trận quyền DB | Hoàn thành: ba quyền mới, cấp/thu hồi có hiệu lực request kế tiếp; không fallback theo vai trò | Màn hình ma trận hiện có tải catalog quyền động, nhận được quyền mới; menu/nút nghiệp vụ S7-05 chưa có | Đã đọc `frontend/js/admin-users.js`; chưa thể nghiệm thu ẩn/hiện nút S7-05 khi frontend chưa triển khai |
+| Tài liệu và kiểm thử | Đã cập nhật `backend/API_DOCUMENTATION.md`; 42/42 tests của 5 bộ kiểm thử qua, không fail/error/skip | Không sửa frontend | 8 bài tích hợp S7-05 kiểm DB/JWT, quyền, ownership, ảnh, đối chiếu, lịch sử tuyến và xác nhận đồng thời |
+
+DB đã có cấu hình phải được ADMIN cấp quyền mới từ ma trận; không tự chèn quyền vào vai trò đã cấu hình. DB mới khởi tạo SALES=CREATE, ACCOUNTANT=CONFIRM+RECONCILE, SALES_MANAGER=RECONCILE. Kiểm thử trên H2 MySQL mode, chưa kiểm thử MySQL thật. Tuyến dùng địa bàn hiện có (`Dealer.territory`); đối chiếu theo ngày thu gốc. Xác nhận nhận đủ từng khoản, không có nộp một phần hoặc tự đối trừ công nợ S7-02.
+
+Lệnh kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,FinanceControllerTest,DebtRiskSecurityTest" test`.
+
 ## S8-10 — Xuất sổ chi tiết công nợ đại lý (2026-10-23)
 
 Branch `feature/S8-10/xuat-so-chi-tiet-cong-no` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend; không commit/push.
