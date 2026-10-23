@@ -1,5 +1,34 @@
 # Trạng thái sprint 1–7
 
+## S6-08 — Sửa lỗi frontend, chưa triển khai backend — 23/10/2026
+
+Phạm vi bổ sung do người dùng yêu cầu ngay trên nhánh S6-04; đã hỏi và xác nhận **chỉ frontend**. Không bổ sung API lưu ảnh/người nhận/hoàn kho S6-08.
+
+| Hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Menu và script bị thiếu | Không sửa | Tách menu Xác nhận giao hàng khỏi Kiểm kê; thêm `delivery-confirmation.js`, `app-transition.js` trong head | Menu/guard cần ORDER_VIEW + WAREHOUSE_EXPORT; ADMIN luôn vào được. Kiểm kê trở về VIEW hoặc ADJUST, không còn nhận nhầm EXPORT |
+| Danh sách/chi tiết đơn thật | Dùng GET `/orders`, `/orders/{id}` sẵn có | Có — phân trang server, từ khóa/trạng thái, lỗi/tải lại; lọc kho và thống kê theo trang có nhãn | Không dùng danh sách demo/fallback; quyền/scope đơn do API quyết định. Thu hồi quyền xóa dữ liệu/form, bỏ phản hồi trễ |
+| Form người nhận/thời điểm và xem trước ảnh | Chưa có API S6-08 | Có — nhập tạm, kiểm tra loại/kích thước/decode ảnh, đổi/xóa/phóng to; không lưu local/sessionStorage | Blob chỉ ở bộ nhớ, giải phóng khi đóng/reload/revoke; không khẳng định đã xác thực chữ ký hay lưu chứng từ |
+| Ghi xác nhận/hoàn kho/điều kiện hoá đơn | **Chưa triển khai** | **Khóa nút lưu**, chặn submit, giải thích thiếu API; không giả số phiếu/kho/mã chứng từ hoặc thông báo thành công | Không gửi lệnh ghi nào từ trang S6-08, không đổi trạng thái đơn, tồn, công nợ hoặc hoá đơn |
+
+Kiểm thử: Node toàn repo **163/163 qua** (gồm 5 test client S6-08 và test menu tách biệt/cấp-thu hồi); 2 lỗi tồn từ PR S6-08 đã hết. Chrome S6-08 qua GET-only, menu, phân trang/tìm, form, ảnh hợp lệ/không hợp lệ, XSS, lỗi tải, revoke/phản hồi trễ và 6 widths 320–1920px. Python routes **11/11**, bố cục cuối **174 checks / 29 trang / 6 widths** qua. API intercept fixtures không ghi DB thật. `docs/FUNCTION_MAP.md` và `docs/FRONTEND_ROUTES.md` cập nhật rõ S6-08 còn một phần; không tuyên bố S6-08 đạt toàn bộ AC.
+
+## S6-04 — Frontend gợi ý lô xuất FEFO và sửa backend liên quan — 23/10/2026
+
+Nhánh `feature/S6-04-frontend-he_thong_goi_y_lo_xuat_theo_nguyen_tac`. Đã đọc AGENTS.md và hai skill của repo. Dùng lại trang Lô & hạn sử dụng và khung `app-navigation.css`; không thêm shell/menu riêng. Vị trí đã cập nhật đúng dòng S6-04 trong `docs/FUNCTION_MAP.md`: **Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO**, URL `/warehouse/lots?tab=fefo`.
+
+| Yêu cầu / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Mặc định lô HSD gần nhất còn đủ lượng | Có — dùng cùng hàm chọn FEFO cho gợi ý và ghi phiếu; sửa không tự chọn lô quá hạn/thiếu HSD, hỗ trợ SKU legacy còn tồn lô | Có — chọn kho/SKU/lượng theo đơn vị cơ sở, lấy gợi ý, tự chọn radio lô server trả; bảng giữ thứ tự server | GET `/warehouse/export/suggest-lot`; không tính FEFO bằng JS, không tự gộp nhiều lô khi một lô không đủ |
+| Chọn lô khác phải có lý do | Có — tự tính lại gợi ý khi ghi, bỏ qua `suggestedLotNumber` giả; khác gợi ý hiện tại thì chặn nếu thiếu lý do | Có — hiển thị lô/lượng sẽ xuất, lý do bắt buộc khi đổi lô, checkbox xác nhận ghi sổ | POST `/warehouse/export` gửi đúng lô và lý do; lỗi 400 giữ input để sửa; lô quá hạn chỉ theo luồng ghi đè S6-01, không thuộc mặc định FEFO |
+| Trừ đúng tồn lô đã chọn | Có — khóa tồn vật lý trước rồi current-read/khóa các lô theo ID; phiếu/tồn/lô/audit cùng transaction; không dùng tồn giữ chỗ của đơn khác | Có — chỉ ghi khi xác nhận, chống gửi lặp; hiện mã phiếu/lô thực từ API, tải lại tồn sau thành công | Hai yêu cầu cùng xuất lô không đủ cho cả hai: một thành công, một 400; không trừ lô khác, không âm/ghi đè số dư cũ |
+| Quyền đọc/ghi và phiên hiện tại | Đọc gợi ý VIEW hoặc EXPORT, đọc options VIEW hoặc MANAGE; ghi EXPORT; ADMIN luôn được phép, scope kho giữ theo service | Trang cần VIEW/MANAGE; tab cần thêm VIEW/EXPORT, nút ghi cần EXPORT + `canExport` từ options; VIEW chỉ xem gợi ý | Không role fallback. Thu hồi xóa form/gợi ý và ẩn tab/nút; bỏ phản hồi đọc/ghi trễ, API JWT hiện tại trả 403 khi mất quyền |
+| Điện thoại / thao tác lỗi | Validate lượng dương, 11 chữ số nguyên/4 số lẻ; kiểm lại dữ liệu khi ghi | Có — frame chung, form co về một cột, bảng cuộn bên trong, controls 44px; đổi đầu vào xóa gợi ý cũ | Chrome 320–1920px, không tràn ngang toàn trang. Mất kết nối/5xx không rõ kết quả POST thì chặn gửi lại ngay, nhắc kiểm tra Sổ cái trước |
+
+Kiểm chứng: toàn bộ backend **866/866 qua** (`clean test`, bản sao backend/H2 tạm); tập trung **78 test backend qua**, gồm 6 ca S6-04 mới qua HTTP/JWT/JPA (loại quá hạn/thiếu HSD, validation/legacy/scope, single-role grant/revoke cùng JWT, giả gợi ý/thay đổi FEFO, xuất đồng thời, rollback khi tồn giữ chỗ không đủ). **11 test Node S6-04 và 6 test S6-01 qua**. Chrome S6-04 qua luồng gợi ý/chọn lô/lý do/ghi/lỗi/quyền/phản hồi trễ/XSS/không có lô đủ và 6 widths; Chrome S6-01, nhập kho S5-04 và thẻ kho S6-02 hồi quy qua. Python router **11/11**. Bố cục chung cuối **174 checks / 29 trang / 6 widths** qua, bao gồm trang S6-08 sau sửa frontend.
+
+Lượt Node ban đầu **155/157 qua**, phát hiện 2 lỗi sẵn từ S6-08; sau đó người dùng yêu cầu sửa frontend S6-08 ngay trên nhánh này, kết quả cuối **163/163 qua** (xem mục trên). Kiểm thử dùng HTTP fixtures cho Chrome và H2 cách ly, không phải nghiệm thu xuất hàng trên MySQL thật. Không tạo/sửa/hủy phiếu hoặc seed/reset DB thật; không khởi động lại backend thật. Cần build/restart backend để nhận sửa FEFO/khóa tồn; **không thay schema và không cần xóa DB**. Chưa commit/push/merge.
+
 ## S6-03 — Phiếu soạn hàng từ đơn đã duyệt (frontend + backend) — 23/10/2026
 
 Nhánh `feature/S6-03-frontend-va-backend-tao_phieu_soan_hang`. Đã đọc AGENTS.md và hai skill trong SKILLS. Triển khai theo 5 tiêu chí trong ảnh; giữ shared shell/frame hiện có, lưu nghiệp vụ ở DB. Theo yêu cầu cập nhật của người dùng: chỉ commit local, không tự push/merge develop. Không restart backend hoặc ghi/reset DB thật trong quá trình kiểm thử.

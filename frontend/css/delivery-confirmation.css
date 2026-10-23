@@ -1,5 +1,13 @@
 /* delivery-confirmation.css — S6-08 Xác nhận giao hàng & Chứng từ kho */
 
+[hidden]{display:none!important;}
+.dc-pagination{justify-content:flex-end;gap:12px;margin-top:16px;flex-wrap:wrap;}
+.dc-table-wrapper{overflow-x:auto;max-width:100%;}.dc-table{min-width:960px;}
+.dc-table th:first-child,.dc-table td:first-child{min-width:145px;}.dc-table td small{display:block;margin-top:6px;}
+.dc-modal{max-height:calc(100dvh - 32px);overflow-y:auto;}
+.dc-btn:disabled{opacity:.55;cursor:not-allowed;}
+#proof-dropzone:focus-visible{outline:2px solid var(--teal-deep);outline-offset:3px;}
+
 :root {
   --dc-primary: #1e3a5f;
   --dc-primary-hover: #152c48;

@@ -1,5 +1,21 @@
 # Chạy frontend và đường dẫn trang
 
+## S6-08 — Sửa frontend, chưa làm backend (23/10/2026)
+
+- Menu **Kho hàng → Xác nhận giao hàng**, URL `/warehouse/delivery`. Tách object menu khỏi Kiểm kê kho để không ghi đè ID/URL và không gắn nhầm EXPORT cho kiểm kê. Bổ sung script nghiệp vụ bị thiếu và `app-transition.js` trong head.
+- Cần **ORDER_VIEW + WAREHOUSE_EXPORT** theo ma trận DB (hoặc ADMIN). Đọc GET `/orders?page=0&size=20&keyword=...&status=...` và GET `/orders/{id}` hiện có; không gửi POST/PUT/PATCH/DELETE. Scope đơn do backend hiện có quyết định, không role fallback. Lọc kho và số đếm chỉ áp dụng trang hiện tại, có nhãn rõ; tìm từ khóa/trạng thái/phân trang qua server.
+- Đơn đã xuất mở được form giao nhận/giao thất bại. Nhập người nhận, thời gian, ghi chú và chọn/xem trước ảnh JPG/PNG/WEBP tối đa 10MB; ảnh phải decode được, có đổi/xóa/phóng to. Chỉ giữ tạm trong bộ nhớ/blob URL, không local/sessionStorage hay tải lên server. Đóng form/reload/thu hồi quyền xóa bản xem trước và giải phóng blob URL.
+- **Chưa có backend S6-08:** nút lưu giao hàng và hoàn kho bị khóa kể cả ADMIN; chặn submit giả bằng JS, không báo lưu thành công, không tạo phiếu hay cộng/trừ tồn/đổi trạng thái/kích hoạt hoá đơn. Các số liệu ảnh/hoàn kho/điều kiện hoá đơn chưa có API hiển thị “—”, không suy từ tổng tiền hay trạng thái đơn. Cần triển khai backend và kiểm thử lại trước khi mở các nút ghi.
+
+## S6-04 — Gợi ý lô xuất FEFO (23/10/2026)
+
+- **Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO**, URL `/warehouse/lots?tab=fefo`. Dùng khung trang chung, không thêm menu/sidebar riêng.
+- Chọn kho được phân công, SKU và số lượng theo đơn vị cơ sở; **Lấy gợi ý FEFO** gọi API, không tự tính thứ tự/hạn dùng/tồn trong trình duyệt. Lô mặc định là lô còn hạn có hạn dùng gần nhất và đủ số lượng cho một lần xuất. Lô thiếu lượng/quá hạn/thiếu HSD không chọn được trong luồng FEFO này. Không có lô đủ thì giảm lượng và lấy lại gợi ý, không tự gộp/trừ nhiều lô.
+- Có thể chọn lô khác còn hạn và đủ lượng, nhưng bắt buộc lý do. Đánh dấu xác nhận rồi **Xác nhận xuất lô** mới POST phiếu xuất. Kết quả hiển thị mã phiếu/lô do server trả; tải lại tồn qua API, không giảm tồn giả ở JS. Lô quá hạn chỉ xử lý theo luồng ghi đè S6-01 hiện có, không được gợi ý mặc định.
+- Trang Lô cần VIEW hoặc MANAGE; tab FEFO cần thêm VIEW hoặc EXPORT, nút ghi cần EXPORT và `canExport` từ API. ADMIN luôn có quyền; không dùng vai trò kho thay quyền DB. Thu hồi quyền xóa gợi ý/form, ẩn tab hoặc nút; bỏ qua phản hồi cũ. Người chỉ VIEW xem gợi ý nhưng không xuất.
+- Đổi kho/SKU/lượng làm mất gợi ý cũ; phải lấy lại trước khi xuất. Lỗi nghiệp vụ giữ dữ liệu để sửa; nếu mất kết nối/5xx không rõ kết quả ghi, xóa khả năng gửi lại ngay và nhắc kiểm tra Sổ cái kho để tránh xuất lặp. Không lưu nghiệp vụ vào local/sessionStorage.
+- Cần build/restart backend để nhận sửa FEFO và khóa tồn; không có thay đổi schema, không cần xóa DB. Backend kiểm tra lại lô và quyền khi ghi sổ, không tin `suggestedLotNumber` từ client.
+
 ## S6-03 — Phiếu soạn hàng (23/10/2026)
 
 - Menu **Kho hàng → Phiếu soạn hàng**, URL `/warehouse/picking` (URL cũ `/warehouse/picking.html` tự chuyển về URL sạch).

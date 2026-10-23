@@ -207,11 +207,14 @@ const MenuConfig = (() => {
       icon: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><rect x="7" y="14" width="7" height="4" rx="1"/><path d="M14 8h5l3 3v6a1 1 0 0 1-1 1h-2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
       href: "/warehouse/delivery",
       permission: "WAREHOUSE_EXPORT",
+      requiredPermissions: ["ORDER_VIEW"],
       roles: [
         "ROLE_ADMIN",
         "ROLE_WAREHOUSE_MANAGER",
         "ROLE_WAREHOUSE_STAFF",
       ],
+    },
+    {
       id: "warehouse-stocktake",
       section: "Kho hàng",
       label: "Kiểm kê kho",
