@@ -12,7 +12,7 @@ const cases = [
   '/warehouse/units?tab=units', '/warehouse/units?tab=receipts', '/warehouse/units?tab=ledger',
   '/admin/users', '/admin/audit-logs', '/warehouses', '/warehouse/inventory', '/warehouse/transfers', '/warehouse/minimums',
   '/warehouse/units?tab=stocktake', '/warehouse/lots', '/warehouse/stock-card',
-  '/warehouse/picking', '/warehouse/delivery', '/warehouse/order-shipments',
+  '/warehouse/picking', '/warehouse/delivery', '/warehouse/order-shipments', '/warehouse/delivery-trips',
 ];
 const user = { id: 1, username: 'admin', fullName: 'Quản trị viên', email: 'admin@example.invalid',
   phone: '0900000000', roles: ['ROLE_ADMIN'], permissions: [], warehouses: [], territories: [] };
@@ -53,6 +53,9 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       else if (endpoint === '/warehouse/picking-batches') data = {content: [], totalElements: 0, totalPages: 0};
       else if (endpoint === '/warehouse/order-shipments/options') data = {warehouses: [], canConfirm: true, quantityScale: 4, reservationPolicy: 'Phần còn nợ tiếp tục giữ chỗ'};
       else if (endpoint === '/warehouse/order-shipments') data = {content: [], totalElements: 0, totalPages: 0};
+      else if (endpoint === '/warehouse/delivery-trips/options') data = {warehouses: [], tripStatuses: [], stopStatuses: [], canManage: false};
+      else if (endpoint === '/warehouse/delivery-trips/summary') data = {totalOutstandingValue:0,totalOutstandingTrips:0,closedOutstandingValue:0,closedOutstandingTrips:0,totalRunningTrips:0,totalValueOnRoad:0,totalDeliveredPoints:0,totalRemainingPoints:0,totalOverdueTrips:0};
+      else if (endpoint === '/warehouse/delivery-trips') data = {content: [], totalElements: 0, totalPages: 0};
       else if (endpoint === '/dealers/options') data = { assignedUsers: [], territories: [] };
       else if (['/dealers', '/dealers/active', '/finance/debt', '/portal/dealers'].includes(endpoint)) data = dealers;
       else if (endpoint === '/orders/draft') data = null;

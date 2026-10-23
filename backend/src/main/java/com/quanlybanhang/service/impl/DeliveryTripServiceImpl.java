@@ -152,6 +152,13 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     @Transactional(readOnly = true)
     public Page<DeliveryTripResponse> searchTrips(Long warehouseId, DeliveryTripStatus status,
                                                  Boolean isOverdue, String keyword, int page, int size) {
+        return searchTrips(warehouseId, status, isOverdue, keyword, page, size, false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DeliveryTripResponse> searchTrips(Long warehouseId, DeliveryTripStatus status,
+            Boolean isOverdue, String keyword, int page, int size, boolean outstandingOnly) {
         Scope scope = checkScope(false);
 
         if (warehouseId != null) {
@@ -161,6 +168,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
         if (page < 0 || size < 1 || size > 200) {
             throw new IllegalArgumentException("Trang phải không âm; số dòng mỗi trang từ 1 đến 200");
         }
+        if (keyword != null && keyword.length() > 150) throw new IllegalArgumentException("Từ khóa tối đa 150 ký tự");
 
         List<Long> allowedWarehouseIds = warehouseId != null
                 ? List.of(warehouseId)
@@ -176,6 +184,15 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
             // 1. Phân quyền phạm vi kho
             predicates.add(root.get("warehouse").get("id").in(allowedWarehouseIds));
 
+            if (outstandingOnly) {
+                var sub = query.subquery(Long.class);
+                var stop = sub.from(DeliveryTripStop.class);
+                sub.select(stop.get("id")).where(cb.equal(stop.get("trip"), root),
+                        cb.notEqual(stop.get("status"), DeliveryStopStatus.DELIVERED),
+                        cb.or(cb.isNull(stop.get("returnedToWarehouse")), cb.isFalse(stop.get("returnedToWarehouse"))));
+                predicates.add(cb.exists(sub));
+            }
+
             // 2. Lọc trạng thái chuyến
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
@@ -190,7 +207,8 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 } else {
                     predicates.add(cb.or(
                             cb.notEqual(root.get("status"), DeliveryTripStatus.IN_PROGRESS),
-                            cb.greaterThanOrEqualTo(root.get("expectedCompletionTime"), now)
+                            cb.greaterThanOrEqualTo(root.get("expectedCompletionTime"), now),
+                            cb.isNull(root.get("expectedCompletionTime"))
                     ));
                 }
             }
@@ -241,6 +259,8 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                     .totalRemainingPoints(0L)
                     .totalFailedPoints(0L)
                     .totalPendingPoints(0L)
+                    .totalOutstandingValue(BigDecimal.ZERO).totalOutstandingTrips(0L)
+                    .closedOutstandingValue(BigDecimal.ZERO).closedOutstandingTrips(0L)
                     .build();
         }
 
@@ -273,7 +293,17 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
             totalPendingPoints += trip.getPendingPoints();
         }
 
+        // Read-only liability reconciliation, including historical completed/cancelled trips.
+        List<DeliveryTrip> outstanding = tripRepository.findAllByWarehouseIdIn(allowedWarehouseIds).stream()
+                .filter(t -> t.getRemainingPoints() > 0).toList();
+        List<DeliveryTrip> closedOutstanding = outstanding.stream()
+                .filter(t -> t.getStatus() != DeliveryTripStatus.IN_PROGRESS).toList();
+
         return DeliveryTripSummaryResponse.builder()
+                .totalOutstandingValue(outstanding.stream().map(DeliveryTrip::getRemainingValue).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .totalOutstandingTrips((long) outstanding.size())
+                .closedOutstandingValue(closedOutstanding.stream().map(DeliveryTrip::getRemainingValue).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .closedOutstandingTrips((long) closedOutstanding.size())
                 .totalRunningTrips(totalRunningTrips)
                 .totalOverdueTrips(totalOverdueTrips)
                 .totalValueOnRoad(totalValueOnRoad)
