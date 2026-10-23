@@ -1,6 +1,6 @@
 # Vị trí chức năng theo Product Backlog
 
-Đối chiếu Product Backlog với code trên nhánh đang xem; cập nhật ngày 23/10/2026. Mỗi dòng là vị trí thao tác hiện có, không phải kết luận toàn bộ tiêu chí của story đã đạt. Menu/nút chỉ hiện khi tài khoản có quyền tương ứng.
+Đối chiếu Product Backlog với code trên nhánh đang xem; cập nhật ngày 24/10/2026. Mỗi dòng là vị trí thao tác hiện có, không phải kết luận toàn bộ tiêu chí của story đã đạt. Menu/nút chỉ hiện khi tài khoản có quyền tương ứng.
 
 `Chỉ backend`: chưa có màn hình/menu. `Một phần`: chỉ mô tả phần hiện có, không coi story đã hoàn tất.
 
@@ -79,11 +79,12 @@
 - S6-08: Một phần (frontend): Kho hàng → Xác nhận giao hàng → Xem đơn thật, mở form/xem trước ảnh; khóa lưu xác nhận/hoàn kho vì chưa có API S6-08.
 - S6-09: Một phần (frontend): Kinh doanh → Đơn hàng của tôi → Theo dõi giao hàng → 5 mốc, thực giao từng dòng; mốc thiếu API hiện “Chưa có dữ liệu”.
 
-## Phần S7 đã có trên develop
+## Sprint 7 — Tài chính và công nợ
 
 - S7-01: Tài chính → Hóa đơn bán hàng → Gộp phiếu đã giao, xem trước/phát hành theo thực giao, xem hóa đơn, lập chứng từ điều chỉnh, in/PDF.
 - S7-02: Một phần, chỉ backend → `/api/finance/debt-payments` → Ghi nhận/tra cứu thu tiền theo đại lý; chưa có màn hình đối trừ từng hoá đơn.
 - S7-04: Tự đánh giá rủi ro nợ định kỳ và sau thu tiền; chỉ backend → `/api/finance/debt/config` (cấu hình), `/api/finance/debt/flagged-dealers` (cảnh báo).
+- S7-05: Tài chính → Thu tiền theo tuyến → Ghi khoản thu kèm biên lai, xem chi tiết, xác nhận nhận tiền, đối chiếu theo nhân viên/ngày thu.
 - S7-07: Một phần: Kinh doanh → Cổng đại lý → Xem giỏ hàng → Tổng kết & Công nợ; chưa có danh sách/tải hoá đơn cho đại lý.
 
 ## Phần S8 đã có trên develop

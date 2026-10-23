@@ -3589,6 +3589,9 @@ DB mới khởi tạo quyền: SALES được CREATE, ACCOUNTANT được CONFIR
 | GET | `/{id}/receipt` | ID khoản thu | Bytes JPEG/PNG, `Cache-Control: no-store`, yêu cầu quyền và kiểm tra chủ sở hữu |
 | POST | `/{id}/confirm` | Không có body | Xác nhận kế toán đã nhận đủ tiền, chuyển `PENDING` → `RECEIVED` |
 | GET | `/reconciliation` | `from`, `to`, `employeeId` tùy chọn | Mảng tổng hợp theo nhân viên và ngày thu |
+| GET | `/dealers` | `keyword` tùy chọn (tối đa 150 ký tự), `page=0`, `size=20` (1–100) | Page cửa hàng đang hoạt động có thể ghi thu; chỉ `COLLECTION_CREATE` hoặc ADMIN |
+
+Picker `/dealers` chỉ trả `id`, `code`, `name`, `routeName`, sắp xếp tên rồi ID. Nhân viên chỉ thấy cửa hàng được giao cho chính mình, kể cả khi có thêm quyền CONFIRM/RECONCILE; ADMIN xem mọi cửa hàng đang hoạt động. Không cần quyền CUSTOMER_VIEW/ORDER_VIEW và không nhận tham số đổi nhân viên để vượt phạm vi. Ngừng giao dịch hoặc bàn giao cửa hàng sau khi tải picker vẫn được kiểm tra lại khi POST ghi thu.
 
 Ví dụ phần `data` (Content-Type `application/json`):
 
@@ -3624,9 +3627,9 @@ Ví dụ `data` đối chiếu:
 - 404: không tìm thấy cửa hàng/khoản thu. 409: khoản thu đã được xác nhận.
 - Request vượt giới hạn multipart chung dùng xử lý lỗi upload hiện tại (giới hạn toàn ứng dụng 20 MB/file, 21 MB/request); S7-05 kiểm tra thêm ngưỡng ảnh 5 MiB.
 
-Phạm vi S7-05 là đối chiếu khoản thu với tiền nhân viên nộp. Không tự tạo DebtPayment hoặc đối trừ hóa đơn/công nợ S7-02; không hỗ trợ nộp một phần. Frontend nghiệp vụ chưa triển khai theo yêu cầu chỉ làm backend.
+Phạm vi S7-05 là đối chiếu khoản thu với tiền nhân viên nộp. Không tự tạo DebtPayment hoặc đối trừ hóa đơn/công nợ S7-02; không hỗ trợ nộp một phần. Frontend tại **Tài chính → Thu tiền theo tuyến**, `/cash-collections`: ghi thu multipart kèm ảnh, xem chi tiết/biên lai có xác thực, xác nhận nhận đủ và đối chiếu nhân viên/ngày. `COLLECTION_CONFIRM` đơn lẻ không truy cập `/reconciliation`; chỉ CREATE hoặc RECONCILE được xem bảng này. Gửi tiền dưới dạng chuỗi thập phân để không mất chữ số khi qua JavaScript; backend nhận BigDecimal và vẫn kiểm tra giới hạn như trên.
 
-Kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,FinanceControllerTest,DebtRiskSecurityTest" test` — 42 tests passed (8 test tích hợp S7-05); DB kiểm thử H2 MySQL mode, chưa chạy MySQL thực tế.
+Kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,FinanceControllerTest,DebtRiskSecurityTest" test` — 43 tests passed (9 test tích hợp S7-05, gồm picker độc lập quyền và phạm vi cửa hàng); DB kiểm thử H2 MySQL mode, chưa chạy MySQL thực tế.
 
 ---
 

@@ -1,5 +1,16 @@
 # Chạy frontend và đường dẫn trang
 
+## S7-05 — Thu tiền theo tuyến (24/10/2026)
+
+- **Tài chính → Thu tiền theo tuyến**, `/cash-collections`. Dùng sidebar, topbar, font và gutter chung; bảng cuộn bên trong trên điện thoại.
+- Menu/trang yêu cầu một trong `COLLECTION_CREATE`, `COLLECTION_CONFIRM`, `COLLECTION_RECONCILE`; ADMIN luôn được truy cập. Không fallback theo vai trò kinh doanh/kế toán.
+- CREATE: tìm/phân trang cửa hàng do mình phụ trách qua `/api/finance/cash-collections/dealers`, ghi thu kèm JPEG/PNG và xem trước ảnh. Ngày thu theo Việt Nam, không ở tương lai; số tiền dương tối đa 17 chữ số nguyên + 2 thập phân, không làm tròn qua Number. JSON `data` và ảnh `receipt` được gửi cùng một multipart, không lưu khoản thu/ảnh trong localStorage hay sessionStorage.
+- CONFIRM: mở chi tiết → xem biên lai → tích xác nhận đã nhận đủ → xác nhận nhận tiền. Không tự xác nhận khoản thu của mình, kể cả ADMIN. Khoản thu đã nhận không có nút sửa/xóa/xác nhận lại. 409 tải lại dữ liệu, không tự gửi lại POST.
+- CREATE/RECONCILE xem bảng đối chiếu theo nhân viên và ngày **thu gốc**, cùng tổng đã thu/đã nhận/chờ nộp. CONFIRM đơn lẻ chỉ xem danh sách/chi tiết và xác nhận, không gọi API đối chiếu. CREATE đơn lẻ chỉ xem mình; CONFIRM/RECONCILE lọc được theo mã nhân viên hiển thị trong bảng và khoảng ngày tối đa 366 ngày.
+- Ảnh tải bằng API có Bearer token rồi hiển thị qua URL blob, giải phóng khi đóng/đổi quyền/rời trang. Thu hồi quyền đóng form, xóa dữ liệu cũ và chặn phản hồi đang chờ; cấp lại quyền phục hồi thao tác. POST bị khóa khi đang gửi; lỗi mạng/5xx báo chưa xác định kết quả, cần tải lại kiểm tra, không tự gửi lại.
+- Cần chạy lại backend để có picker `/dealers` mới; DB đã cấu hình cần ADMIN cấp các quyền COLLECTION trong ma trận, không tự cấp thêm khi khởi động. Không reset/seed DB để dùng giao diện.
+- Kiểm thử: `node --test tests/cash-collections.test.cjs tests/menu-config.test.cjs tests/auth-permissions.test.cjs`; `python -B -m unittest tests.test_frontend_server`; `node tests/cash-collections.browser.cjs` (mặc định frontend ở cổng 5535 hoặc đặt `NAV_TEST_URL`). Chrome dùng HTTP fixtures cách ly, không ghi database nghiệp vụ. Hồi quy backend dùng H2 trong RAM.
+
 ## S7-01 — Hóa đơn bán hàng (23/10/2026)
 
 - **Tài chính → Hóa đơn bán hàng**, `/invoices`. Dùng shell, sidebar, font và khung nội dung chung; bảng cuộn trong khung trên điện thoại, không đổi gutter/chiều rộng trang.

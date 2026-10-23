@@ -296,6 +296,15 @@ const MenuConfig = (() => {
       permission: "FINANCE_VIEW_DEBT",
     },
     {
+      id: "cash-collections",
+      section: "Tài chính",
+      label: "Thu tiền theo tuyến",
+      icon: '<path d="M3 6h18v14H3zM7 6V3h10v3M7 11h10M7 15h6"/>',
+      href: "/cash-collections",
+      roles: ALL_ROLES,
+      permissions: ["COLLECTION_CREATE", "COLLECTION_CONFIRM", "COLLECTION_RECONCILE"],
+    },
+    {
       id: "invoices",
       section: "Tài chính",
       label: "Hóa đơn bán hàng",

@@ -8,6 +8,17 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S7-05 menu follows each collection permission and revocations, not finance roles', () => {
+  for (const role of ['ROLE_SALES','ROLE_ACCOUNTANT','ROLE_VIEWER','ROLE_WAREHOUSE_STAFF']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('cash-collections'));
+    assert.ok(!ids({roles:[role],permissions:['FINANCE_MANAGE','FINANCE_VIEW_DEBT']}).includes('cash-collections'));
+    for (const permission of ['COLLECTION_CREATE','COLLECTION_CONFIRM','COLLECTION_RECONCILE'])
+      assert.ok(ids({roles:[role],permissions:[permission]}).includes('cash-collections'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('cash-collections'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/cash-collections')).id, 'cash-collections');
+});
+
 test('S7-01 invoices use INVOICE_VIEW matrix, not accountant role or unrelated finance grants',()=>{
   for(const role of ['ROLE_ACCOUNTANT','ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_STAFF']){
     assert.ok(!ids({roles:[role],permissions:[]}).includes('invoices'));

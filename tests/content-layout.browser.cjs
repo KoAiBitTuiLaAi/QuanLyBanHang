@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 const base = process.env.NAV_TEST_URL || 'http://127.0.0.1:5519';
 const output = path.join(require('node:os').tmpdir(), 'qlbh-content-layout');
 const cases = [
-  '/dashboard', '/dashboard?view=debt-limits', '/profile', '/products', '/product-groups', '/invoices',
+  '/dashboard', '/dashboard?view=debt-limits', '/profile', '/products', '/product-groups', '/invoices', '/cash-collections',
   '/create-order', '/orders', '/order-approval', '/dealer-orders', '/dealer-portal', '/price-lists',
   '/discount-policies', '/dealers', '/suppliers', '/warehouse/units?tab=inventory',
   '/warehouse/units?tab=units', '/warehouse/units?tab=receipts', '/warehouse/units?tab=ledger',
@@ -39,6 +39,8 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       let data = [];
       if (endpoint === '/auth/permissions') data = { roles: user.roles, permissions: user.permissions };
       else if (endpoint === '/invoices') data = {content:[],totalPages:0,totalElements:0};
+      else if (endpoint === '/finance/cash-collections') data = {content:[],totalPages:0,totalElements:0};
+      else if (endpoint === '/finance/cash-collections/reconciliation') data = [];
       else if (['/users/profile', '/auth/me'].includes(endpoint)) data = user;
       else if (endpoint === '/admin/assignment-options') data = { roles: user.roles, warehouses: [], territories: [], dealers: [] };
       else if (['/admin/users', '/admin/audit-logs'].includes(endpoint)) data = { content: [], totalElements: 0, totalPages: 1, number: 0, first: true, last: true };
