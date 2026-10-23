@@ -1567,6 +1567,10 @@ public class WarehouseServiceImpl implements WarehouseService {
         WarehouseVoucher originalVoucher = voucherRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu kho gốc với ID: " + id));
 
+        if (originalVoucher.getShipmentOrderId() != null) {
+            throw new IllegalArgumentException("Phiếu xuất theo đơn đã xác nhận không sửa/điều chỉnh trực tiếp; dùng nghiệp vụ trả hàng");
+        }
+
         if (!"CONFIRMED".equalsIgnoreCase(originalVoucher.getStatus()) && !"RECORDED".equalsIgnoreCase(originalVoucher.getStatus()) && !"ADJUSTED".equalsIgnoreCase(originalVoucher.getStatus())) {
             throw new IllegalStateException("Chỉ có thể lập phiếu điều chỉnh cho phiếu kho đã xác nhận. Trạng thái hiện tại: " + originalVoucher.getStatus());
         }

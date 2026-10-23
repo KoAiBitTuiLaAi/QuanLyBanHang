@@ -1,5 +1,14 @@
 # Chạy frontend và đường dẫn trang
 
+## S6-05 — Xuất kho theo đơn và nợ hàng (23/10/2026)
+
+- **Kho hàng → Xuất kho theo đơn**, `/warehouse/order-shipments`. Từ chi tiết đơn, **Lập phiếu xuất kho** / **Xuất bù hàng còn nợ** mở thẳng `/warehouse/order-shipments?orderId=...`.
+- Ba danh sách qua API: **Chờ xuất kho**, **Còn nợ hàng**, **Đã có phiếu xuất**; lọc kho/mã đơn và phân trang trên server. VIEW hoặc EXPORT để xem; EXPORT và `canConfirm` server để ghi; ADMIN luôn được phép. Không fallback vai trò, không lưu nghiệp vụ trong browser storage. Thu hồi quyền xóa dữ liệu cũ, chặn nút, bỏ qua phản hồi đến muộn; shell chuyển 403 nếu không còn quyền xem.
+- Nhập lượng xuất theo đơn vị đóng băng trên đơn; từng dòng thiếu (kể cả 0) phải ghi lý do. Chọn lô còn hạn hoặc để server chọn FEFO đủ lượng, đổi lô phải có lý do. Mỗi lượt chọn tối đa một lô cho mỗi dòng; có thể xuất từng phần qua nhiều lượt. Luồng này không cho ghi đè lô quá hạn.
+- **Xác nhận xuất kho** có bước xác nhận; chỉ hiển thị thành công khi nhận kết quả server. Phiếu cũ chỉ đọc, không có nút sửa/xóa. Lỗi/không rõ kết quả khóa ghi đến khi tải lại đơn để đối chiếu. Chống gửi trùng bằng phiên bản đơn và UUID yêu cầu.
+- Xuất bao nhiêu giảm tồn thực và giữ chỗ bấy nhiêu; phần chưa xuất giữ chỗ, vào **Còn nợ hàng**. Không thay số lượng thực giao/hóa đơn. Phải xuất bù đủ trước khi xác nhận giao/đóng hoặc gán chuyến giao toàn đơn.
+- Giữ khung chung, bảng/phiếu bên trong co giãn xuống điện thoại. Cần khởi động lại frontend server sau khi thêm route; khởi động lại backend để nạp API/các cột mới, không xóa/reset DB.
+
 ## S6-08 — Sửa frontend, chưa làm backend (23/10/2026)
 
 - Menu **Kho hàng → Xác nhận giao hàng**, URL `/warehouse/delivery`. Tách object menu khỏi Kiểm kê kho để không ghi đè ID/URL và không gắn nhầm EXPORT cho kiểm kê. Bổ sung script nghiệp vụ bị thiếu và `app-transition.js` trong head.

@@ -364,6 +364,10 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 Order order = orderRepository.findById(orderId)
                         .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng ID: " + orderId));
 
+                if (Boolean.TRUE.equals(order.getBackordered())) {
+                    throw new IllegalArgumentException("Đơn còn nợ hàng; xuất bù đủ trước khi gán chuyến giao toàn đơn");
+                }
+
                 if (order.getWarehouse() != null && !order.getWarehouse().getId().equals(warehouse.getId())) {
                     throw new IllegalArgumentException("Đơn hàng " + order.getOrderCode() + " thuộc kho khác, không thể gán vào chuyến này");
                 }
@@ -432,7 +436,10 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                         .build();
 
                 if (sReq.getOrderId() != null) {
-                    orderRepository.findById(sReq.getOrderId()).ifPresent(stop::setOrder);
+                    orderRepository.findById(sReq.getOrderId()).ifPresent(order -> {
+                        if (Boolean.TRUE.equals(order.getBackordered())) throw new IllegalArgumentException("Đơn còn nợ hàng; xuất bù đủ trước khi gán chuyến");
+                        stop.setOrder(order);
+                    });
                 }
                 if (sReq.getDealerId() != null) {
                     dealerRepository.findById(sReq.getDealerId()).ifPresent(stop::setDealer);
@@ -536,6 +543,9 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
             // Cập nhật trạng thái Order nếu có liên kết
             if (stop.getOrder() != null) {
                 Order order = stop.getOrder();
+                if (Boolean.TRUE.equals(order.getBackordered())) {
+                    throw new IllegalArgumentException("Đơn còn nợ hàng; không xác nhận đã giao toàn đơn khi chưa xuất bù đủ");
+                }
                 if (!"DELIVERED".equalsIgnoreCase(order.getStatus()) && !"CLOSED".equalsIgnoreCase(order.getStatus())) {
                     order.setStatus("DELIVERED");
                     order.setActualDeliveryDate(LocalDate.now());
@@ -711,6 +721,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
         List<Order> orders = orderRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"));
 
         return orders.stream()
+                .filter(order -> !Boolean.TRUE.equals(order.getBackordered()))
                 .map(order -> {
                     DealerDeliveryPoint dp = order.getDeliveryPoint();
                     String receiver = dp != null ? dp.getReceiverName() : (order.getDealer() != null ? order.getDealer().getName() : order.getCustomerName());

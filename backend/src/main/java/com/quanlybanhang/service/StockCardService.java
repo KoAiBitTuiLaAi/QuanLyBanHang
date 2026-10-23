@@ -169,6 +169,8 @@ public class StockCardService {
         }
         Map<Long,List<OrderStatusHistory>> histories=new HashMap<>();
         for(var i:orderItemRepo.findForStockCard(product.getId(),scopeIds)){
+            // S6-05 movements are already represented by immutable warehouse vouchers.
+            if(i.getExportedQuantity()!=null)continue;
             var o=i.getOrder();var w=o.getWarehouse();
             var export=histories.computeIfAbsent(o.getId(),id->historyRepo.findByOrderIdOrderByChangedAtAsc(id)).stream()
                     .filter(h->Set.of("EXPORTED","SHIPPED").contains(h.getNewStatus().toUpperCase(Locale.ROOT))).findFirst();
@@ -192,6 +194,7 @@ public class StockCardService {
                 voucherItemRepo.findForStockCard(product.getId(), scopeIds, null, null);
         for (WarehouseVoucherItem vi : voucherItems) {
             WarehouseVoucher v = vi.getVoucher();
+            if(v.getShipmentOrderId()!=null && vi.getBaseQuantity().signum()==0)continue;
             LocalDateTime eventTime = v.getRecordedAt() != null ? v.getRecordedAt() : v.getVoucherDate();
 
             // Áp bộ lọc ngày tại Java (query JPQL đã lọc null nhưng cần lọc chính xác với fromDate/toDate)

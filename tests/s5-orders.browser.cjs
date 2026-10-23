@@ -158,6 +158,24 @@ const output = path.join(require('node:os').tmpdir(), 'qlbh-s5-fix');
     assert.equal(await s.page.locator('#order-detail-modal').isHidden(), true);
     assert.equal(await s.page.locator('#ord-delivery-rows').textContent(), '');
     await s.context.close();
+    // S6-05: both full-export and backorder actions navigate to the dedicated form,
+    // never write a guessed full quantity through the legacy status endpoint.
+    const shipment = await setup(false);
+    await shipment.page.route(base + '/warehouse/order-shipments?orderId=55', route => route.fulfill({contentType:'text/html',body:'<title>Shipment destination fixture</title>'}));
+    for (const backordered of [false, true]) {
+      shipment.state.order.status = backordered ? 'EXPORTED' : 'PICKING';
+      shipment.state.order.backordered = backordered;
+      shipment.state.order.nextLifecycleStatus = backordered ? null : 'EXPORTED';
+      shipment.state.order.canUpdateDelivery = false;
+      await shipment.page.goto(base + '/orders');
+      await shipment.page.locator('[data-action="view"][data-id="55"]').first().click();
+      await shipment.page.locator('#btn-detail-next-status').getByText(backordered ? 'Xuất bù hàng còn nợ' : 'Lập phiếu xuất kho',{exact:true}).waitFor();
+      if (backordered) assert.match(await shipment.page.locator('#ord-detail-status-badge').textContent(),/Còn nợ hàng/);
+      await shipment.page.locator('#btn-detail-next-status').click();
+      await shipment.page.waitForURL(base + '/warehouse/order-shipments?orderId=55');
+    }
+    assert.ok(!shipment.state.calls.some(call => call.endpoint.endsWith('/status')));
+    await shipment.context.close();
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
     console.log('S5-01/02 Chrome passed: actual delivery/shortage, failure preserves input, duplicate writes blocked, scoped capability, live grant/revoke and stale reads, dedicated reorder/current prices/decimal quantity; 320–1440px. Fixtures only.');
   } finally { await browser.close(); }

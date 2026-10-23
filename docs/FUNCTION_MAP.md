@@ -73,7 +73,7 @@
 - S6-02: Kho hàng → Thẻ kho sản phẩm → Chọn SKU, lọc kho/ngày → Xem nhập, xuất, chuyển, điều chỉnh, tồn sau phát sinh và Chứng từ gốc.
 - S6-03: Kho hàng → Phiếu soạn hàng → Tạo lượt soạn, gộp đơn → Mở lượt, nhập thực soạn/lý do thiếu, Lưu dòng → Hoàn tất/Hủy lượt.
 - S6-04: Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO → Chọn kho/SKU/số lượng, lấy gợi ý, chọn lô khác kèm lý do, Xác nhận xuất lô.
-- S6-05: Một phần: Kinh doanh → Đơn hàng → Xem chi tiết → Chuyển bước tiếp theo (xuất kho), Số lượng thực giao; chưa có màn hình xử lý nợ hàng/giao bù riêng.
+- S6-05: Kho hàng → Xuất kho theo đơn → Chờ xuất kho, Xác nhận xuất kho, Còn nợ hàng (xuất bù), Các phiếu đã xác nhận (chỉ đọc).
 - S6-06: Một phần, chỉ backend → `/api/warehouse/delivery-trips` tạo chuyến, gộp đơn đã xuất, gán tài xế/xe; chưa có menu phân tuyến/in danh sách điểm giao.
 - S6-07: Chỉ backend → `/api/warehouse/delivery-trips` (danh sách), `/api/warehouse/delivery-trips/summary` (tổng hợp) → Tiến độ, tiền hàng trên đường, quá hạn.
 - S6-08: Một phần (frontend): Kho hàng → Xác nhận giao hàng → Xem đơn thật, mở form/xem trước ảnh; khóa lưu xác nhận/hoàn kho vì chưa có API S6-08.

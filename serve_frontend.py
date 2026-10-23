@@ -33,6 +33,7 @@ ROUTES = {
     "/warehouse/stock-card": "warehouse/stock-card.html",
     "/warehouse/transfers": "warehouse/transfers.html",
     "/warehouse/picking": "warehouse/picking.html",
+    "/warehouse/order-shipments": "warehouse/order-shipments.html",
     "/warehouses": "warehouses.html",
     "/admin/users": "admin/users.html",
     "/admin/audit-logs": "admin/audit-logs.html",

@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({DemoDataSeeder.class, OrderServiceImpl.class, WarehouseServiceImpl.class, WarehouseTransferService.class,
+@Import({DemoDataSeeder.class, OrderServiceImpl.class, OrderShipmentService.class, WarehouseServiceImpl.class, WarehouseTransferService.class,
         UnitConversionServiceImpl.class, VolumeDiscountPolicyServiceImpl.class,
         DealerDebtServiceImpl.class,
         AuditLogServiceImpl.class, DemoDataSeederTest.EncoderConfig.class})
