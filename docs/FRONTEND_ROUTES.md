@@ -1,5 +1,16 @@
 # Chạy frontend và đường dẫn trang
 
+## S6-07 — Theo dõi chuyến giao (23/10/2026)
+
+- **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`; mở thẳng chi tiết bằng `?tripId=...`. Dùng shell/sidebar/topbar/gutters chung; không thay token layout hoặc font của dự án.
+- Màn hình **chỉ đọc**, chỉ GET `/warehouse/delivery-trips/options`, `/warehouse/delivery-trips`, `/warehouse/delivery-trips/summary`, `/warehouse/delivery-trips/{id}`. Không tạo chuyến, xác nhận giao, hoàn tất/hủy chuyến, hoàn kho hoặc chỉnh đơn (kể cả ADMIN); các nghiệp vụ S6-06/S6-08 giữ nguyên phạm vi.
+- VIEW hoặc EXPORT theo ma trận DB để xem, ADMIN luôn được phép. Không cần ORDER_VIEW/FINANCE_VIEW_DEBT và không fallback role. Scope kho do server kiểm tra. Thu hồi quyền xóa số liệu/chi tiết, ẩn menu và chặn trang 403; phản hồi đến muộn không khôi phục dữ liệu. Không lưu dữ liệu nghiệp vụ trong local/sessionStorage.
+- Mặc định **Đang chạy**. Lọc kho/trạng thái/quá hạn/tài xế/biển số/mã chuyến, phân trang 20 chuyến trên server; có bộ lọc **Chỉ chuyến còn hàng chưa xử lý**. **Xem mọi chuyến còn hàng** bỏ trạng thái/từ khóa/quá hạn, giữ kho và bật `outstandingOnly=true` để thấy cả lịch sử còn trách nhiệm.
+- Tổng tiền chính là số liệu backend cho **mọi trạng thái trong phạm vi kho**; thống kê chuyến đang chạy/đã giao/còn lại/quá hạn được ghi nhãn riêng. Chỉ bộ lọc kho ảnh hưởng tổng hợp; không lấy tổng từ trang danh sách hoặc áp ngầm các bộ lọc khác. API lỗi/thiếu trường mới hiện “—” kèm lỗi, không dựng số liệu thay thế.
+- Chi tiết hiển thị tài xế/xe/thời gian, thứ tự điểm giao, trạng thái, địa chỉ/người nhận, lý do chưa giao được, dòng hàng và xác nhận trả kho. FAILED chưa xác nhận trả vẫn thuộc trách nhiệm chuyến; đã trả chỉ khi `returnedToWarehouse=true`. Cảnh báo quá hạn dùng cờ/phút/nội dung backend, không tính lại theo đồng hồ máy khách.
+- Tự tải lại mỗi phút khi trang hiện và khi quay lại tab; có nút Tải lại/Tải lại chuyến. Dữ liệu cũ bị xóa trước khi tải và có lỗi riêng cho danh sách/tổng hợp/chi tiết; người dùng có thể thử lại. Bộ lọc đang nhập chưa bấm Lọc không bị tự áp vào tổng hợp.
+- Restart backend để nạp bản sửa số liệu/API bổ sung và restart frontend server để nạp route mới. Không đổi schema, không cần xóa/reset DB. Nếu chưa có chuyến trong DB thì hiện trạng thái rỗng, không tự tạo dữ liệu demo.
+
 ## S6-05 — Xuất kho theo đơn và nợ hàng (23/10/2026)
 
 - **Kho hàng → Xuất kho theo đơn**, `/warehouse/order-shipments`. Từ chi tiết đơn, **Lập phiếu xuất kho** / **Xuất bù hàng còn nợ** mở thẳng `/warehouse/order-shipments?orderId=...`.

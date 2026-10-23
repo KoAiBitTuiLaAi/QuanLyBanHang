@@ -1,5 +1,19 @@
 # Trạng thái sprint 1–8
 
+## S6-07 — Frontend theo dõi hàng đã xuất/chưa giao xong — 23/10/2026
+
+| Hạng mục | Backend | Frontend | Kết nối / quyền |
+|---|---|---|---|
+| Danh sách/chi tiết chuyến | Dùng API GET sẵn có, scope kho và ma trận DB | Kho hàng → Theo dõi chuyến giao; lọc, phân trang, xem điểm giao/dòng hàng | VIEW hoặc EXPORT, ADMIN toàn quyền; không cần quyền đơn/công nợ, không fallback role |
+| Tiền hàng/tiến độ | Sửa remainingPoints/Value loại hàng đã xác nhận trả kho; thêm tổng trách nhiệm mọi trạng thái và phần lịch sử chưa xử lý | Tổng tiền toàn scope kho, số đang chạy/đã giao/còn lại; cảnh báo hàng còn ở chuyến hoàn tất/hủy | Tổng hợp từ backend, không cộng trang hiện tại hoặc tự suy đoán số liệu |
+| Quá hạn/hàng chưa giao được | Cờ/phút quá hạn server; bổ sung outstandingOnly=true để lọc mọi trạng thái | Nhãn/cảnh báo quá hạn; FAILED chưa trả vẫn thuộc chuyến, đã trả cần cờ xác nhận | Chỉ đọc; không tự hoàn tồn, không thêm POST/PUT/PATCH/DELETE kể cả ADMIN |
+| Quyền/độ ổn định | Test JWT cũ grant/revoke, ADMIN và 403 ngoài kho | Xóa dữ liệu khi mất quyền, chặn phản hồi cũ; lỗi/rỗng/thử lại, cập nhật mỗi phút khi hiện tab | Không lưu nghiệp vụ browser storage; không tạo dữ liệu trên DB thật |
+| Kiểm thử | 34 test backend liên quan PASS, JPA/H2 cách ly từ bản sao source | 163 test Node + 11 test route PASS; Chrome S6-07 và luồng S6-05/S6-08 PASS; 186 kiểm tra layout / 31 trang / 6 cỡ màn PASS | Không build vào target backend đang chạy; không reset DB |
+
+Không làm giao diện tạo/phân tuyến chuyến S6-06 hoặc ghi giao nhận S6-08. Backend chỉ sửa/tăng cường phần đọc cần cho số liệu S6-07; không đổi schema/luồng ghi. Cập nhật FUNCTION_MAP đúng dòng S6-07 theo thứ tự, API docs và FRONTEND_ROUTES. Chưa commit/push/merge.
+
+Minh chứng kiểm thử: `E:/DevTemp/UserTemp/s607-20261023/backend-focused.log`, `node.log`, `layout.log`, `browser-delivery-trips.log`; ảnh QA từ Chrome tại `E:/DevTemp/UserTemp/qlbh-s607/`. Chrome dùng trang/script thật với API fixture (GET-only, không phải ảnh/số liệu DB thật để báo cáo). Chỉ chạy các lớp backend liên quan S6-07, không tuyên bố toàn bộ suite dự án đã xanh.
+
 ## S6-05 — Xác nhận xuất kho, nợ hàng và xuất bù — 23/10/2026
 
 | Hạng mục | Backend | Frontend | Kết nối / quyền |

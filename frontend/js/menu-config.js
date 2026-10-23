@@ -201,6 +201,15 @@ const MenuConfig = (() => {
       roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER", "ROLE_WAREHOUSE_MANAGER", "ROLE_WAREHOUSE_STAFF", "ROLE_VIEWER"],
     },
     {
+      id: "delivery-trips",
+      section: "Kho hàng",
+      label: "Theo dõi chuyến giao",
+      icon: '<path d="M3 4h11v13H3zM14 9h4l3 4v4h-7M7 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4M17 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/>',
+      href: "/warehouse/delivery-trips",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
       id: "delivery-confirmation",
       section: "Kho hàng",
       label: "Xác nhận giao hàng",

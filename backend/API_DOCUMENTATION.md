@@ -4,6 +4,26 @@ Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
+## S6-07 — Frontend theo dõi chuyến giao và sửa số liệu đọc (23/10/2026)
+
+Menu **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`. VIEW hoặc EXPORT theo ma trận DB; ADMIN luôn có quyền. Các API theo dõi dùng scope kho sẵn có, không dùng vai trò thay grant.
+
+| Method | Endpoint sau `/api` | Hợp đồng đọc |
+|---|---|---|
+| GET | `/warehouse/delivery-trips/options` | Kho trong phạm vi, `tripStatuses`, `stopStatuses`, `canManage` hiện có. Giao diện này không bật thao tác ghi theo `canManage` |
+| GET | `/warehouse/delivery-trips?warehouseId=1&status=IN_PROGRESS&isOverdue=true&keyword=CG&page=0&size=20&outstandingOnly=true` | Spring Page trong `data`; các filter là tùy chọn, page >=0, size 1–200, keyword <=150. `outstandingOnly` mặc định false; true dùng EXISTS điểm chưa DELIVERED và chưa xác nhận trả kho, áp được mọi trạng thái chuyến |
+| GET | `/warehouse/delivery-trips/summary?warehouseId=1` | Chỉ lọc kho, không lọc keyword/status/isOverdue của danh sách. Trả số liệu các chuyến IN_PROGRESS cũ và 4 trường trách nhiệm toàn trạng thái mới bên dưới |
+| GET | `/warehouse/delivery-trips/{id}` | Chi tiết chuyến, tiến độ/giá trị, `isOverdue/overdueMinutes/overdueWarning`, stops và items. Ngoài scope → 403; không thay đổi hàng/tồn/trạng thái |
+
+Trường summary bổ sung (không đổi schema):
+
+- `totalOutstandingValue`: tiền hàng chưa giao/chưa xác nhận trả kho trên **mọi trạng thái**; `totalOutstandingTrips`: số chuyến có điểm chưa xử lý xong (cả trường hợp giá trị 0).
+- `closedOutstandingValue`, `closedOutstandingTrips`: phần còn thuộc chuyến COMPLETED/CANCELLED, để đổi trạng thái không làm biến mất trách nhiệm. Đây là số liệu đọc bổ sung, không thay đổi API hoàn tất/hủy.
+- Các trường cũ `totalRunningTrips/totalValueOnRoad/totalDeliveredPoints/totalRemainingPoints/totalOverdueTrips/...` tiếp tục chỉ cho chuyến đang chạy. `remainingPoints/remainingValue` đã sửa để loại điểm `returnedToWarehouse=true`; FAILED chưa trả vẫn tính, không cộng tồn tự động. `failedPoints/failedValue` vẫn là lịch sử điểm giao thất bại, kể cả sau khi trả.
+- Filter `isOverdue=false` bao gồm trường hợp thiếu thời gian dự kiến (phù hợp `isOverdue=false` trong DTO); không tự coi quá hạn chỉ vì đồng hồ trình duyệt khác server.
+
+Frontend S6-07 chỉ gửi GET, không gọi các POST/PUT tạo chuyến/giao/hoàn/hủy/trả kho hiện có. Không sửa chúng trong nhánh này. Không seed/reset DB hoặc nâng schema để kiểm tra giao diện.
+
 ## S6-05 — Xác nhận xuất theo đơn, xuất thiếu và xuất bù (23/10/2026)
 
 | Method | Endpoint (sau `/api`) | Hợp đồng |
@@ -3066,6 +3086,8 @@ Xuất hàng luôn đối chiếu hạn dùng/ngày sản xuất từ lô trong 
 ---
 
 ## S6-07 — Theo dõi hàng đã xuất nhưng chưa giao xong & Tiền hàng trên đường (22/10/2026)
+
+> Cập nhật 23/10/2026: xem mục S6-07 đầu tài liệu cho frontend chỉ đọc, `outstandingOnly`, số liệu trách nhiệm mọi trạng thái và cách loại hàng đã xác nhận trả kho. Các API ghi dưới đây giữ nguyên, không được giao diện theo dõi gọi.
 
 Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến giao hàng đang chạy, kiểm soát số điểm đã giao / còn lại, số tiền hàng đang nằm trên đường, và cảnh báo chuyến giao quá thời gian dự kiến.
 

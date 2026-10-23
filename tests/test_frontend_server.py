@@ -48,6 +48,7 @@ class FrontendRoutingTest(unittest.TestCase):
             "/warehouse/inventory": "Tồn kho theo SKU và kho",
             "/warehouse/lots": "Lô & hạn sử dụng",
             "/warehouse/delivery": "Xác nhận giao hàng",
+            "/warehouse/delivery-trips": "Theo dõi chuyến giao",
             "/warehouse/order-shipments": "Xuất kho theo đơn",
             "/warehouse/stock-card": "Thẻ kho sản phẩm",
             "/warehouses": "Kho & vị trí lưu",
