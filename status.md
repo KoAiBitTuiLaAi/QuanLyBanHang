@@ -1,5 +1,21 @@
 # Trạng thái sprint 1–8
 
+## S6-05 — Xác nhận xuất kho, nợ hàng và xuất bù — 23/10/2026
+
+| Hạng mục | Backend | Frontend | Kết nối / quyền |
+|---|---|---|---|
+| Xuất theo đơn | API kho trả lượng đặt/đã xuất/còn nợ; xác nhận tạo phiếu bất biến | Kho hàng → Xuất kho theo đơn; mở từ chi tiết đơn | VIEW hoặc EXPORT đọc, EXPORT ghi, ADMIN toàn quyền; kho phân công rõ |
+| Xuất thiếu / xuất bù | Trừ đúng tồn thực + giữ chỗ; giữ phần còn nợ, phiên bản + UUID chống ghi lặp | Chờ xuất kho / Còn nợ hàng / Đã có phiếu xuất; lý do thiếu từng dòng | DB thật là nguồn dữ liệu; không lưu nghiệp vụ trên trình duyệt |
+| Lô và tra cứu | Khóa tồn/lô, FEFO, ghi đúng lô; thẻ kho không đếm ORDER + VOUCHER hai lần | Chọn lô hoặc FEFO tự động; phiếu xác nhận chỉ đọc | Không xuất quá hạn trong luồng này; thu hồi quyền chặn server và nút/menu |
+| Liên thông vòng đời | Không sửa thực giao; chặn giao/đóng/gán chuyến toàn đơn khi còn nợ; API xuất cũ dùng chung nghiệp vụ | Nút xuất ở chi tiết đơn dẫn tới màn phiếu mới | Không kích hoạt hóa đơn giả; phiếu cũ không sửa/xóa/điều chỉnh trực tiếp |
+| Kiểm tra | 912 test backend PASS trong lượt hồi quy đã tách lỗi cũ, gồm 15 test tích hợp S6-05; JPA/H2 cách ly từ bản sao source | 163 test Node + 11 test route PASS; Chrome S6-05 và 5 luồng liên quan PASS; 180 kiểm tra layout / 30 trang / 6 cỡ màn PASS | JWT hiện hành: thu hồi EXPORT → 403/nút bị khóa, cấp lại dùng được; kiểm tra ADMIN, kho ngoài phạm vi, rollback, lô, đồng thời/idempotency |
+
+Sửa kèm lỗi biên dịch từ backend S8-01 đã gộp: lambda bắt biến `targetWh` bị gán lại; chỉ chỉnh thông báo ngoại lệ để build được, không đổi nghiệp vụ trả hàng. Cập nhật API docs, routes và đúng dòng S6-05 trong FUNCTION_MAP. Cần restart backend/frontend để nạp code/API/route/cột bổ sung; không reset hoặc xóa DB.
+
+**Giới hạn kết quả toàn dự án:** không tuyên bố toàn bộ suite gốc xanh. Lượt 912 PASS loại 3 lớp S8-01 (`DealerReturnIntegrationTest`, `DealerReturnSecurityTest`, `DealerReturnServiceTest`, tổng 15 test) vì còn 6 lỗi có sẵn; đã chạy lại chính 3 lớp trên bản HEAD trước S6-05 (chỉ sửa lỗi lambda để biên dịch) và tái hiện đúng 6 lỗi. Ngoài ra loại `DealerSelfDebtPortalIntegrationTest` (3 test) vì thiếu cấu hình H2/test profile và trỏ MySQL; lượt kiểm tra đầu bị từ chối kết nối, không thực hiện được DDL/ghi dữ liệu. Không sửa nghiệp vụ S8-01 hay reset DB để ép test xanh. Bổ sung `OrderShipmentService` vào test slice của `DemoDataSeederTest`; 7 test seed cách ly đã PASS.
+
+Log xác minh ở `E:/DevTemp/UserTemp/s605-20261023/`: `backend-verified.log` (912 PASS), `backend-final.log` (15 S6-05 PASS trong lượt kiểm tra tập trung), `baseline-return.log` (6 lỗi S8-01 trên code gốc), `node-final.log`, `layout.log`, `browser-order-shipments.log`, `orders-final-v3.log`. Các lần chạy Chrome dùng trang/script thật với API fixture, không phải kiểm thử ghi phiếu trên DB thật. Không commit/push/merge; đã dừng frontend fixture riêng cổng 5525.
+
 ## S8-04 — Đặt chỉ tiêu doanh số và theo dõi tiến độ theo thời gian thực (Backend) — 23/10/2026
 
 Phạm vi thực hiện: **Chỉ làm Backend (BE)** theo đúng yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_backend.md`.

@@ -4,6 +4,33 @@ Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
+## S6-05 — Xác nhận xuất theo đơn, xuất thiếu và xuất bù (23/10/2026)
+
+| Method | Endpoint (sau `/api`) | Hợp đồng |
+|---|---|---|
+| GET | `/warehouse/order-shipments/options` | Kho hoạt động trong phạm vi, `canConfirm`, `quantityScale`, chính sách giữ chỗ |
+| GET | `/warehouse/order-shipments?queue=READY&warehouseId=1&keyword=DH&page=0&size=20` | `queue`: READY/BACKORDER/HISTORY; Spring Page trong `data`; size 1–100. BACKORDER là đơn đã xuất một phần còn lượng chưa xuất |
+| GET | `/warehouse/order-shipments/{orderId}` | `version`, trạng thái, `backordered`, `canConfirm`, `blockedReason`; từng dòng: ordered/exported/remaining, đơn vị/hệ số đóng băng, lô còn hạn; receipts là các phiếu đã xác nhận, chỉ đọc |
+| POST | `/warehouse/order-shipments/{orderId}/confirm` | Xác nhận ngay một phiếu bất biến. Body bên dưới; không có API sửa/xóa phiếu này |
+
+```json
+{
+  "version": 2,
+  "requestKey": "dbb77869-ff94-44bc-adb7-6c8df0cf98b5",
+  "note": "Xuất lượt đầu",
+  "items": [{"orderItemId": 10, "quantity": "4", "lotNumber": null, "reason": "Còn thiếu, xuất bù lượt sau"}]
+}
+```
+
+- GET cần WAREHOUSE_VIEW hoặc WAREHOUSE_EXPORT; POST cần WAREHOUSE_EXPORT. Ma trận DB được nạp lại mỗi request, kể cả JWT cũ; ADMIN luôn được phép. Mọi tài khoản không phải ADMIN chỉ thao tác kho được gán rõ; không gán kho không được xem toàn cục. Không cần cấp thêm ORDER_VIEW để dùng màn kho.
+- Gửi đủ các dòng của đơn, không trùng/ngoại đơn; quantity >=0, tối đa 11 số nguyên/4 số lẻ, không vượt phần chưa xuất, ít nhất một dòng >0. Mọi dòng xuất thiếu cần reason (<=255); lượng 0 cũng được lưu kèm lý do. Quy đổi cơ sở phải biểu diễn chính xác trong 4 số lẻ. Không nhận giá/hệ số/SL cơ sở do client sửa.
+- Chỉ đơn đã duyệt/đang soạn còn giữ chỗ, chưa hết hạn hoặc EXPORTED còn nợ được xuất. Khóa order → order items → tồn vật lý theo SKU → lô; tính/trừ đúng lượng thực xuất và giữ chỗ trong một transaction cùng phiếu, lịch sử, audit. Tồn vật lý không được thấp hơn tổng giữ chỗ; lỗi bất kỳ hoàn tác toàn bộ. Mỗi lượt tăng `shipmentSequence` để phiên bản đơn tăng kể cả xuất một phần lặp lại.
+- Lô mặc định theo FEFO còn hạn và đủ lượng; kiểm lại trên bản ghi khóa, trừ đúng lô. SKU tắt manageLot nhưng còn tồn lô vẫn xử lý theo lô. Lô thủ công khác gợi ý cần lý do; lô quá hạn/thiếu HSD/không đủ bị chặn. Không tự gộp lô hoặc đổi lô âm thầm.
+- UUID + hash nội dung được lưu trên phiếu. Cùng key/nội dung trả lại kết quả hiện tại, không trừ lần hai; cùng key khác nội dung hoặc version cũ trả 409. Không tự retry bằng key mới khi mất kết quả; đọc lại đơn/phiếu để đối chiếu.
+- Đơn xuất một phần vẫn EXPORTED, `backordered=true`, `inventoryReserved=true`; chỉ phần chưa xuất tiếp tục giữ chỗ, xóa hạn giữ chỗ để scheduler không bỏ quên nợ hàng sau lượt đầu. Xuất bù đủ → `backordered=false`, hết giữ chỗ. Không sửa `deliveredQuantity`, không tự ghi nhận doanh thu/giao hàng. Chặn hủy đơn đã xuất và chặn giao/đóng/gán chuyến toàn đơn khi còn nợ.
+- PUT `/orders/{id}/status` sang EXPORTED dùng chung nghiệp vụ xuất đủ còn lại (giữ tương thích API cũ), không trừ tồn hai lần; UI mở phiếu để người dùng nhập lượng thực. Thẻ kho dùng các phiếu VOUCHER mới và bỏ phát sinh ORDER tương ứng, tránh đếm hai lần. Đơn lịch sử chưa có `exportedQuantity` vẫn suy lượng đã xuất từ trạng thái cũ, không tạo nợ hàng giả.
+- Schema bổ sung nullable/backward-compatible: `orders.backordered`, `orders.shipment_sequence`, `order_items.exported_quantity`, `warehouse_vouchers.shipment_order_id/shipment_request_key` (unique)/`shipment_request_hash`, `warehouse_voucher_items.shipment_order_item_id`. Cơ chế `ddl-auto=update` hiện có thêm cột lúc khởi động; sao lưu DB trước triển khai, không xóa bảng/dữ liệu. Giữ phiếu xuất cũ; phiếu liên kết đơn không sửa/xóa/điều chỉnh qua API phiếu chung, xử lý trả hàng theo luồng riêng.
+
 ## S6-04 — Gợi ý FEFO và giao diện xuất theo lô (23/10/2026)
 
 Giao diện **Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO**, `/warehouse/lots?tab=fefo`. Dùng các API hiện có, không đổi schema:

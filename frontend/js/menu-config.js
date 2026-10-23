@@ -242,6 +242,15 @@ const MenuConfig = (() => {
       roles: ALL_ROLES,
     },
     {
+      id: "warehouse-order-shipments",
+      section: "Kho hàng",
+      label: "Xuất kho theo đơn",
+      icon: '<path d="M4 3h16v18H4zM8 8h8M8 12h8M8 16h5"/>',
+      href: "/warehouse/order-shipments",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
       id: "warehouse-lots",
       section: "Kho hàng",
       label: "Lô & hạn sử dụng",

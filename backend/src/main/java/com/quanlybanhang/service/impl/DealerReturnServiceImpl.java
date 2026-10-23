@@ -677,7 +677,7 @@ public class DealerReturnServiceImpl implements DealerReturnService {
             }
 
             Warehouse lockedWarehouse = warehouseRepository.findByIdForUpdate(targetWh.getId())
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy kho nhận hàng: " + targetWh.getCode()));
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy kho nhận hàng"));
             if (!Boolean.TRUE.equals(lockedWarehouse.getActive())) {
                 throw new IllegalArgumentException("Kho nhận hàng '" + lockedWarehouse.getName() + "' đã ngừng hoạt động");
             }
