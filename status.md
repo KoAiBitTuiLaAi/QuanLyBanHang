@@ -774,3 +774,20 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 4. Nối preview chiết khấu cho cổng/đặt lại, UI sales xác nhận đơn cổng; nghiệm thu MySQL/SMTP/360px theo AC.
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
+
+## S8-10 — Xuất sổ chi tiết công nợ đại lý (2026-10-23)
+
+Branch `feature/S8-10/xuat-so-chi-tiet-cong-no` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend; không commit/push.
+
+| Yêu cầu | Backend | Frontend | Kết nối/phân quyền và bằng chứng |
+|---|---|---|---|
+| Liệt kê phát sinh tăng/giảm theo thời gian và số dư lũy kế | Hoàn thành: hợp nhất đơn ghi nợ, phiếu thu và điều chỉnh hóa đơn; thứ tự thời điểm/nguồn/ID; tính đầu kỳ, tăng/giảm, cuối kỳ bằng BigDecimal | Chưa triển khai | GET `/api/finance/debt/{dealerId}/statement`; test không cộng lại hóa đơn gốc, giữ credit âm và cách ly đại lý |
+| Lọc khoảng thời gian | Hoàn thành: from/to bao gồm hai ngày biên, opening lấy toàn bộ trước kỳ; kỳ rỗng vẫn có số dư đúng | Chưa triển khai | Test đầu kỳ 800, tăng 320, giảm 180, cuối kỳ 940; đổi từ ngày 19 thì đầu kỳ 1040, cuối kỳ vẫn 940 |
+| Xuất PDF | Hoàn thành: A4 ngang, font Unicode nhúng, thông tin đại lý/kỳ, bảng lặp header và số trang | Chưa nối | GET `/statement/export?from=...&to=...&format=pdf`; mở/trích text PDF và render kiểm tra cả 3 trang bằng Poppler |
+| Xuất Excel | Hoàn thành: cùng dữ liệu với PDF/JSON, sáu cột, đầu kỳ/tổng/cuối kỳ; tiền lớn hơn 15 chữ số có nghĩa ghi text chính xác | Chưa nối | format=xlsx; test mở lại POI, số dư 940, số tiền lớn 9007199254740993.01 không bị sai và chuỗi công thức là text |
+| Ma trận quyền DB và phạm vi đại lý | Hoàn thành: FINANCE_VIEW_DEBT, ADMIN luôn có quyền, không fallback FINANCE_MANAGE/role; scope SALES được giao và DEALER liên kết | Quyền/menu công nợ hiện có; chưa có nút/luồng S8-10 để nghiệm thu ẩn/hiện | Test non-admin một vai trò, thu hồi cùng JWT trả 403 cho JSON/PDF/XLSX; SALES ngoài phạm vi bị từ chối |
+| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 44/44 tests qua, 0 lỗi/skip | Không sửa frontend | 10 ca tích hợp sổ và 34 test hồi quy tài chính/phân quyền; H2 MySQL mode, chưa MySQL thật |
+
+Không sửa dữ liệu tài chính hoặc hành vi API tổng hợp cũ. Sổ giữ số dư có dấu và bao gồm điều chỉnh; API tổng hợp cũ trên branch chưa trừ/cộng điều chỉnh và có cắt âm nên số hiển thị có thể khác sổ. Dữ liệu xuất là chứng từ hiện có/trạng thái hiện tại, không tái dựng lịch sử đã xóa. Mặc định tối đa 20.000 dòng kỳ, vượt trả 400 chứ không xuất thiếu; SUM đầu kỳ không bị cắt theo giới hạn dòng kỳ.
+
+Lệnh kiểm thử: `mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test`.

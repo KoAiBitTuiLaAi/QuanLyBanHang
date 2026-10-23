@@ -3494,3 +3494,83 @@ Response:
   "note": "Đã có biên bản kiểm tra hàng lỗi với đại lý"
 }
 ```
+
+## S8-10 — Sổ chi tiết công nợ một đại lý, PDF và Excel
+
+### Endpoints và quyền
+
+| Method | URL | Tham số bắt buộc | Kết quả |
+|---|---|---|---|
+| GET | `/api/finance/debt/{dealerId}/statement` | `from`, `to` dạng YYYY-MM-DD | JSON ApiResponse chứa toàn bộ sổ trong kỳ và số dư đầu/cuối kỳ |
+| GET | `/api/finance/debt/{dealerId}/statement/export` | `from`, `to`, `format=pdf` hoặc `format=xlsx` | Tệp PDF hoặc XLSX thực, không có envelope JSON |
+
+Yêu cầu Bearer JWT và **FINANCE_VIEW_DEBT** từ ma trận DB. ADMIN luôn có quyền; FINANCE_MANAGE hoặc vai trò ACCOUNTANT đơn lẻ không thay thế quyền bị thiếu. Service và controller đều kiểm tra quyền. Thu hồi quyền có hiệu lực ở request kế tiếp với cùng token, trên JSON và cả hai định dạng xuất.
+
+Phạm vi dữ liệu giữ quy tắc công nợ hiện tại: nhân viên SALES không có vai trò tài chính/quản lý rộng hơn chỉ xem đại lý được giao; tài khoản có ROLE_DEALER chỉ xem đại lý liên kết. Dealer-only vẫn chịu scope filter cổng đại lý hiện có. Vai trò chỉ thu hẹp phạm vi, không cấp quyền thay ma trận. ADMIN được bỏ qua hạn chế phạm vi. Không thêm quyền mới hay tự thay đổi ma trận đã lưu.
+
+Ví dụ:
+
+```text
+GET /api/finance/debt/12/statement?from=2026-10-01&to=2026-10-31
+GET /api/finance/debt/12/statement/export?from=2026-10-01&to=2026-10-31&format=pdf
+GET /api/finance/debt/12/statement/export?from=2026-10-01&to=2026-10-31&format=xlsx
+```
+
+### Số liệu và thứ tự
+
+Một sổ hợp nhất các nguồn đang có trên branch:
+
+| sourceType | Nguồn | Ngày phát sinh | Số tiền có dấu |
+|---|---|---|---|
+| ORDER | Đơn đang thuộc trạng thái ghi nợ | recordedAt, fallback createdAt | totalAmount |
+| PAYMENT | debt_payments | paymentDate lúc 00:00 (dữ liệu gốc chỉ lưu ngày) | -amount |
+| INVOICE_ADJUSTMENT | Điều chỉnh INCREASE/DECREASE/CANCEL có tiền khác 0 | adjustmentDate | adjustmentAmount đã có dấu trong DB |
+
+Tập trạng thái đơn: APPROVED, RECORDED, PICKING, PROCESSING, EXPORTED, SHIPPED, DELIVERED, CLOSED, COMPLETED. Không cộng đơn nháp/chờ duyệt/hủy/từ chối/hết hạn. Hóa đơn gốc **không được cộng thêm một lần nữa** vì tiền nợ đã ghi từ đơn. Điều chỉnh INFORMATION và điều chỉnh không có tiền không phải dòng tăng/giảm công nợ. Khoản thu âm nếu có là bút toán tăng trở lại theo đúng dấu số tiền.
+
+- Số dư đầu kỳ = tổng các phát sinh có ngày trước 00:00 ngày from.
+- Kỳ lọc bao gồm cả from và to: >= from 00:00 và < (to+1 ngày) 00:00.
+- Dòng sắp theo thời điểm, rồi loại nguồn ORDER → PAYMENT → INVOICE_ADJUSTMENT, rồi ID tăng dần để ổn định khi trùng thời điểm.
+- Phát sinh tăng/giảm luôn không âm. Số dư từng dòng = số dư trước + tăng - giảm.
+- Số dư cuối kỳ = đầu kỳ + tổng tăng - tổng giảm. **Không cắt số dư âm về 0**: âm phản ánh thanh toán dư/credit, cần được giữ để đối chiếu.
+- Kỳ không có dòng vẫn trả đúng đầu kỳ/cuối kỳ, không tạo dòng giả. Dữ liệu đại lý khác không được đưa vào sổ.
+- Dùng BigDecimal và số tiền chính xác từ DB. JSON giữ biểu diễn số thập phân; client tài chính cần tránh ép tiền lớn sang số dấu phẩy động không chính xác.
+
+Sổ là đối chiếu từ chứng từ **hiện còn trong DB và các trạng thái hiện tại**, không tái dựng lịch sử đã xóa hoặc lịch sử đổi trạng thái không được lưu. Không sửa đơn, hóa đơn, phiếu thu hoặc tạo phát sinh mới khi xuất. Phần sổ bao gồm điều chỉnh hóa đơn và giữ số dư có dấu; có thể khác API tổng hợp công nợ cũ trên branch vốn chỉ lấy tổng đơn trừ thu tiền và cắt âm về 0. S8-10 không thay đổi hành vi API tổng hợp cũ.
+
+### JSON data
+
+Các trường: `dealerId`, `dealerCode`, `dealerName`, `from`, `to`, `openingBalance`, `totalIncrease`, `totalDecrease`, `closingBalance`, `entries`.
+
+Mỗi entry gồm `occurredAt`, `sourceType`, `sourceId`, `documentCode`, `description`, `increase`, `decrease`, `balance`. Source type/ID và mã chứng từ dùng để truy vết bản ghi gốc. Không đọc dữ liệu từ localStorage.
+
+### Tệp xuất
+
+Cả hai định dạng dùng cùng DTO/snapshot sổ, gồm thông tin đại lý, kỳ lọc, số dư đầu kỳ, toàn bộ dòng và tổng cuối kỳ. Cột: **Ngày phát sinh | Số chứng từ | Diễn giải | Phát sinh tăng | Phát sinh giảm | Số dư lũy kế**. Đơn vị VND, hiển thị hai chữ số thập phân.
+
+- PDF: A4 ngang, nhúng phông Arial Unicode từ resource dự án; bảng lặp tiêu đề ở trang sau và có số trang. Hỗ trợ tiếng Việt, diễn giải xuống dòng và sổ nhiều trang.
+- Excel: sheet `Chi tiết công nợ`, cố định phần đầu, dòng tiêu đề lặp khi in. Mã/diễn giải là ô text, không thực thi chuỗi bắt đầu bằng dấu `=` như công thức. Tiền có <=15 chữ số có nghĩa ghi Number; tiền lớn hơn khả năng chính xác của Excel được ghi nguyên văn dạng text để không làm sai số dư.
+- Content-Type: `application/pdf` hoặc `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+- Content-Disposition: attachment, filename UTF-8. Ví dụ `So-cong-no_DL-A_2026-10-01_2026-10-31.pdf` và `.xlsx`. Mã đại lý được làm sạch để không chèn đường dẫn/header.
+- Cache-Control: no-store. CORS expose Content-Disposition để frontend lấy tên file.
+- Dùng SXSSF 100 dòng cho workbook, dọn tệp tạm trước khi đóng kể cả khi có lỗi. PDF/XLSX được hoàn tất trước khi trả response, không trả nửa tệp.
+
+### Giới hạn và lỗi
+
+dealerId phải dương; from <= to, hỗ trợ năm 1000–9998 phù hợp khoảng ngày SQL. Không giới hạn số năm một kỳ một cách tùy ý. Mặc định tối đa **20.000 dòng trong kỳ**, cấu hình `app.debt-statement.max-rows` từ 1 đến 100.000. Truy vấn lấy maxRows+1 để phát hiện vượt, trả 400 yêu cầu thu hẹp ngày, **không âm thầm cắt dòng**. Phát sinh trước kỳ vẫn tính đầy đủ vào openingBalance bằng SUM riêng.
+
+Các truy vấn theo cùng dealerId, trong read-only REPEATABLE_READ transaction để opening và dòng kỳ khớp snapshot trên MySQL. Không gọi API riêng từng chứng từ hoặc tải entity graph để tính số dư.
+
+- 400: sai/thiếu ngày, dealerId không hợp lệ, from > to, format không hỗ trợ hoặc vượt số dòng.
+- 401: chưa xác thực. 403: thiếu quyền hoặc ngoài phạm vi đại lý.
+- 404: đại lý không tồn tại. 500: lỗi tạo tệp/hệ thống, không trả nội dung lỗi nội bộ.
+
+### Kết nối và kiểm thử
+
+Chỉ backend; frontend chưa có luồng gọi API sổ chi tiết hoặc tải hai định dạng này. Quyền FINANCE_VIEW_DEBT đã có trong ma trận quản trị và menu công nợ hiện có, nhưng chưa nghiệm thu ẩn/hiện nút xuất S8-10 cho đến khi frontend triển khai.
+
+**44/44 tests qua**, 0 failure/error/skip: DealerDebtStatementIntegrationTest (10), FinanceControllerTest (13), DebtRiskSecurityTest (6), PermissionRevocationTest (1), RolePermissionConfigTest (14). Kiểm thử có dữ liệu đầu kỳ, các ngày biên, loại trừ dòng không ghi nợ, điều chỉnh/hủy/thu âm, số dư âm, không cộng trùng hóa đơn, cách ly đại lý, quyền với JWT cũ, Excel tiền lớn, PDF nhiều trang và giới hạn không xuất thiếu. Đã render và xem toàn bộ 3 trang PDF kiểm thử bằng Poppler: tiếng Việt, lặp header, số trang và số dư hiển thị đúng. DB H2 MySQL mode; chưa kiểm thử MySQL hoặc giao diện thực tế.
+
+```text
+mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
+```
