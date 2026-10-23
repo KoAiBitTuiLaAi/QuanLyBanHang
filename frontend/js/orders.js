@@ -828,7 +828,9 @@
 
       $('ord-detail-title').textContent = `Đơn hàng ${order.orderCode || '#' + order.id}`;
       $('ord-detail-sub').textContent = `Tạo lúc ${formatDate(order.createdAt)} · Bởi ${order.createdBy || 'Hệ thống'}`;
-      $('ord-detail-status-badge').innerHTML = renderStatusBadge(order.status);
+      $('ord-detail-status-badge').innerHTML = order.backordered
+        ? '<span class="order-status-badge order-status-badge--draft">Đã xuất một phần · Còn nợ hàng</span>'
+        : renderStatusBadge(order.status);
 
       // Warning banners
       if (order.dealerLockWarning) {
@@ -909,8 +911,8 @@
       }
       $('btn-detail-confirm-portal').hidden = CAN_APPROVE || !Auth.hasPermission('ORDER_CONFIRM') || !order.canConfirmPortalOrder;
       const next = $('btn-detail-next-status');
-      next.hidden = !Auth.hasPermission('WAREHOUSE_EXPORT') || !order.nextLifecycleStatus;
-      next.textContent = order.nextLifecycleStatus ? `Chuyển sang ${lifecycleStatusLabel(order.nextLifecycleStatus)}` : 'Chuyển bước tiếp theo';
+      next.hidden = !Auth.hasPermission('WAREHOUSE_EXPORT') || (!order.nextLifecycleStatus && !order.backordered);
+      next.textContent = order.backordered ? 'Xuất bù hàng còn nợ' : order.nextLifecycleStatus === 'EXPORTED' ? 'Lập phiếu xuất kho' : order.nextLifecycleStatus ? `Chuyển sang ${lifecycleStatusLabel(order.nextLifecycleStatus)}` : 'Chuyển bước tiếp theo';
     } catch (e) {
       if (version !== detailVersion) return;
       $('ord-detail-title').textContent = 'Lỗi xem chi tiết đơn';
@@ -994,7 +996,11 @@
 
   async function advanceLifecycle() {
     const order = state.activeOrder;
-    if (!Auth.hasPermission('WAREHOUSE_EXPORT') || !order?.nextLifecycleStatus) return;
+    if (!Auth.hasPermission('WAREHOUSE_EXPORT') || !order) return;
+    if (order.backordered || order.nextLifecycleStatus === 'EXPORTED') {
+      location.assign('/warehouse/order-shipments?orderId=' + encodeURIComponent(order.id)); return;
+    }
+    if (!order.nextLifecycleStatus) return;
     if (order.nextLifecycleStatus === 'DELIVERED') {
       if (canEditDelivery(order)) {
         $('ord-delivery-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Xuất kho theo đơn | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/toast.css"><link rel="stylesheet" href="/css/warehouse-picking.css">
+  <link rel="stylesheet" href="/css/order-shipments.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content picking-page shipment-page">
+  <header class="pick-heading"><div><h1>Xuất kho theo đơn</h1><p>Xác nhận từng lượt xuất và theo dõi phần còn nợ để xuất bù.</p></div><button id="ship-reload" class="btn btn--secondary" type="button">Tải lại</button></header>
+  <p id="ship-policy" class="pick-note"></p><p id="ship-error" class="pick-error" role="alert" hidden></p>
+  <section id="ship-list-panel" class="pick-panel" aria-label="Danh sách đơn xuất kho">
+    <form id="ship-filter" class="pick-grid" role="search">
+      <label>Kho<select id="ship-warehouse"><option value="">Tất cả kho được giao</option></select></label>
+      <label>Danh sách<select id="ship-queue"><option value="READY">Chờ xuất kho</option><option value="BACKORDER">Còn nợ hàng</option><option value="HISTORY">Đã có phiếu xuất</option></select></label>
+      <label>Mã đơn<input id="ship-keyword" type="search" maxlength="150"></label><button class="btn btn--primary" type="submit">Lọc</button>
+    </form>
+    <p id="ship-count" role="status"></p><div id="ship-list" class="pick-batches" aria-live="polite"></div>
+    <footer class="pick-actions"><button id="ship-prev" type="button" class="btn btn--secondary">Trước</button><span id="ship-page"></span><button id="ship-next" type="button" class="btn btn--secondary">Sau</button></footer>
+  </section>
+  <section id="ship-detail" class="pick-panel" aria-labelledby="ship-title" hidden>
+    <header class="pick-heading"><div><h2 id="ship-title" tabindex="-1"></h2><p id="ship-info"></p></div><div class="pick-actions"><button id="ship-detail-reload" type="button" class="btn btn--secondary">Tải lại đơn</button><button id="ship-close" type="button" class="btn btn--secondary">Đóng</button></div></header>
+    <p id="ship-blocked" class="pick-note" hidden></p><p id="ship-detail-error" class="pick-error" role="alert" hidden></p>
+    <form id="ship-confirm-form">
+      <div id="ship-lines" class="pick-lines"></div>
+      <label>Ghi chú lượt xuất<input id="ship-note" maxlength="500"></label>
+      <p class="pick-hint">Số lượng theo đơn vị đã chốt trên đơn. Xuất thiếu (kể cả bằng 0) phải ghi lý do. Để lô tự động để hệ thống chọn FEFO còn đủ lượng; không xuất lô quá hạn tại đây.</p>
+      <p class="pick-hint">Xác nhận sẽ trừ tồn thực và giữ chỗ; không phải xác nhận đã giao. Phiếu đã xác nhận không sửa hoặc xóa được.</p>
+      <button id="ship-confirm" class="btn btn--primary" type="submit" hidden>Xác nhận xuất kho</button>
+    </form>
+    <h3>Các phiếu đã xác nhận</h3><div id="ship-receipts" class="pick-lines"></div>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/toast.js"></script><script src="/js/order-shipments.js"></script>
+</body></html>

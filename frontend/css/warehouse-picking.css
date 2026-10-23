@@ -1,0 +1,46 @@
+/* Only inside the shared content frame; walking-order cards remain usable with one hand. */
+.picking-page [hidden] { display: none !important; }
+#pick-detail, #pick-create { scroll-margin-top: 100px; }
+.pick-heading, .pick-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pick-heading { margin-bottom: 18px; }
+.pick-heading h1 { font-size: 1.6rem; color: var(--ink-900); margin: 0 0 8px; }
+.pick-heading h2 { font-size: 1.15rem; margin: 0; }
+.pick-heading p, .pick-hint { color: var(--ink-600); line-height: 1.6; }
+.pick-panel { background: var(--white, #fff); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-top: 20px; min-width: 0; }
+.pick-note { padding: 12px 16px; background: var(--teal-soft, #eaf7f2); border-left: 3px solid var(--teal); line-height: 1.6; }
+.pick-error { color: var(--danger, #b42318); padding: 12px; background: #fff0ef; border-radius: 6px; overflow-wrap: anywhere; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 14px; align-items: end; margin-bottom: 20px; }
+.picking-page label { display: grid; gap: 7px; font-weight: 500; min-width: 0; }
+.picking-page input:not([type=checkbox]), .picking-page select { min-height: 44px; width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--line); border-radius: 7px; padding: 10px; background: var(--white, #fff); color: var(--ink-900); font: inherit; }
+.picking-page .btn { min-height: 44px; }
+.picking-page input:focus-visible, .picking-page select:focus-visible, .picking-page button:focus-visible { outline: 2px solid var(--teal-deep); outline-offset: 2px; }
+.pick-search { display: flex; gap: 12px; align-items: end; margin: 16px 0; }
+.pick-search label { flex: 1; }
+.pick-order-list, .pick-batches, .pick-lines { display: grid; gap: 12px; margin: 16px 0; }
+.pick-order-list label { grid-template-columns: 28px 1fr; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 8px; min-height: 60px; }
+.pick-order-list small, .pick-batch small, .pick-line small { display: block; color: var(--ink-600); margin-top: 6px; }
+.pick-order-list input[type=checkbox], .pick-check input { width: 22px; height: 22px; accent-color: var(--teal-deep); }
+.pick-batch { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
+.pick-badge { display: inline-block; padding: 5px 9px; border-radius: 6px; background: var(--surface, #f0f4f8); font-size: .85rem; }
+.pick-badge--COMPLETED { color: var(--teal-deep); background: var(--teal-soft, #eaf7f2); }
+.pick-badge--CANCELLED { color: var(--ink-600); }
+.pick-line { padding: 16px; border: 1px solid var(--line); border-left: 4px solid var(--teal); border-radius: 8px; min-width: 0; scroll-margin-block: 90px; }
+.pick-line--checked { border-left-color: var(--ink-300); }
+.pick-line h3 { margin: 8px 0; font-size: 1rem; overflow-wrap: anywhere; }
+.pick-stop { color: var(--teal-deep); font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.pick-line-fields { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(180px, 2fr); gap: 12px; margin-block: 16px; }
+.pick-check { display: flex !important; align-items: center; gap: 10px !important; min-height: 44px; }
+.pick-quantity { font-weight: 600; color: var(--ink-900); }
+.pick-progress { padding: 12px; background: var(--surface, #f0f4f8); font-weight: 600; }
+.pick-completion { border-top: 1px solid var(--line); padding-top: 18px; }
+.pick-cancel { display: flex; align-items: end; gap: 12px; border-top: 1px solid var(--line); margin-top: 20px; padding-top: 20px; }
+.pick-cancel label { flex: 1; }
+.pick-empty { padding: 24px 8px; color: var(--ink-600); text-align: center; }
+@media (max-width: 640px) {
+  .pick-panel { padding: 14px; }
+  .pick-line-fields { grid-template-columns: 1fr; }
+  .pick-batch, .pick-cancel { flex-direction: column; align-items: stretch; }
+  .pick-search { flex-wrap: wrap; }
+  .pick-cancel label { width: 100%; }
+  .pick-completion > button { width: 100%; }
+}

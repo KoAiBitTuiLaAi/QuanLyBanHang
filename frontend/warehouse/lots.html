@@ -9,7 +9,30 @@
   <header class="stock-heading"><div><h1>Lô & hạn sử dụng</h1><p>Theo dõi số lượng còn lại từng lô, ưu tiên kiểm tra hàng sắp hết hạn trước khi giao đại lý.</p></div><button id="lot-reload" type="button" class="btn btn--secondary">Tải lại</button></header>
   <p class="stock-note">Lô đã quá hạn bị chặn xuất. Chỉ người được cấp quyền ghi đè mới có thể xác nhận xuất, bắt buộc kèm lý do và được lưu vào nhật ký.</p>
   <p id="lot-error" class="stock-error" role="alert" hidden></p><p id="lot-notice" class="lot-success" role="status" hidden></p>
-  <nav class="lot-tabs" aria-label="Chế độ quản lý lô"><button id="lot-tab-inventory" type="button" class="lot-tab" aria-pressed="true">Tồn theo lô</button><button id="lot-tab-settings" type="button" class="lot-tab" aria-pressed="false">Cấu hình theo SKU</button></nav>
+  <nav class="lot-tabs" aria-label="Chế độ quản lý lô"><button id="lot-tab-inventory" type="button" class="lot-tab" aria-pressed="true">Tồn theo lô</button><button id="lot-tab-settings" type="button" class="lot-tab" aria-pressed="false">Cấu hình theo SKU</button><button id="lot-tab-fefo" type="button" class="lot-tab" aria-pressed="false" hidden>Gợi ý xuất FEFO</button></nav>
+  <section id="lot-fefo-panel" class="stock-panel" aria-labelledby="fefo-title" hidden>
+    <div class="stock-result-heading"><h2 id="fefo-title">Gợi ý lô xuất theo hạn dùng gần nhất</h2></div>
+    <p class="lot-panel-note">Chọn kho, SKU và số lượng theo đơn vị cơ sở. Máy chủ chọn lô còn hạn, có hạn dùng gần nhất và đủ số lượng. Chỉ xác nhận xuất mới ghi sổ và trừ tồn.</p>
+    <p id="fefo-error" class="stock-error" role="alert" hidden></p>
+    <form id="fefo-request" class="stock-filters">
+      <label>Kho xuất<select id="fefo-warehouse" required disabled><option value="">Đang tải…</option></select></label>
+      <label class="stock-keyword">Sản phẩm / SKU<select id="fefo-product" required disabled><option value="">Đang tải…</option></select></label>
+      <label>Số lượng xuất <span id="fefo-unit"></span><input id="fefo-quantity" type="number" min="0.0001" max="99999999999.9999" step="0.0001" inputmode="decimal" required disabled></label>
+      <div class="stock-actions"><button id="fefo-suggest" class="btn btn--primary" type="submit" disabled>Lấy gợi ý FEFO</button><button id="fefo-reload" class="btn btn--secondary" type="button">Tải lại bộ chọn</button></div>
+    </form>
+    <p id="fefo-readonly" class="lot-panel-note" hidden>Bạn chỉ có quyền xem gợi ý. Cần quyền Xuất kho để xác nhận xuất.</p>
+    <p id="fefo-result" class="lot-panel-note" role="status">Chọn kho, sản phẩm và số lượng để lấy gợi ý.</p>
+    <div id="fefo-preview" hidden>
+      <div class="stock-table-scroll" tabindex="0" role="region" aria-label="Các lô xuất theo thứ tự FEFO"><table class="stock-table fefo-table"><thead><tr><th>Chọn lô</th><th>Số lô / Gợi ý</th><th>Hạn sử dụng</th><th class="stock-number">Tồn lô (đơn vị cơ sở)</th><th>Tình trạng</th></tr></thead><tbody id="fefo-rows"></tbody></table></div>
+      <form id="fefo-export" class="fefo-confirm">
+        <p id="fefo-selected" class="lot-context"></p>
+        <label>Lý do chọn khác lô gợi ý <span id="fefo-reason-required" hidden>(bắt buộc)</span><textarea id="fefo-reason" rows="2" maxlength="255" placeholder="Nhập lý do khi chọn khác lô FEFO gợi ý"></textarea></label>
+        <label class="lot-checkbox"><input id="fefo-confirm" type="checkbox">Tôi đã kiểm tra lô và số lượng; xác nhận sẽ lập phiếu xuất và trừ tồn thật.</label>
+        <div class="stock-actions"><button id="fefo-save" class="btn btn--primary" type="submit" disabled>Xác nhận xuất lô</button></div>
+      </form>
+    </div>
+    <p id="fefo-success" class="lot-success" role="status" hidden></p>
+  </section>
   <section id="lot-inventory-panel" class="stock-panel" aria-labelledby="lot-result-title">
     <form id="lot-filter" class="stock-filters" role="search">
       <label class="stock-keyword">Tìm lô / sản phẩm<input id="lot-keyword" type="search" maxlength="150" placeholder="Số lô, mã SKU hoặc tên sản phẩm"></label>
@@ -50,5 +73,5 @@
     <p id="lot-export-error" class="stock-error" role="alert" hidden></p><div class="stock-actions lot-dialog-actions"><button id="lot-export-save" type="submit" class="btn btn--primary">Xác nhận xuất lô</button></div>
   </form>
 </dialog>
-<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/toast.js"></script><script src="/js/warehouse-lots.js"></script>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/toast.js"></script><script src="/js/warehouse-fefo.js"></script><script src="/js/warehouse-lots.js"></script>
 </body></html>

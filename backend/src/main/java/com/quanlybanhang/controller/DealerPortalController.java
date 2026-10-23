@@ -15,12 +15,19 @@ import com.quanlybanhang.repository.UserRepository;
 import com.quanlybanhang.repository.DealerRepository;
 import com.quanlybanhang.service.DealerDebtService;
 import com.quanlybanhang.service.DealerDeliveryPointService;
+import com.quanlybanhang.service.InvoicePdfService;
+import com.quanlybanhang.service.InvoiceService;
 import com.quanlybanhang.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -31,13 +38,16 @@ import java.time.LocalDate;
 import java.util.*;
 
 /**
- * Controller Cổng dành cho Đại lý (S4-10, S5-01).
+ * Controller Cổng dành cho Đại lý (S4-10, S5-01, S5-02, S7-07).
  *
  * Tính năng chính:
  * - Đăng nhập bằng tài khoản đại lý:
  *   + Xem thông tin hồ sơ đại lý, người phụ trách, điểm giao hàng (GET /api/portal/profile)
  *   + Chỉ thấy sản phẩm và giá thuộc nhóm khách hàng của mình (GET /api/portal/catalog hoặc /products)
- *   + Xem hạn mức, công nợ hiện tại và công nợ còn lại thời gian thực (GET /api/portal/debt)
+ *   + Xem hạn mức, tổng còn nợ hiện tại và hạn mức còn lại thời gian thực (GET /api/portal/debt, GET /api/portal/debt/summary)
+ *   + Xem lịch sử thanh toán công nợ của chính mình (GET /api/portal/debt/payments)
+ *   + Xem danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái (GET /api/portal/invoices, GET /api/portal/debt/invoices)
+ *   + Xem chi tiết, bản in HTML và tải lại PDF hóa đơn đã phát hành của chính mình (GET /api/portal/invoices/{id}, /pdf, /print-preview)
  *   + Tự đặt hàng bất kỳ lúc nào, đơn gửi lên luôn ở trạng thái Chờ duyệt (POST /api/portal/orders)
  *   + Theo dõi lịch sử và trạng thái đơn hàng của chính mình (GET /api/portal/orders, GET /api/portal/orders/{id})
  */
@@ -55,6 +65,12 @@ public class DealerPortalController {
     private final ProductRepository productRepository;
     private final UnitConversionRepository unitConversionRepository;
     private final DealerRepository dealerRepository;
+
+    @Autowired(required = false)
+    private InvoiceService invoiceService;
+
+    @Autowired(required = false)
+    private InvoicePdfService invoicePdfService;
 
     /**
      * Lấy thực thể Dealer liên kết với người dùng đang đăng nhập.
@@ -223,14 +239,171 @@ public class DealerPortalController {
     }
 
     /**
-     * S4-10: Tra cứu thông tin công nợ, hạn mức và công nợ còn lại của đại lý trước khi gửi đơn.
+     * S4-10, S7-07: Tra cứu thông tin công nợ, tổng còn nợ, hạn mức và hạn mức còn lại của đại lý.
      */
     @GetMapping("/debt")
-    @PreAuthorize("hasAuthority('ORDER_VIEW')")
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('ORDER_VIEW', 'FINANCE_VIEW_DEBT')")
     public ApiResponse getDebt(Principal principal, @RequestParam(required = false) Long dealerId) {
         Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
         DealerDebtResponse debt = dealerDebtService.getDealerDebtInfo(dealer);
         return ApiResponse.success("Thông tin công nợ đại lý", debt);
+    }
+
+    /**
+     * S7-07: Xem tổng quan công nợ của chính mình (tổng còn nợ, hạn mức được cấp, hạn mức còn lại,
+     * hạn mức còn được lấy hàng, danh sách hóa đơn kèm hạn thanh toán và lịch sử thanh toán).
+     */
+    @GetMapping("/debt/summary")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('FINANCE_VIEW_DEBT')")
+    public ApiResponse getDebtSummary(Principal principal, @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        DealerDebtResponse debt = dealerDebtService.getDealerDebtInfo(dealer);
+        return ApiResponse.success("Tổng quan công nợ và hạn mức của đại lý", debt);
+    }
+
+    /**
+     * S7-07: Đại lý xem lịch sử các đợt thanh toán công nợ của chính mình.
+     */
+    @GetMapping("/debt/payments")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('FINANCE_VIEW_DEBT')")
+    public ApiResponse getMyDebtPayments(Principal principal, @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        List<DebtPaymentResponse> payments = dealerDebtService.getPaymentHistory(dealer.getId());
+        return ApiResponse.success("Lịch sử thanh toán công nợ của đại lý", payments);
+    }
+
+    /**
+     * S7-07 (Tiêu chí 1): Danh sách hóa đơn của chính đại lý kèm số tiền, hạn thanh toán, trạng thái.
+     * Hỗ trợ lọc theo trạng thái phát hành (status), trạng thái thanh toán (paymentStatus), khoảng ngày và từ khóa.
+     */
+    @GetMapping({"/invoices", "/debt/invoices"})
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('INVOICE_VIEW')")
+    public ApiResponse getMyInvoices(
+            Principal principal,
+            @RequestParam(required = false) Long dealerId,
+            @RequestParam(required = false) InvoiceStatus status,
+            @RequestParam(required = false) String paymentStatus,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        Page<InvoiceResponse> result = invoiceService.getDealerInvoices(
+                dealer.getId(), status, paymentStatus, startDate, endDate, keyword, page, size);
+        return ApiResponse.success("Danh sách hóa đơn của đại lý", result);
+    }
+
+    /**
+     * S7-07 (Tiêu chí 2): Xem chi tiết một hóa đơn đã phát hành của chính đại lý đăng nhập.
+     * Chặn truy cập chéo hóa đơn của đại lý khác (403 Forbidden).
+     */
+    @GetMapping({"/invoices/{id}", "/debt/invoices/{id}"})
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('INVOICE_VIEW')")
+    public ApiResponse getMyInvoiceDetail(
+            @PathVariable Long id,
+            Principal principal,
+            @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        InvoiceResponse invoice = invoiceService.getDealerInvoiceById(dealer.getId(), id);
+        return ApiResponse.success("Chi tiết hóa đơn của đại lý", invoice);
+    }
+
+    /**
+     * S7-07 (Tiêu chí 2): Xem và tải lại file PDF hóa đơn đã phát hành của chính đại lý đăng nhập.
+     * Chặn truy cập chéo hóa đơn của đại lý khác (403 Forbidden).
+     */
+    @GetMapping(value = {"/invoices/{id}/pdf", "/debt/invoices/{id}/pdf"}, produces = MediaType.APPLICATION_PDF_VALUE)
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('INVOICE_VIEW')")
+    public ResponseEntity<byte[]> downloadMyInvoicePdf(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "true") boolean download,
+            Principal principal,
+            @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        // Kiểm tra quyền sở hữu hóa đơn cấp dòng dữ liệu trước khi xuất PDF
+        InvoiceResponse inv = invoiceService.getDealerInvoiceById(dealer.getId(), id);
+
+        String username = principal != null ? principal.getName() : "system";
+        byte[] pdfBytes = invoicePdfService.generateInvoicePdf(id, username);
+
+        String filename = "hoa-don-" + inv.getInvoiceNumber() + ".pdf";
+        String disposition = download
+                ? "attachment; filename=\"" + filename + "\""
+                : "inline; filename=\"" + filename + "\"";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdfBytes);
+    }
+
+    /**
+     * S7-07 (Tiêu chí 2): Xem bản in HTML hóa đơn đã phát hành của chính đại lý đăng nhập.
+     */
+    @GetMapping(value = {"/invoices/{id}/print-preview", "/debt/invoices/{id}/print-preview"}, produces = MediaType.TEXT_HTML_VALUE)
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('INVOICE_VIEW')")
+    public ResponseEntity<String> getMyInvoicePrintHtml(
+            @PathVariable Long id,
+            Principal principal,
+            @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        // Kiểm tra quyền sở hữu hóa đơn cấp dòng dữ liệu trước khi tạo HTML in
+        invoiceService.getDealerInvoiceById(dealer.getId(), id);
+
+        String username = principal != null ? principal.getName() : "system";
+        String html = invoicePdfService.generateInvoicePrintHtml(id, username);
+        return ResponseEntity.ok()
+                .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
+                .body(html);
+    }
+
+    /**
+     * S7-07 (Tiêu chí 2): Xem danh sách chứng từ điều chỉnh của một hóa đơn thuộc đại lý đăng nhập.
+     */
+    @GetMapping({"/invoices/{id}/adjustments", "/debt/invoices/{id}/adjustments"})
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('INVOICE_VIEW')")
+    public ApiResponse getMyInvoiceAdjustments(
+            @PathVariable Long id,
+            Principal principal,
+            @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        InvoiceResponse inv = invoiceService.getDealerInvoiceById(dealer.getId(), id);
+        return ApiResponse.success("Danh sách chứng từ điều chỉnh của hóa đơn", inv.getAdjustments());
+    }
+
+    /**
+     * S7-07 (Tiêu chí 2): Tải lại file PDF chứng từ điều chỉnh của hóa đơn thuộc đại lý đăng nhập.
+     */
+    @GetMapping(value = {"/invoices/{id}/adjustments/{adjustmentId}/pdf", "/debt/invoices/{id}/adjustments/{adjustmentId}/pdf"}, produces = MediaType.APPLICATION_PDF_VALUE)
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('INVOICE_VIEW')")
+    public ResponseEntity<byte[]> downloadMyAdjustmentPdf(
+            @PathVariable Long id,
+            @PathVariable Long adjustmentId,
+            @RequestParam(defaultValue = "true") boolean download,
+            Principal principal,
+            @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        InvoiceResponse inv = invoiceService.getDealerInvoiceById(dealer.getId(), id);
+
+        boolean belongsToInvoice = inv.getAdjustments() != null && inv.getAdjustments().stream()
+                .anyMatch(a -> adjustmentId.equals(a.getId()));
+        if (!belongsToInvoice) {
+            throw new AccessDeniedException("Chứng từ điều chỉnh không thuộc hóa đơn của đại lý");
+        }
+
+        String username = principal != null ? principal.getName() : "system";
+        byte[] pdfBytes = invoicePdfService.generateAdjustmentPdf(adjustmentId, username);
+
+        String filename = "chung-tu-dieu-chinh-" + adjustmentId + ".pdf";
+        String disposition = download
+                ? "attachment; filename=\"" + filename + "\""
+                : "inline; filename=\"" + filename + "\"";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdfBytes);
     }
 
     /**

@@ -14,6 +14,12 @@ import java.math.BigDecimal;
 @Builder
 public class DeliveryTripSummaryResponse {
 
+    /** Unresolved goods across ALL trip states; closing a trip does not return goods. */
+    private BigDecimal totalOutstandingValue;
+    private Long totalOutstandingTrips;
+    private BigDecimal closedOutstandingValue;
+    private Long closedOutstandingTrips;
+
     /**
      * Tổng số chuyến giao đang chạy (IN_PROGRESS).
      */

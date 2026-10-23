@@ -58,6 +58,7 @@ class WarehouseExportLotIntegrationTest {
     Product product;
     String staffToken, adminToken;
     WarehouseLotInventory lotA, lotB, lotC;
+    User staffUser;
 
     @BeforeEach
     void setUp() {
@@ -130,6 +131,7 @@ class WarehouseExportLotIntegrationTest {
                 .build());
 
         staffToken = login(staff.getUsername(), "ExportLotTest2026");
+        staffUser = staff;
         adminToken = login("admin", "ExportLotTest2026");
     }
 
@@ -426,6 +428,92 @@ class WarehouseExportLotIntegrationTest {
         JsonNode card=call(HttpMethod.GET,"/api/warehouse/stock-card/"+product.getId(),staffToken,null,200).get("data");
         assertThat(card.at("/entries/0/baseQuantityChange").decimalValue()).isEqualByComparingTo("-5");
         assertThat(card.at("/entries/0/runningBaseBalance").decimalValue()).isEqualByComparingTo("70");
+    }
+
+    @Test
+    void s604_excludesExpiredAndMissingExpiryFromAutomaticSuggestionsAndWrites() {
+        lotA.setExpiryDate(LocalDate.now().minusDays(1));lots.save(lotA);
+        lotB.setExpiryDate(null);lots.save(lotB);
+        lotC.setBaseQuantity(BigDecimal.ZERO);lots.save(lotC);
+        String query="/api/warehouse/export/suggest-lot?warehouseId="+warehouse.getId()+"&productId="+product.getId()+"&quantity=1";
+        JsonNode data=call(HttpMethod.GET,query,staffToken,null,200).get("data");
+        assertThat(data.get("suggestedLot").isNull()).isTrue();
+        assertThat(data.get("hasSufficientStock").asBoolean()).isFalse();
+        assertThat(data.get("availableLots").size()).isEqualTo(2);
+        call(HttpMethod.POST,"/api/warehouse/export",adminToken,Map.of("warehouseId",warehouse.getId(),"items",List.of(Map.of("productId",product.getId(),"quantity",1))),400);
+        assertThat(inventories.findByWarehouseIdAndProductId(warehouse.getId(),product.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("75");
+    }
+
+    @Test
+    void s604_rejectsInvalidQuantitiesAndUsesStoredLegacyLots() {
+        String path="/api/warehouse/export/suggest-lot?warehouseId="+warehouse.getId()+"&productId="+product.getId();
+        for(String q:List.of("0","-1","1.00001","100000000000"))call(HttpMethod.GET,path+"&quantity="+q,staffToken,null,400);
+        product.setManageLot(false);products.save(product);
+        JsonNode data=call(HttpMethod.GET,path+"&quantity=10",staffToken,null,200).get("data");
+        assertThat(data.get("manageLot").asBoolean()).isTrue();
+        assertThat(data.at("/suggestedLot/lotNumber").asText()).isEqualTo(lotB.getLotNumber());
+        call(HttpMethod.GET,path.replace("warehouseId="+warehouse.getId(),"warehouseId="+outsideWarehouse.getId()),staffToken,null,403);
+    }
+
+    @Test
+    void s604_liveSingleRoleMatrixGrantRevokeAndAdminBypass() {
+        staffUser.setRoles(Set.of(roles.findByName(ERole.ROLE_VIEWER).orElseThrow()));users.save(staffUser);
+        String token=login(staffUser.getUsername(),"ExportLotTest2026");
+        String path="/api/warehouse/export/suggest-lot?warehouseId="+warehouse.getId()+"&productId="+product.getId()+"&quantity=10";
+        Map<String,Object> body=Map.of("warehouseId",warehouse.getId(),"items",List.of(Map.of("productId",product.getId(),"quantity",10,"lotNumber",lotB.getLotNumber())));
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER,Set.of(Permission.WAREHOUSE_VIEW));
+        call(HttpMethod.GET,path,token,null,200);call(HttpMethod.POST,"/api/warehouse/export",token,body,403);
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER,Set.of(Permission.WAREHOUSE_VIEW,Permission.WAREHOUSE_EXPORT));
+        call(HttpMethod.POST,"/api/warehouse/export",token,body,200);
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER,Set.of(Permission.WAREHOUSE_VIEW));
+        call(HttpMethod.POST,"/api/warehouse/export",token,body,403);
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER,Set.of());
+        call(HttpMethod.GET,path,token,null,403);call(HttpMethod.GET,"/api/warehouse/lots/options",token,null,403);
+        call(HttpMethod.GET,path,adminToken,null,200);
+    }
+
+    @Test
+    void s604_writeRechecksChangedDefaultAndIgnoresForgedSuggestion() {
+        WarehouseLotInventory newer=lots.save(WarehouseLotInventory.builder().warehouse(warehouse).product(product).lotNumber("NEAR-"+UUID.randomUUID())
+                .expiryDate(LocalDate.now().plusDays(1)).baseQuantity(new BigDecimal("20")).baseUnit("lon").build());
+        var item=new HashMap<String,Object>();item.put("productId",product.getId());item.put("quantity",10);item.put("lotNumber",lotB.getLotNumber());
+        item.put("suggestedLotNumber",lotB.getLotNumber());
+        Map<String,Object> body=Map.of("warehouseId",warehouse.getId(),"items",List.of(item));
+        call(HttpMethod.POST,"/api/warehouse/export",staffToken,body,400);
+        assertThat(lots.findById(lotB.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("20");
+        item.put("overrideReason","Giữ nguyên lô khách đã kiểm tra");
+        JsonNode saved=call(HttpMethod.POST,"/api/warehouse/export",staffToken,body,200).get("data");
+        assertThat(saved.at("/items/0/lotNumber").asText()).isEqualTo(lotB.getLotNumber());
+        assertThat(saved.at("/items/0/suggestedLotNumber").asText()).isEqualTo(newer.getLotNumber());
+        assertThat(lots.findById(newer.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("20");
+    }
+
+    @Test
+    void s604_competingExportsDeductSelectedLotOnlyOnceAndRollBackLoser() throws Exception {
+        var executor=java.util.concurrent.Executors.newFixedThreadPool(2);
+        var start=new java.util.concurrent.CountDownLatch(1);
+        Map<String,Object> body=Map.of("warehouseId",warehouse.getId(),"items",List.of(Map.of("productId",product.getId(),"quantity",15,
+                "lotNumber",lotB.getLotNumber(),"overrideReason","Chỉ định lô đã chọn")));
+        java.util.concurrent.Callable<Integer> task=()->{start.await();return exchange(HttpMethod.POST,"/api/warehouse/export",staffToken,body).getStatusCode().value();};
+        try {
+            var a=executor.submit(task);var b=executor.submit(task);start.countDown();
+            assertThat(List.of(a.get(25,java.util.concurrent.TimeUnit.SECONDS),b.get(25,java.util.concurrent.TimeUnit.SECONDS))).containsExactlyInAnyOrder(200,400);
+            assertThat(lots.findById(lotB.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("5");
+            assertThat(lots.findById(lotC.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("50");
+            var stock=inventories.findByWarehouseIdAndProductId(warehouse.getId(),product.getId()).orElseThrow();
+            assertThat(stock.getBaseQuantity()).isEqualByComparingTo("60");assertThat(stock.getReservedQuantity()).isEqualByComparingTo("0");
+            assertThat(vouchers.searchVouchers(warehouse.getId(),WarehouseVoucherType.EXPORT,null,null)).hasSize(1);
+        } finally {executor.shutdownNow();}
+    }
+
+    @Test
+    void s604_cannotConsumeReservedStockAndFailureRollsBackAllLotChanges() {
+        var stock=inventories.findByWarehouseIdAndProductId(warehouse.getId(),product.getId()).orElseThrow();
+        stock.setReservedQuantity(new BigDecimal("74"));inventories.save(stock);
+        call(HttpMethod.POST,"/api/warehouse/export",staffToken,Map.of("warehouseId",warehouse.getId(),"items",List.of(Map.of("productId",product.getId(),"quantity",10,"lotNumber",lotB.getLotNumber()))),400);
+        assertThat(lots.findById(lotB.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("20");
+        assertThat(inventories.findById(stock.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("75");
+        assertThat(vouchers.searchVouchers(warehouse.getId(),WarehouseVoucherType.EXPORT,null,null)).isEmpty();
     }
 
     private WarehouseVoucher stockVoucher(WarehouseVoucherType type,String status,int quantity,java.time.LocalDateTime time,Warehouse target) {

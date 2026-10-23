@@ -22,3 +22,14 @@
 .lot-dialog .lot-checkbox {display:flex;align-items:start;gap:10px;line-height:1.6;}.lot-checkbox input {margin-top:5px;accent-color:var(--teal-deep);width:18px;height:18px;flex-shrink:0;}
 .lot-dialog .lot-panel-note {padding:0;}.lot-dialog-actions {justify-content:flex-end;}.lot-dialog :focus-visible,.lot-tab:focus-visible {outline:2px solid var(--teal-deep);outline-offset:3px;}
 @media(max-width:640px) {.lot-alerts small {margin-left:0;flex-basis:100%;}.lot-dialog {padding:18px;}.lot-dialog .stock-heading {flex-direction:row;align-items:center;}}
+
+/* FEFO lives inside the existing shared page frame. */
+.fefo-table {min-width:700px;}.fefo-table th:first-child{width:12%;}.fefo-table th:nth-child(2){width:28%;}
+.fefo-table small{display:block;margin-top:6px;overflow-wrap:anywhere;}.fefo-table input{width:20px;height:20px;accent-color:var(--teal-deep);}
+.fefo-confirm{display:grid;gap:16px;padding:20px;}.fefo-confirm label{display:grid;gap:8px;font-size:.875rem;line-height:1.6;}
+.fefo-confirm textarea{width:100%;min-width:0;padding:12px;border:1px solid var(--line);border-radius:var(--radius-sm);font:inherit;resize:vertical;}
+.fefo-confirm .lot-checkbox{display:flex;align-items:start;gap:12px;}.fefo-confirm .lot-context{margin:0;}
+#lot-fefo-panel :is(button,input,select){min-height:44px;}#lot-fefo-panel input[type=checkbox]{min-height:20px;}
+#lot-fefo-panel :focus-visible{outline:2px solid var(--teal-deep);outline-offset:3px;}
+#fefo-success{margin:16px 20px;}#fefo-request label{min-width:0;}#fefo-request select{width:100%;text-overflow:ellipsis;}
+@media(max-width:640px){.fefo-confirm{padding:16px;}#fefo-request{grid-template-columns:minmax(0,1fr);}#fefo-request .stock-actions{flex-wrap:wrap;}}

@@ -6,12 +6,13 @@ const { chromium } = require('playwright');
 const base = process.env.NAV_TEST_URL || 'http://127.0.0.1:5519';
 const output = path.join(require('node:os').tmpdir(), 'qlbh-content-layout');
 const cases = [
-  '/dashboard', '/dashboard?view=debt-limits', '/profile', '/products', '/product-groups',
+  '/dashboard', '/dashboard?view=debt-limits', '/profile', '/products', '/product-groups', '/invoices',
   '/create-order', '/orders', '/order-approval', '/dealer-orders', '/dealer-portal', '/price-lists',
   '/discount-policies', '/dealers', '/suppliers', '/warehouse/units?tab=inventory',
   '/warehouse/units?tab=units', '/warehouse/units?tab=receipts', '/warehouse/units?tab=ledger',
   '/admin/users', '/admin/audit-logs', '/warehouses', '/warehouse/inventory', '/warehouse/transfers', '/warehouse/minimums',
   '/warehouse/units?tab=stocktake', '/warehouse/lots', '/warehouse/stock-card',
+  '/warehouse/picking', '/warehouse/delivery', '/warehouse/order-shipments', '/warehouse/delivery-trips',
 ];
 const user = { id: 1, username: 'admin', fullName: 'Quản trị viên', email: 'admin@example.invalid',
   phone: '0900000000', roles: ['ROLE_ADMIN'], permissions: [], warehouses: [], territories: [] };
@@ -37,6 +38,7 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       const endpoint = new URL(route.request().url()).pathname.replace('/api', '');
       let data = [];
       if (endpoint === '/auth/permissions') data = { roles: user.roles, permissions: user.permissions };
+      else if (endpoint === '/invoices') data = {content:[],totalPages:0,totalElements:0};
       else if (['/users/profile', '/auth/me'].includes(endpoint)) data = user;
       else if (endpoint === '/admin/assignment-options') data = { roles: user.roles, warehouses: [], territories: [], dealers: [] };
       else if (['/admin/users', '/admin/audit-logs'].includes(endpoint)) data = { content: [], totalElements: 0, totalPages: 1, number: 0, first: true, last: true };
@@ -48,6 +50,13 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       else if (endpoint === '/warehouse/stock-minimums') data = {content: [], totalElements: 0, totalPages: 0};
       else if (endpoint === '/warehouse/transfers/options') data = {sourceWarehouses: [], destinationWarehouses: [], statuses: [], canCreate: true};
       else if (endpoint === '/warehouse/transfers/search') data = {content: [], totalElements: 0, totalPages: 0};
+      else if (endpoint === '/warehouse/picking-batches/options') data = {warehouses: [], statuses: [], canCreate: true, quantityScale: 4, maxOrders: 100, maxLines: 500, routeStrategy: 'Thứ tự khu/kệ'};
+      else if (endpoint === '/warehouse/picking-batches') data = {content: [], totalElements: 0, totalPages: 0};
+      else if (endpoint === '/warehouse/order-shipments/options') data = {warehouses: [], canConfirm: true, quantityScale: 4, reservationPolicy: 'Phần còn nợ tiếp tục giữ chỗ'};
+      else if (endpoint === '/warehouse/order-shipments') data = {content: [], totalElements: 0, totalPages: 0};
+      else if (endpoint === '/warehouse/delivery-trips/options') data = {warehouses: [], tripStatuses: [], stopStatuses: [], canManage: false};
+      else if (endpoint === '/warehouse/delivery-trips/summary') data = {totalOutstandingValue:0,totalOutstandingTrips:0,closedOutstandingValue:0,closedOutstandingTrips:0,totalRunningTrips:0,totalValueOnRoad:0,totalDeliveredPoints:0,totalRemainingPoints:0,totalOverdueTrips:0};
+      else if (endpoint === '/warehouse/delivery-trips') data = {content: [], totalElements: 0, totalPages: 0};
       else if (endpoint === '/dealers/options') data = { assignedUsers: [], territories: [] };
       else if (['/dealers', '/dealers/active', '/finance/debt', '/portal/dealers'].includes(endpoint)) data = dealers;
       else if (endpoint === '/orders/draft') data = null;

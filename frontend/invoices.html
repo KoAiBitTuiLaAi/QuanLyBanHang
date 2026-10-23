@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hóa đơn bán hàng | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/invoices.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content invoices-page">
+  <header class="inv-heading"><div><h1>Hóa đơn bán hàng</h1><p>Phát hành từ hàng thực giao. Gộp phiếu cùng đại lý, đối chiếu trước khi cấp số.</p></div><div class="inv-actions"><button id="inv-reload" type="button" class="btn btn--secondary">Tải lại</button><button id="inv-new" type="button" class="btn btn--primary" hidden>Phát hành hóa đơn</button></div></header>
+  <p id="inv-error" class="inv-error" role="alert" hidden></p><p id="inv-success" class="inv-success" role="status" hidden></p>
+  <section id="inv-workspace">
+    <section class="inv-panel" aria-labelledby="inv-list-title">
+      <form id="inv-filter" class="inv-form" role="search">
+        <label>Từ khóa<input id="inv-keyword" type="search" maxlength="150" placeholder="Số hóa đơn, tên đại lý…"></label>
+        <label>Trạng thái<select id="inv-status"><option value="">Tất cả</option><option value="ISSUED">Đã phát hành</option><option value="ADJUSTED">Đã điều chỉnh</option><option value="CANCELLED">Đã hủy bằng chứng từ</option></select></label>
+        <label>Từ ngày<input id="inv-from" type="date"></label><label>Đến ngày<input id="inv-to" type="date"></label>
+        <button type="submit" class="btn btn--secondary">Lọc hóa đơn</button>
+      </form>
+      <header class="inv-heading"><h2 id="inv-list-title">Hóa đơn đã phát hành</h2><span id="inv-count" role="status"></span></header>
+      <div class="inv-scroll" role="region" aria-label="Danh sách hóa đơn" tabindex="0"><table><thead><tr><th>Số hóa đơn</th><th>Đại lý</th><th>Ngày phát hành</th><th>Trạng thái</th><th>Tiền gốc</th><th>Sau điều chỉnh</th><th>Thao tác</th></tr></thead><tbody id="inv-list"></tbody></table></div>
+      <footer class="inv-actions inv-pagination"><button id="inv-prev" type="button" class="btn btn--secondary">Trước</button><span id="inv-page"></span><button id="inv-next" type="button" class="btn btn--secondary">Sau</button></footer>
+    </section>
+    <section id="inv-create" class="inv-panel" aria-labelledby="inv-create-title" hidden>
+      <header class="inv-heading"><div><h2 id="inv-create-title" tabindex="-1">Phát hành từ phiếu đã giao</h2><p>Số hóa đơn do hệ thống cấp khi phát hành; xem trước không cấp số.</p></div><button id="inv-create-close" type="button" class="btn btn--secondary">Đóng</button></header>
+      <p id="inv-create-error" class="inv-error" role="alert" hidden></p>
+      <form id="inv-eligible-filter" class="inv-form">
+        <label>Đại lý<select id="inv-dealer" required><option value="">Chọn đại lý có phiếu chưa xuất hóa đơn</option></select></label>
+        <label>Giao từ ngày<input id="inv-delivered-from" type="date"></label><label>Giao đến ngày<input id="inv-delivered-to" type="date"></label>
+        <button id="inv-load-eligible" type="submit" class="btn btn--secondary">Tìm phiếu đã giao</button>
+      </form>
+      <p class="inv-muted">Chỉ chọn phiếu đã giao của cùng đại lý trong khoảng ngày đã lọc. Giá trị dưới đây tính theo số thực giao từ hệ thống.</p>
+      <div id="inv-eligible"></div>
+      <div id="inv-issue-fields" class="inv-form">
+        <label>Ngày phát hành (để trống dùng giờ hệ thống)<input id="inv-date" type="datetime-local" step="1"></label>
+        <label>Hạn thanh toán (tùy chọn)<input id="inv-due" type="date"></label>
+        <label class="inv-wide">Ghi chú<textarea id="inv-note" maxlength="500" rows="2"></textarea></label>
+      </div>
+      <div class="inv-actions"><span id="inv-selected" role="status">Chưa chọn phiếu.</span><button id="inv-preview" type="button" class="btn btn--secondary" disabled>Xem trước hóa đơn</button></div>
+      <section id="inv-preview-panel" hidden aria-labelledby="inv-preview-title"><h3 id="inv-preview-title" tabindex="-1">Đối chiếu trước phát hành</h3><div id="inv-preview-body"></div><label class="inv-check"><input id="inv-confirm" type="checkbox">Tôi đã đối chiếu phiếu, số lượng thực giao và thông tin hóa đơn.</label><button id="inv-issue" type="button" class="btn btn--primary" disabled>Xác nhận phát hành</button></section>
+    </section>
+    <section id="inv-detail" class="inv-panel" hidden aria-labelledby="inv-detail-title">
+      <header class="inv-heading"><h2 id="inv-detail-title" tabindex="-1"></h2><button id="inv-detail-close" type="button" class="btn btn--secondary">Đóng chi tiết</button></header>
+      <p class="inv-notice">Hóa đơn đã phát hành không được sửa hoặc xóa. Sai sót được ghi nhận bằng chứng từ điều chỉnh riêng.</p>
+      <p id="inv-detail-error" class="inv-error" role="alert" hidden></p><div id="inv-detail-body"></div>
+      <div id="inv-detail-actions" class="inv-actions" hidden><button id="inv-print-open" type="button" class="btn btn--secondary">In hóa đơn</button><button id="inv-pdf" type="button" class="btn btn--secondary">Tải PDF</button><button id="inv-adjust-open" type="button" class="btn btn--primary" hidden>Lập chứng từ điều chỉnh</button></div>
+      <form id="inv-adjust" hidden>
+        <h3>Chứng từ điều chỉnh</h3><p id="inv-adjust-error" class="inv-error" role="alert" hidden></p>
+        <div class="inv-form"><label>Loại điều chỉnh<select id="inv-adjust-type"><option value="INCREASE">Điều chỉnh tăng tiền</option><option value="DECREASE">Điều chỉnh giảm tiền</option><option value="INFORMATION">Điều chỉnh thông tin</option><option value="CANCEL">Hủy bằng chứng từ</option></select></label>
+          <label id="inv-adjust-amount-label">Số tiền điều chỉnh (nhập số dương)<input id="inv-adjust-amount" type="number" min="0.01" step="0.01"></label>
+          <div id="inv-adjust-info" class="inv-form inv-wide" hidden><label>Tên đại lý mới<input id="inv-adjust-name" maxlength="255"></label><label>Mã số thuế mới<input id="inv-adjust-tax" maxlength="50"></label><label>Địa chỉ mới<input id="inv-adjust-address" maxlength="500"></label></div>
+          <label class="inv-wide">Lý do điều chỉnh bắt buộc<textarea id="inv-adjust-reason" rows="2" maxlength="500" required></textarea></label></div>
+        <label class="inv-check"><input id="inv-adjust-confirm" type="checkbox" required>Tôi xác nhận lập chứng từ; không sửa dữ liệu hóa đơn gốc.</label>
+        <div class="inv-actions"><button id="inv-adjust-save" type="submit" class="btn btn--primary">Xác nhận lập chứng từ</button><button id="inv-adjust-close" type="button" class="btn btn--secondary">Đóng điều chỉnh</button></div>
+      </form>
+    </section>
+    <section id="inv-print" class="inv-panel" hidden aria-labelledby="inv-print-title"><header class="inv-heading"><h2 id="inv-print-title" tabindex="-1">Bản in hóa đơn</h2><div class="inv-actions"><button id="inv-print-now" type="button" class="btn btn--primary" disabled>In bản này</button><button id="inv-print-close" type="button" class="btn btn--secondary">Đóng bản in</button></div></header><div id="inv-print-body"></div></section>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/invoice-utils.js"></script><script src="/js/invoices.js"></script>
+</body></html>
