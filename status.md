@@ -1,4 +1,17 @@
-# Trạng thái sprint 1–7
+# Trạng thái sprint 1–8
+
+## S8-04 — Đặt chỉ tiêu doanh số và theo dõi tiến độ theo thời gian thực (Backend) — 23/10/2026
+
+Phạm vi thực hiện: **Chỉ làm Backend (BE)** theo đúng yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_backend.md`.
+
+| Tiêu chí / Hạng mục (S8-04) | Backend | Frontend | Đã kết nối đúng / Ma trận phân quyền |
+|---|:---:|:---:|---|
+| **AC1: Đặt chỉ tiêu theo tháng cho từng nhân viên và từng khu vực** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | Hỗ trợ 3 phạm vi `EMPLOYEE` (theo nhân viên), `TERRITORY` (theo khu vực), `EMPLOYEE_TERRITORY` (nhân viên tại khu vực) qua `POST /api/sales-targets` và `POST /api/sales-targets/batch`. Ràng buộc duy nhất theo `scopeKey` (`YYYY-MM:U:<userId\|ALL>:T:<territoryId\|ALL>`). Yêu cầu quyền `ORDER_APPROVE` (hoặc `ROLE_ADMIN`) từ ma trận quyền DB. |
+| **AC2: Nhân viên xem được tiến độ của chính mình theo thời gian thực ngay giữa tháng** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | API `GET /api/sales-targets/my-progress` (và `/summary`, `/api/sales-targets`) tổng hợp doanh số thực tế (`actualAmount`) trực tiếp từ các đơn hàng hợp lệ trong kỳ (`OrderStatus.debtBearingStatuses()`) theo thời gian thực; tính tỷ lệ hoàn thành (`completionRate`), mức chuẩn cần đạt giữa tháng (`expectedAmountToDate`), độ lệch tiến độ (`pacingVarianceAmount`), tốc độ cần đạt mỗi ngày còn lại (`requiredDailyRunRate`) và trạng thái (`ACHIEVED`, `ON_TRACK`, `BEHIND`, `AT_RISK`, `NOT_STARTED`). Nhân viên `ROLE_SALES` chỉ xem được tiến độ của chính mình (RLS chặn 403 nếu xem của nhân viên khác). |
+| **AC3: Chỉ tiêu đã qua kỳ thì khoá lại, sửa phải có lý do và được ghi nhật ký** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | Chỉ tiêu thuộc kỳ đã qua (`YearMonth < YearMonth.now()`) tự động có hiệu lực khoá (`locked = true`, `pastPeriod = true`), kèm `SalesTargetLockScheduler` và API `POST /api/sales-targets/lock-past-periods`. Khi sửa (`PUT /api/sales-targets/{id}` hoặc `POST /api/sales-targets/batch`) chỉ tiêu đã qua kỳ hoặc đã khoá, bắt buộc có `reason` (thiếu trả `400 Bad Request`) và ghi nhận `AuditLog` (`entityType = "SALES_TARGET"`, action `UPDATE_LOCKED_TARGET`) kèm giá trị trước/sau, lý do, người sửa, tra cứu tại `GET /api/sales-targets/{id}/audit-logs`. |
+| **Thực thi Ma trận phân quyền DB (`RolePermissionConfig`) & Không fallback role** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | Kiểm tra quyền tại cả `SecurityConfig`, `@PreAuthorize` ở `SalesTargetController` và `SalesTargetServiceImpl`. Đặt/sửa/khoá/xoá bắt buộc `ORDER_APPROVE` (hoặc `ROLE_ADMIN`); xem bắt buộc `REPORT_SALES` hoặc `ORDER_APPROVE` (hoặc `ROLE_ADMIN`). Thu hồi quyền trên ma trận DB lập tức trả về `403 Forbidden` ở request kế tiếp trên cùng JWT; `ROLE_ADMIN` luôn được phép. |
+
+Kiểm thử Backend S8-04: **15/15 tests qua (100% PASS)** gồm `SalesTargetServiceTest` (7 unit tests), `SalesTargetSecurityTest` (5 `@WebMvcTest` security matrix tests), và `SalesTargetIntegrationTest` (3 `@SpringBootTest` + H2 MySQL mode end-to-end tests kiểm chứng tiến độ đơn hàng thời gian thực, tự động khoá kỳ cũ, bắt buộc lý do + ghi `AuditLog` khi sửa kỳ đã khoá, RLS theo nhân viên, và thu hồi quyền tức thời trên cùng JWT). Đã cập nhật `backend/API_DOCUMENTATION.md` và `docs/FUNCTION_MAP.md`.
 
 ## S6-08 — Sửa lỗi frontend, chưa triển khai backend — 23/10/2026
 

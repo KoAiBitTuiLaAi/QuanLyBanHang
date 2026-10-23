@@ -3793,3 +3793,104 @@ Hỗ trợ Nhân viên kinh doanh lập phiếu trả hàng từ đại lý gắ
 | `GET` | `/api/dealer-returns/{id}` | Quyền xem/tạo phiếu trả hoặc kho | Xem chi tiết phiếu trả hàng |
 | `GET` | `/api/dealer-returns` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách phiếu trả hàng phân trang (`dealerId`, `invoiceId`, `warehouseId`, `status`, `keyword`, `startDate`, `endDate`, `page`, `size`) |
 
+
+---
+
+## S8-04 — Đặt chỉ tiêu doanh số theo tháng và theo dõi tiến độ theo thời gian thực (Backend — 23/10/2026)
+
+Hỗ trợ Quản lý kinh doanh đặt chỉ tiêu doanh số theo tháng cho từng nhân viên và từng khu vực, theo dõi tiến độ thực đạt theo thời gian thực ngay giữa tháng, tự động khoá chỉ tiêu đã qua kỳ, và yêu cầu lý do kèm nhật ký khi chỉnh sửa chỉ tiêu đã khoá.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-04)
+
+1. **Đặt chỉ tiêu theo tháng cho từng nhân viên và từng khu vực**:
+   - Hỗ trợ 3 loại phạm vi (`SalesTargetScopeType`):
+     - `EMPLOYEE`: Chỉ tiêu tháng cho từng nhân viên kinh doanh (`userId != null`, `territoryId == null`).
+     - `TERRITORY`: Chỉ tiêu tháng cho từng khu vực (`userId == null`, `territoryId != null`).
+     - `EMPLOYEE_TERRITORY`: Chỉ tiêu tháng cho nhân viên tại một khu vực cụ thể (`userId != null`, `territoryId != null`).
+   - Ràng buộc duy nhất theo khoá chuẩn `scopeKey` (`YYYY-MM:U:<userId|ALL>:T:<territoryId|ALL>`), hỗ trợ đặt đơn lẻ (`POST /api/sales-targets`) hoặc đặt/cập nhật hàng loạt (`POST /api/sales-targets/batch`).
+2. **Nhân viên xem được tiến độ của chính mình theo thời gian thực**:
+   - Doanh số thực đạt (`actualAmount`) được tổng hợp trực tiếp theo thời gian thực từ các đơn hàng hợp lệ trong kỳ (`OrderStatus.debtBearingStatuses()`: `APPROVED`, `RECORDED`, `PICKING`, `PROCESSING`, `EXPORTED`, `SHIPPED`, `DELIVERED`, `CLOSED`, `COMPLETED`) theo mốc `COALESCE(recordedAt, createdAt)`.
+   - Tính toán đầy đủ các chỉ số tiến độ ngay giữa tháng (Mid-month Pacing):
+     - `completionRate` / `progressPercent`: Tỷ lệ hoàn thành mục tiêu (%).
+     - `remainingAmount` & `overachievedAmount`: Số tiền còn thiếu hoặc vượt chỉ tiêu.
+     - `expectedAmountToDate`: Mức doanh số chuẩn cần đạt tính đến ngày hiện tại trong tháng.
+     - `pacingVarianceAmount`: Chênh lệch giữa thực đạt hiện tại và mức chuẩn giữa tháng (`actualAmount - expectedAmountToDate`).
+     - `requiredDailyRunRate`: Doanh số bình quân mỗi ngày cần đạt trong những ngày còn lại của tháng để về đích.
+     - `progressStatus`: `ACHIEVED`, `ON_TRACK`, `BEHIND`, `AT_RISK`, `NOT_STARTED`.
+3. **Chỉ tiêu đã qua kỳ thì khoá lại, sửa phải có lý do và được ghi nhật ký**:
+   - Chỉ tiêu thuộc kỳ trước kỳ hiện tại (`YearMonth < YearMonth.now()`) tự động có hiệu lực khoá (`locked = true`, `pastPeriod = true`). Tác vụ định kỳ `SalesTargetLockScheduler` và API `POST /api/sales-targets/lock-past-periods` tự động chốt khoá trong DB.
+   - Khi cập nhật (`PUT /api/sales-targets/{id}` hoặc `POST /api/sales-targets/batch`) một chỉ tiêu đã qua kỳ hoặc đã bị khoá (`locked = true`), **bắt buộc phải truyền `reason` không rỗng** (nếu thiếu trả về `400 Bad Request`).
+   - Mọi thao tác tạo, sửa, sửa chỉ tiêu đã khoá (`UPDATE_LOCKED_TARGET`), khoá, xoá đều lưu vào `AuditLog` (`entityType = "SALES_TARGET"`) kèm giá trị cũ (`oldValue`), giá trị mới (`newValue`), lý do (`reason`), người thực hiện (`username`) và thời gian (`createdAt`), tra cứu qua `GET /api/sales-targets/{id}/audit-logs`.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Đặt / sửa / khoá / xoá chỉ tiêu: Bắt buộc quyền `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Xem chỉ tiêu, tiến độ cá nhân, báo cáo tổng hợp, lịch sử chỉnh sửa: Bắt buộc quyền `REPORT_SALES` hoặc `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Nhân viên kinh doanh (`ROLE_SALES` thuần tuý, không có `ORDER_APPROVE`) chỉ được xem chỉ tiêu và tiến độ của chính mình (`userId == currentUser.id`) và chỉ tiêu khu vực thuộc địa bàn được phân công; truy cập chỉ tiêu của nhân viên khác trả về `403 Forbidden`.
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay lập tức trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/sales-targets`, `/api/reports/sales-targets`, `/api/manager/sales-targets`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/sales-targets/options` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh mục nhân viên KD, khu vực, loại phạm vi, trạng thái tiến độ và cờ quyền `canView`, `canManage` |
+| `GET` | `/api/sales-targets/my-progress` (alias `/me`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Nhân viên xem tiến độ thực đạt của chính mình theo thời gian thực ngay giữa tháng kèm bóc tách theo khu vực |
+| `GET` | `/api/sales-targets/summary` (alias `/progress`, `/dashboard`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp chỉ tiêu & tiến độ theo nhân viên và theo khu vực trong kỳ |
+| `GET` | `/api/sales-targets` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Tra cứu danh sách chỉ tiêu doanh số (`year`, `month`, `period`, `userId`, `territoryId`, `scopeType`, `locked`, `progressStatus`, `keyword`) |
+| `GET` | `/api/sales-targets/{id}` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Chi tiết một chỉ tiêu doanh số kèm tiến độ thực tế và nhật ký chỉnh sửa |
+| `GET` | `/api/sales-targets/{id}/audit-logs` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh sách nhật ký tạo/sửa/khoá của một chỉ tiêu doanh số |
+| `POST` | `/api/sales-targets` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt mới chỉ tiêu doanh số tháng cho nhân viên hoặc khu vực |
+| `POST` | `/api/sales-targets/batch` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt hoặc cập nhật hàng loạt chỉ tiêu doanh số trong kỳ |
+| `PUT` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Cập nhật chỉ tiêu doanh số (nếu đã qua kỳ hoặc đã khoá, bắt buộc có `reason` và ghi nhật ký `AuditLog`) |
+| `POST` | `/api/sales-targets/{id}/lock` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá thủ công một chỉ tiêu doanh số kèm lý do |
+| `POST` | `/api/sales-targets/lock-past-periods` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá toàn bộ các chỉ tiêu đã qua kỳ nhưng chưa gắn cờ khoá trong DB |
+| `DELETE` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Xoá chỉ tiêu chưa khoá thuộc kỳ hiện tại hoặc tương lai |
+
+---
+
+## S8-04 — Đặt chỉ tiêu doanh số theo tháng và theo dõi tiến độ theo thời gian thực (Backend — 23/10/2026)
+
+Hỗ trợ Quản lý kinh doanh đặt chỉ tiêu doanh số theo tháng cho từng nhân viên và từng khu vực, theo dõi tiến độ thực đạt theo thời gian thực ngay giữa tháng, tự động khoá chỉ tiêu đã qua kỳ, và yêu cầu lý do kèm nhật ký khi chỉnh sửa chỉ tiêu đã khoá.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-04)
+
+1. **Đặt chỉ tiêu theo tháng cho từng nhân viên và từng khu vực**:
+   - Hỗ trợ 3 loại phạm vi (`SalesTargetScopeType`):
+     - `EMPLOYEE`: Chỉ tiêu tháng cho từng nhân viên kinh doanh (`userId != null`, `territoryId == null`).
+     - `TERRITORY`: Chỉ tiêu tháng cho từng khu vực (`userId == null`, `territoryId != null`).
+     - `EMPLOYEE_TERRITORY`: Chỉ tiêu tháng cho nhân viên tại một khu vực cụ thể (`userId != null`, `territoryId != null`).
+   - Ràng buộc duy nhất theo khoá chuẩn `scopeKey` (`YYYY-MM:U:<userId|ALL>:T:<territoryId|ALL>`), hỗ trợ đặt đơn lẻ (`POST /api/sales-targets`) hoặc đặt/cập nhật hàng loạt (`POST /api/sales-targets/batch`).
+2. **Nhân viên xem được tiến độ của chính mình theo thời gian thực**:
+   - Doanh số thực đạt (`actualAmount`) được tổng hợp trực tiếp theo thời gian thực từ các đơn hàng hợp lệ trong kỳ (`OrderStatus.debtBearingStatuses()`: `APPROVED`, `RECORDED`, `PICKING`, `PROCESSING`, `EXPORTED`, `SHIPPED`, `DELIVERED`, `CLOSED`, `COMPLETED`) theo mốc `COALESCE(recordedAt, createdAt)`.
+   - Tính toán đầy đủ các chỉ số tiến độ ngay giữa tháng (Mid-month Pacing):
+     - `completionRate` / `progressPercent`: Tỷ lệ hoàn thành mục tiêu (%).
+     - `remainingAmount` & `overachievedAmount`: Số tiền còn thiếu hoặc vượt chỉ tiêu.
+     - `expectedAmountToDate`: Mức doanh số chuẩn cần đạt tính đến ngày hiện tại trong tháng.
+     - `pacingVarianceAmount`: Chênh lệch giữa thực đạt hiện tại và mức chuẩn giữa tháng (`actualAmount - expectedAmountToDate`).
+     - `requiredDailyRunRate`: Doanh số bình quân mỗi ngày cần đạt trong những ngày còn lại của tháng để về đích.
+     - `progressStatus`: `ACHIEVED`, `ON_TRACK`, `BEHIND`, `AT_RISK`, `NOT_STARTED`.
+3. **Chỉ tiêu đã qua kỳ thì khoá lại, sửa phải có lý do và được ghi nhật ký**:
+   - Chỉ tiêu thuộc kỳ trước kỳ hiện tại (`YearMonth < YearMonth.now()`) tự động có hiệu lực khoá (`locked = true`, `pastPeriod = true`). Tác vụ định kỳ `SalesTargetLockScheduler` và API `POST /api/sales-targets/lock-past-periods` tự động chốt khoá trong DB.
+   - Khi cập nhật (`PUT /api/sales-targets/{id}` hoặc `POST /api/sales-targets/batch`) một chỉ tiêu đã qua kỳ hoặc đã bị khoá (`locked = true`), **bắt buộc phải truyền `reason` không rỗng** (nếu thiếu trả về `400 Bad Request`).
+   - Mọi thao tác tạo, sửa, sửa chỉ tiêu đã khoá (`UPDATE_LOCKED_TARGET`), khoá, xoá đều lưu vào `AuditLog` (`entityType = "SALES_TARGET"`) kèm giá trị cũ (`oldValue`), giá trị mới (`newValue`), lý do (`reason`), người thực hiện (`username`) và thời gian (`createdAt`), tra cứu qua `GET /api/sales-targets/{id}/audit-logs`.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Đặt / sửa / khoá / xoá chỉ tiêu: Bắt buộc quyền `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Xem chỉ tiêu, tiến độ cá nhân, báo cáo tổng hợp, lịch sử chỉnh sửa: Bắt buộc quyền `REPORT_SALES` hoặc `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Nhân viên kinh doanh (`ROLE_SALES` thuần tuý, không có `ORDER_APPROVE`) chỉ được xem chỉ tiêu và tiến độ của chính mình (`userId == currentUser.id`) và chỉ tiêu khu vực thuộc địa bàn được phân công; truy cập chỉ tiêu của nhân viên khác trả về `403 Forbidden`.
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay lập tức trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/sales-targets`, `/api/reports/sales-targets`, `/api/manager/sales-targets`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/sales-targets/options` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh mục nhân viên KD, khu vực, loại phạm vi, trạng thái tiến độ và cờ quyền `canView`, `canManage` |
+| `GET` | `/api/sales-targets/my-progress` (alias `/me`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Nhân viên xem tiến độ thực đạt của chính mình theo thời gian thực ngay giữa tháng kèm bóc tách theo khu vực |
+| `GET` | `/api/sales-targets/summary` (alias `/progress`, `/dashboard`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp chỉ tiêu & tiến độ theo nhân viên và theo khu vực trong kỳ |
+| `GET` | `/api/sales-targets` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Tra cứu danh sách chỉ tiêu doanh số (`year`, `month`, `period`, `userId`, `territoryId`, `scopeType`, `locked`, `progressStatus`, `keyword`) |
+| `GET` | `/api/sales-targets/{id}` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Chi tiết một chỉ tiêu doanh số kèm tiến độ thực tế và nhật ký chỉnh sửa |
+| `GET` | `/api/sales-targets/{id}/audit-logs` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh sách nhật ký tạo/sửa/khoá của một chỉ tiêu doanh số |
+| `POST` | `/api/sales-targets` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt mới chỉ tiêu doanh số tháng cho nhân viên hoặc khu vực |
+| `POST` | `/api/sales-targets/batch` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt hoặc cập nhật hàng loạt chỉ tiêu doanh số trong kỳ |
+| `PUT` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Cập nhật chỉ tiêu doanh số (nếu đã qua kỳ hoặc đã khoá, bắt buộc có `reason` và ghi nhật ký `AuditLog`) |
+| `POST` | `/api/sales-targets/{id}/lock` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá thủ công một chỉ tiêu doanh số kèm lý do |
+| `POST` | `/api/sales-targets/lock-past-periods` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá toàn bộ các chỉ tiêu đã qua kỳ nhưng chưa gắn cờ khoá trong DB |
+| `DELETE` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Xoá chỉ tiêu chưa khoá thuộc kỳ hiện tại hoặc tương lai |
+
