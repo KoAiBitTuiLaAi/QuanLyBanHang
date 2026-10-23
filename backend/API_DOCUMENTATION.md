@@ -3511,6 +3511,116 @@ Response:
 }
 ```
 
+---
+
+## S7-07 — Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn (23/10/2026)
+
+Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứu công nợ của chính mình qua Cổng Đại lý (`/api/portal/**`), để biết còn nợ bao nhiêu, còn được lấy hàng bao nhiêu, xem danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái, và xem/tải lại hóa đơn đã phát hành.
+
+### 1. Nguyên tắc nghiệp vụ cốt lõi
+
+1. **Hiển thị tổng còn nợ và hạn mức còn lại**:
+   - `currentDebt`: Tổng công nợ còn lại hiện tại của đại lý (tính từ tổng giá trị các hóa đơn hiệu lực `adjustedTotalAmount` cộng các đơn hàng ghi sổ chưa xuất hóa đơn `uninvoicedOrderDebt`, trừ đi tổng số tiền đã thu `totalPaid` theo nguyên tắc không tính trùng lặp).
+   - `debtLimit`: Hạn mức công nợ tối đa được cấp cho đại lý.
+   - `remainingLimit`: Phần hạn mức còn lại (`debtLimit - currentDebt`).
+   - `availableOrderLimit`: Hạn mức còn được lấy hàng thực tế (`0` nếu đại lý đang bị khoá giao dịch hoặc bị chặn do quá hạn công nợ `isBlocked = true`, ngược lại bằng `max(0, remainingLimit)`).
+2. **Danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái**:
+   - Mỗi hóa đơn (`InvoiceResponse`) trả về:
+     - `totalAmount` (tổng tiền hóa đơn gốc), `adjustedTotalAmount` (tổng tiền sau điều chỉnh), `paidAmount` (số tiền đã thanh toán phân bổ FIFO), `remainingAmount` (số tiền còn nợ của hóa đơn).
+     - `dueDate`: Hạn thanh toán của hóa đơn (mặc định = `invoiceDate + dealer.maxDebtDays`).
+     - `status` & `statusLabel`: Trạng thái phát hành hóa đơn (`ISSUED` - Đã phát hành, `ADJUSTED` - Đã điều chỉnh, `CANCELLED` - Đã hủy).
+     - `paymentStatus` & `paymentStatusLabel`: Trạng thái thanh toán công nợ của hóa đơn theo phân bổ FIFO:
+       - `UNPAID` ("Chưa thanh toán")
+       - `PARTIALLY_PAID` ("Thanh toán một phần")
+       - `PAID` ("Đã thanh toán")
+       - `OVERDUE` ("Quá hạn thanh toán")
+       - `CANCELLED` ("Đã hủy")
+     - `isOverdue`, `overdueDays`, `daysUntilDue`: Cờ quá hạn, số ngày quá hạn hoặc số ngày còn lại đến hạn thanh toán.
+3. **Xem và tải lại hóa đơn đã phát hành**:
+   - Đại lý xem chi tiết hóa đơn đã phát hành (`GET /api/portal/invoices/{id}`), xem bản in HTML (`GET /api/portal/invoices/{id}/print-preview`), tải lại file PDF hóa đơn (`GET /api/portal/invoices/{id}/pdf`) và tải lại file PDF chứng từ điều chỉnh (`GET /api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf`).
+4. **Cách ly dữ liệu cấp dòng (Row-Level Security) & Ma trận phân quyền DB**:
+   - Đại lý chỉ được xem công nợ, lịch sử thanh toán và xem/tải hóa đơn của **chính đại lý mình**. Mọi nỗ lực truyền `dealerId` của đại lý khác hoặc truy cập `invoiceId` của đại lý khác đều bị chặn với `403 Forbidden`.
+   - Quyền truy cập được kiểm soát chặt chẽ từ ma trận phân quyền DB (`RolePermissionConfig`):
+     - `FINANCE_VIEW_DEBT`: Xem tổng quan công nợ và lịch sử thanh toán (`GET /api/portal/debt/summary`, `GET /api/portal/debt/payments`, `GET /api/portal/debt`).
+     - `INVOICE_VIEW`: Xem danh sách, chi tiết, bản in HTML và tải lại PDF hóa đơn (`GET /api/portal/invoices/**`, `GET /api/portal/debt/invoices/**`).
+     - Thu hồi quyền trên ma trận lập tức trả về `403 Forbidden` trên phiên JWT hiện tại mà không có bất kỳ role-based fallback nào. `ROLE_ADMIN` luôn có toàn quyền.
+
+### 2. Danh sách Endpoints (`/api/portal`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/portal/debt` | `ORDER_VIEW` hoặc `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Tra cứu thông tin công nợ, hạn mức còn lại, hạn mức còn được lấy hàng và danh sách hóa đơn của đại lý |
+| `GET` | `/api/portal/debt/summary` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem tổng quan công nợ, tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, thống kê hóa đơn và lịch sử thanh toán |
+| `GET` | `/api/portal/debt/payments` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem lịch sử các đợt thanh toán công nợ của chính đại lý |
+| `GET` | `/api/portal/invoices` (alias `/api/portal/debt/invoices`) | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách hóa đơn phân trang kèm số tiền, hạn thanh toán, trạng thái (`status`, `paymentStatus`, `startDate`, `endDate`, `keyword`, `page`, `size`) |
+| `GET` | `/api/portal/invoices/{id}` (alias `/api/portal/debt/invoices/{id}`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem chi tiết hóa đơn đã phát hành của chính đại lý |
+| `GET` | `/api/portal/invoices/{id}/pdf` (alias `/api/portal/debt/invoices/{id}/pdf`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem hoặc tải lại file PDF hóa đơn đã phát hành của chính đại lý (`application/pdf`) |
+| `GET` | `/api/portal/invoices/{id}/print-preview` (alias `/api/portal/debt/invoices/{id}/print-preview`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem bản in HTML hóa đơn đã phát hành của chính đại lý (`text/html;charset=UTF-8`) |
+| `GET` | `/api/portal/invoices/{id}/adjustments` | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách chứng từ điều chỉnh của hóa đơn thuộc đại lý |
+| `GET` | `/api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf` | `INVOICE_VIEW` hoặc `ADMIN` | Tải lại file PDF chứng từ điều chỉnh của hóa đơn thuộc đại lý (`application/pdf`) |
+
+### 3. Payload mẫu (`GET /api/portal/debt/summary`)
+
+```json
+{
+  "success": true,
+  "message": "Tổng quan công nợ và hạn mức của đại lý",
+  "data": {
+    "dealerId": 100,
+    "dealerCode": "DL-001",
+    "dealerName": "Đại lý Minh Phát",
+    "currentDebt": 13000000.00,
+    "debtLimit": 50000000.00,
+    "remainingLimit": 37000000.00,
+    "availableOrderLimit": 37000000.00,
+    "totalInvoicedAmount": 25000000.00,
+    "uninvoicedOrderDebt": 0.00,
+    "totalPaid": 12000000.00,
+    "totalInvoiceCount": 2,
+    "unpaidInvoiceCount": 1,
+    "overdueInvoiceCount": 0,
+    "paidInvoiceCount": 1,
+    "maxDebtDays": 30,
+    "hasOverdueDebt": false,
+    "overdueAmount": 0.00,
+    "maxOverdueDays": 0,
+    "isBlocked": false,
+    "invoices": [
+      {
+        "id": 2,
+        "invoiceNumber": "00000002",
+        "invoiceCode": "HD-00000002",
+        "invoiceDate": "2026-10-18T09:00:00",
+        "dueDate": "2026-11-17",
+        "status": "ISSUED",
+        "statusLabel": "Đã phát hành",
+        "totalAmount": 15000000.00,
+        "adjustedTotalAmount": 15000000.00,
+        "paidAmount": 2000000.00,
+        "remainingAmount": 13000000.00,
+        "paymentStatus": "PARTIALLY_PAID",
+        "paymentStatusLabel": "Thanh toán một phần",
+        "isOverdue": false,
+        "overdueDays": 0,
+        "daysUntilDue": 25
+      }
+    ],
+    "payments": [
+      {
+        "id": 10,
+        "paymentCode": "PT-20261023-0001",
+        "amount": 12000000.00,
+        "paymentDate": "2026-10-23",
+        "paymentMethod": "CHUYEN_KHOAN",
+        "referenceCode": "UNC-S707-001"
+      }
+    ]
+  }
+}
+```
+
+---
+
 ## S8-10 — Sổ chi tiết công nợ một đại lý, PDF và Excel
 
 ### Endpoints và quyền

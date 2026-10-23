@@ -21,10 +21,13 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long>, JpaSpec
 
     boolean existsByInvoiceCode(String invoiceCode);
 
+    List<Invoice> findByDealerIdOrderByInvoiceDateAscIdAsc(Long dealerId);
+
+    List<Invoice> findByDealerIdOrderByInvoiceDateDescIdDesc(Long dealerId);
+
     @Query("SELECT o.id FROM Invoice i JOIN i.orders o WHERE o.id IN :orderIds AND i.status != com.quanlybanhang.model.InvoiceStatus.CANCELLED")
     List<Long> findAlreadyInvoicedOrderIds(@Param("orderIds") List<Long> orderIds);
 
     @Query("SELECT COUNT(i) > 0 FROM Invoice i JOIN i.orders o WHERE o.id = :orderId AND i.status != com.quanlybanhang.model.InvoiceStatus.CANCELLED")
     boolean isOrderInvoiced(@Param("orderId") Long orderId);
 }
-

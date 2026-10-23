@@ -13,12 +13,15 @@ import com.quanlybanhang.service.InvoiceService;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,6 +31,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -43,6 +47,13 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final ProductRepository productRepository;
     private final InvoiceSequenceService invoiceSequenceService;
     private final AuditLogService auditLogService;
+
+    @Autowired(required = false)
+    private DebtPaymentRepository debtPaymentRepository;
+
+    public void setDebtPaymentRepository(DebtPaymentRepository debtPaymentRepository) {
+        this.debtPaymentRepository = debtPaymentRepository;
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -174,11 +185,14 @@ public class InvoiceServiceImpl implements InvoiceService {
         );
 
         LocalDateTime invoiceDate = request.getInvoiceDate() != null ? request.getInvoiceDate() : LocalDateTime.now();
+        int maxDebtDays = (dealer.getMaxDebtDays() != null && dealer.getMaxDebtDays() > 0) ? dealer.getMaxDebtDays() : 0;
+        LocalDate dueDate = request.getDueDate() != null ? request.getDueDate() : invoiceDate.toLocalDate().plusDays(maxDebtDays);
 
         Invoice invoice = Invoice.builder()
                 .invoiceNumber(nextNumber.invoiceNumber())
                 .invoiceCode(nextNumber.invoiceCode())
                 .invoiceDate(invoiceDate)
+                .dueDate(dueDate)
                 .dealer(dealer)
                 .dealerCode(dealer.getCode())
                 .dealerName(dealer.getName())
@@ -310,7 +324,95 @@ public class InvoiceServiceImpl implements InvoiceService {
         };
 
         Page<Invoice> invoices = invoiceRepository.findAll(spec, pageable);
-        return invoices.map(this::mapToInvoiceResponse);
+        Map<Long, Map<Long, InvoiceResponse>> dealerAllocationCache = new HashMap<>();
+        return invoices.map(inv -> mapToInvoiceResponseWithCache(inv, dealerAllocationCache));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<InvoiceResponse> getDealerInvoices(Long dealerId, InvoiceStatus status, String paymentStatus,
+                                                   LocalDate startDate, LocalDate endDate, String keyword, int page, int size) {
+        if (dealerId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ID đại lý không được để trống");
+        }
+        List<InvoiceResponse> allDealerInvoices = getDealerInvoiceList(dealerId);
+
+        List<InvoiceResponse> filtered = allDealerInvoices.stream()
+                .filter(inv -> status == null || inv.getStatus() == status)
+                .filter(inv -> {
+                    if (paymentStatus == null || paymentStatus.isBlank()) {
+                        return true;
+                    }
+                    return paymentStatus.trim().equalsIgnoreCase(inv.getPaymentStatus());
+                })
+                .filter(inv -> {
+                    if (startDate == null || inv.getInvoiceDate() == null) {
+                        return true;
+                    }
+                    return !inv.getInvoiceDate().toLocalDate().isBefore(startDate);
+                })
+                .filter(inv -> {
+                    if (endDate == null || inv.getInvoiceDate() == null) {
+                        return true;
+                    }
+                    return !inv.getInvoiceDate().toLocalDate().isAfter(endDate);
+                })
+                .filter(inv -> {
+                    if (keyword == null || keyword.isBlank()) {
+                        return true;
+                    }
+                    String q = keyword.trim().toLowerCase();
+                    boolean matchCode = inv.getInvoiceCode() != null && inv.getInvoiceCode().toLowerCase().contains(q);
+                    boolean matchNumber = inv.getInvoiceNumber() != null && inv.getInvoiceNumber().toLowerCase().contains(q);
+                    boolean matchNote = inv.getNote() != null && inv.getNote().toLowerCase().contains(q);
+                    return matchCode || matchNumber || matchNote;
+                })
+                .collect(Collectors.toList());
+
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, size);
+        int fromIndex = Math.min(safePage * safeSize, filtered.size());
+        int toIndex = Math.min(fromIndex + safeSize, filtered.size());
+        List<InvoiceResponse> pageContent = filtered.subList(fromIndex, toIndex);
+
+        return new PageImpl<>(pageContent, PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate", "id")), filtered.size());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<InvoiceResponse> getDealerInvoiceList(Long dealerId) {
+        if (dealerId == null) {
+            return Collections.emptyList();
+        }
+        List<Invoice> ascInvoices = invoiceRepository.findByDealerIdOrderByInvoiceDateAscIdAsc(dealerId);
+        if (ascInvoices == null || ascInvoices.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, InvoiceResponse> allocated = allocateDealerInvoicesFifo(dealerId, ascInvoices);
+
+        List<Invoice> descInvoices = new ArrayList<>(ascInvoices);
+        descInvoices.sort(Comparator
+                .comparing(Invoice::getInvoiceDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(Invoice::getId, Comparator.nullsLast(Comparator.reverseOrder())));
+
+        return descInvoices.stream()
+                .map(inv -> allocated.getOrDefault(inv.getId(), buildBaseInvoiceResponse(inv, BigDecimal.ZERO)))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public InvoiceResponse getDealerInvoiceById(Long dealerId, Long invoiceId) {
+        if (dealerId == null) {
+            throw new AccessDeniedException("Yêu cầu thông tin đại lý hợp lệ");
+        }
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hóa đơn với ID: " + invoiceId));
+
+        if (invoice.getDealer() == null || !dealerId.equals(invoice.getDealer().getId())) {
+            throw new AccessDeniedException("Bạn chỉ có quyền xem và tải hóa đơn của chính đại lý mình");
+        }
+        return mapToInvoiceResponse(invoice);
     }
 
     @Override
@@ -378,7 +480,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 }
 
                 InvoiceAdjustmentItem item = InvoiceAdjustmentItem.builder()
-                        .product(prod)
+                .product(prod)
                         .productCode(itemReq.getProductCode())
                         .productName(itemReq.getProductName())
                         .unit(itemReq.getUnit())
@@ -579,13 +681,95 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     private InvoiceResponse mapToInvoiceResponse(Invoice invoice) {
-        List<InvoiceItemResponse> itemResponses = invoice.getItems().stream()
+        if (invoice.getDealer() != null && invoice.getDealer().getId() != null && invoiceRepository != null) {
+            Long dealerId = invoice.getDealer().getId();
+            List<Invoice> dealerInvoices = invoiceRepository.findByDealerIdOrderByInvoiceDateAscIdAsc(dealerId);
+            if (dealerInvoices != null && !dealerInvoices.isEmpty()) {
+                Map<Long, InvoiceResponse> allocated = allocateDealerInvoicesFifo(dealerId, dealerInvoices);
+                if (invoice.getId() != null && allocated.containsKey(invoice.getId())) {
+                    return allocated.get(invoice.getId());
+                }
+            }
+        }
+        BigDecimal totalPaid = getTotalPaidByDealer(invoice.getDealer() != null ? invoice.getDealer().getId() : null);
+        return buildBaseInvoiceResponse(invoice, totalPaid);
+    }
+
+    private InvoiceResponse mapToInvoiceResponseWithCache(
+            Invoice invoice,
+            Map<Long, Map<Long, InvoiceResponse>> dealerAllocationCache) {
+        if (invoice.getDealer() != null && invoice.getDealer().getId() != null) {
+            Long dealerId = invoice.getDealer().getId();
+            Map<Long, InvoiceResponse> allocated = dealerAllocationCache.computeIfAbsent(dealerId, id -> {
+                List<Invoice> dealerInvoices = invoiceRepository.findByDealerIdOrderByInvoiceDateAscIdAsc(id);
+                if (dealerInvoices == null || dealerInvoices.isEmpty()) {
+                    return Collections.emptyMap();
+                }
+                return allocateDealerInvoicesFifo(id, dealerInvoices);
+            });
+            if (invoice.getId() != null && allocated.containsKey(invoice.getId())) {
+                return allocated.get(invoice.getId());
+            }
+        }
+        return mapToInvoiceResponse(invoice);
+    }
+
+    private Map<Long, InvoiceResponse> allocateDealerInvoicesFifo(Long dealerId, List<Invoice> ascInvoices) {
+        BigDecimal remainingPool = getTotalPaidByDealer(dealerId);
+        Map<Long, InvoiceResponse> result = new LinkedHashMap<>();
+
+        for (Invoice inv : ascInvoices) {
+            BigDecimal effectiveAmount = resolveEffectiveInvoiceAmount(inv);
+            BigDecimal allocated = BigDecimal.ZERO;
+            if (inv.getStatus() != InvoiceStatus.CANCELLED && effectiveAmount.compareTo(BigDecimal.ZERO) > 0 && remainingPool.compareTo(BigDecimal.ZERO) > 0) {
+                allocated = remainingPool.min(effectiveAmount);
+                remainingPool = remainingPool.subtract(allocated).max(BigDecimal.ZERO);
+            }
+            InvoiceResponse resp = buildBaseInvoiceResponse(inv, allocated);
+            if (inv.getId() != null) {
+                result.put(inv.getId(), resp);
+            }
+        }
+        return result;
+    }
+
+    private BigDecimal getTotalPaidByDealer(Long dealerId) {
+        if (dealerId == null || debtPaymentRepository == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal sum = debtPaymentRepository.sumAmountByDealerId(dealerId);
+        return sum != null && sum.compareTo(BigDecimal.ZERO) > 0 ? sum : BigDecimal.ZERO;
+    }
+
+    private BigDecimal resolveEffectiveInvoiceAmount(Invoice invoice) {
+        if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal amt = invoice.getAdjustedTotalAmount() != null ? invoice.getAdjustedTotalAmount() : invoice.getTotalAmount();
+        return amt != null && amt.compareTo(BigDecimal.ZERO) > 0 ? amt : BigDecimal.ZERO;
+    }
+
+    private LocalDate resolveDueDate(Invoice invoice) {
+        if (invoice.getDueDate() != null) {
+            return invoice.getDueDate();
+        }
+        LocalDate baseDate = invoice.getInvoiceDate() != null
+                ? invoice.getInvoiceDate().toLocalDate()
+                : (invoice.getCreatedAt() != null ? invoice.getCreatedAt().toLocalDate() : LocalDate.now());
+        int maxDays = (invoice.getDealer() != null && invoice.getDealer().getMaxDebtDays() != null && invoice.getDealer().getMaxDebtDays() > 0)
+                ? invoice.getDealer().getMaxDebtDays()
+                : 0;
+        return baseDate.plusDays(maxDays);
+    }
+
+    private InvoiceResponse buildBaseInvoiceResponse(Invoice invoice, BigDecimal allocatedPayment) {
+        List<InvoiceItemResponse> itemResponses = (invoice.getItems() == null ? Collections.<InvoiceItem>emptyList() : invoice.getItems()).stream()
                 .map(it -> InvoiceItemResponse.builder()
                         .id(it.getId())
                         .orderId(it.getOrder() != null ? it.getOrder().getId() : null)
                         .orderCode(it.getOrderCode())
                         .orderItemId(it.getOrderItemId())
-                        .productId(it.getProduct().getId())
+                        .productId(it.getProduct() != null ? it.getProduct().getId() : null)
                         .productCode(it.getProductCode())
                         .productName(it.getProductName())
                         .unit(it.getUnit())
@@ -601,7 +785,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                         .build())
                 .collect(Collectors.toList());
 
-        List<InvoiceOrderSummaryResponse> orderSummaries = invoice.getOrders().stream()
+        List<InvoiceOrderSummaryResponse> orderSummaries = (invoice.getOrders() == null ? Collections.<Order>emptyList() : invoice.getOrders()).stream()
                 .map(o -> InvoiceOrderSummaryResponse.builder()
                         .orderId(o.getId())
                         .orderCode(o.getOrderCode())
@@ -611,15 +795,58 @@ public class InvoiceServiceImpl implements InvoiceService {
                         .build())
                 .collect(Collectors.toList());
 
-        List<InvoiceAdjustmentResponse> adjResponses = invoice.getAdjustments().stream()
+        List<InvoiceAdjustmentResponse> adjResponses = (invoice.getAdjustments() == null ? Collections.<InvoiceAdjustment>emptyList() : invoice.getAdjustments()).stream()
                 .map(this::mapToAdjustmentResponse)
                 .collect(Collectors.toList());
+
+        LocalDate dueDate = resolveDueDate(invoice);
+        BigDecimal effectiveAmount = resolveEffectiveInvoiceAmount(invoice);
+        BigDecimal paidAmount = BigDecimal.ZERO;
+        BigDecimal remainingAmount = BigDecimal.ZERO;
+        String paymentStatus;
+        String paymentStatusLabel;
+        boolean isOverdue = false;
+        int overdueDays = 0;
+        int daysUntilDue = 0;
+
+        if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            paymentStatus = "CANCELLED";
+            paymentStatusLabel = "Đã hủy";
+        } else {
+            BigDecimal safeAllocated = allocatedPayment != null && allocatedPayment.compareTo(BigDecimal.ZERO) > 0
+                    ? allocatedPayment : BigDecimal.ZERO;
+            paidAmount = safeAllocated.min(effectiveAmount);
+            remainingAmount = effectiveAmount.subtract(paidAmount).max(BigDecimal.ZERO);
+
+            LocalDate today = LocalDate.now();
+            if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                paymentStatus = "PAID";
+                paymentStatusLabel = "Đã thanh toán";
+            } else if (dueDate != null && today.isAfter(dueDate)) {
+                isOverdue = true;
+                overdueDays = (int) ChronoUnit.DAYS.between(dueDate, today);
+                paymentStatus = "OVERDUE";
+                paymentStatusLabel = "Quá hạn thanh toán";
+            } else {
+                if (dueDate != null && !today.isAfter(dueDate)) {
+                    daysUntilDue = (int) ChronoUnit.DAYS.between(today, dueDate);
+                }
+                if (paidAmount.compareTo(BigDecimal.ZERO) > 0) {
+                    paymentStatus = "PARTIALLY_PAID";
+                    paymentStatusLabel = "Thanh toán một phần";
+                } else {
+                    paymentStatus = "UNPAID";
+                    paymentStatusLabel = "Chưa thanh toán";
+                }
+            }
+        }
 
         return InvoiceResponse.builder()
                 .id(invoice.getId())
                 .invoiceNumber(invoice.getInvoiceNumber())
                 .invoiceCode(invoice.getInvoiceCode())
                 .invoiceDate(invoice.getInvoiceDate())
+                .dueDate(dueDate)
                 .status(invoice.getStatus())
                 .statusLabel(invoice.getStatus() != null ? invoice.getStatus().getDisplayName() : null)
                 .dealerId(invoice.getDealer() != null ? invoice.getDealer().getId() : null)
@@ -632,6 +859,13 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .discountAmount(invoice.getDiscountAmount())
                 .totalAmount(invoice.getTotalAmount())
                 .adjustedTotalAmount(invoice.getAdjustedTotalAmount())
+                .paidAmount(paidAmount)
+                .remainingAmount(remainingAmount)
+                .paymentStatus(paymentStatus)
+                .paymentStatusLabel(paymentStatusLabel)
+                .isOverdue(isOverdue)
+                .overdueDays(overdueDays)
+                .daysUntilDue(daysUntilDue)
                 .note(invoice.getNote())
                 .createdBy(invoice.getCreatedBy())
                 .createdAt(invoice.getCreatedAt())
@@ -642,7 +876,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     private InvoiceAdjustmentResponse mapToAdjustmentResponse(InvoiceAdjustment adj) {
-        List<InvoiceAdjustmentItemResponse> itemResponses = adj.getItems().stream()
+        List<InvoiceAdjustmentItemResponse> itemResponses = (adj.getItems() == null ? Collections.<InvoiceAdjustmentItem>emptyList() : adj.getItems()).stream()
                 .map(it -> InvoiceAdjustmentItemResponse.builder()
                         .id(it.getId())
                         .productId(it.getProduct() != null ? it.getProduct().getId() : null)
