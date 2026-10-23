@@ -116,6 +116,15 @@ const MenuConfig = (() => {
       roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER"],
     },
     {
+      id: "sales-report",
+      section: "Kinh doanh",
+      label: "Báo cáo doanh số",
+      icon: '<path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 4-9"/>',
+      href: "/reports/sales",
+      permission: "ORDER_VIEW",
+      roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER"],
+    },
+    {
       id: "dealers",
       section: "Kinh doanh",
       label: "Đại lý",

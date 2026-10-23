@@ -50,6 +50,7 @@ Backend vẫn chạy ở cổng 8080 theo cấu hình trong README.
 | Ngưỡng tồn tối thiểu (S5-09) | `/warehouse/minimums` |
 | Lô & hạn sử dụng (S6-01) | `/warehouse/lots` — VIEW hoặc MANAGE để xem; PRODUCT_EDIT hoặc MANAGE cấu hình SKU; EXPORT để xuất; APPROVE hoặc MANAGE để ghi đè quá hạn kèm xác nhận và lý do. ADMIN luôn được phép. |
 | Thẻ kho sản phẩm (S6-02) | `/warehouse/stock-card` — WAREHOUSE_VIEW hoặc ADMIN. Chọn SKU, lọc kho/ngày, phân trang server và mở chứng từ gốc chỉ đọc; từ Tồn kho có liên kết chọn sẵn SKU/kho. Query productId/warehouseId/fromDate/toDate (ngày ISO)/page/size và sourceType/sourceId hỗ trợ mở lại. |
+| Báo cáo doanh số (S8-06) | `/reports/sales` |
 | Tài khoản nhân sự | `/admin/users` |
 | Nhật ký thao tác | `/admin/audit-logs` |
 | Quên mật khẩu | `/forgot-password` |
