@@ -1,5 +1,17 @@
 # Chạy frontend và đường dẫn trang
 
+## S7-01 — Hóa đơn bán hàng (23/10/2026)
+
+- **Tài chính → Hóa đơn bán hàng**, `/invoices`. Dùng shell, sidebar, font và khung nội dung chung; bảng cuộn trong khung trên điện thoại, không đổi gutter/chiều rộng trang.
+- `INVOICE_VIEW` xem danh sách/chi tiết/in/PDF. `INVOICE_VIEW` + `INVOICE_CREATE` chọn đại lý, lọc ngày giao, gộp nhiều phiếu đã giao và xem trước/phát hành. `INVOICE_VIEW` + `INVOICE_ADJUST` lập chứng từ tăng/giảm tiền, điều chỉnh thông tin hoặc hủy bằng chứng từ, bắt buộc lý do và xác nhận. ADMIN toàn quyền; không fallback theo vai trò kế toán/kho. Đại lý thuần chỉ dùng cổng riêng hiện có, không truy cập màn kế toán nội bộ.
+- Chỉ gọi API `/api/invoices` sẵn có; danh sách phân trang server, từ khóa/trạng thái/khoảng ngày phát hành. Danh sách phiếu nguồn dùng `/dealers-with-eligible-orders` và `/eligible-orders?dealerId&startDate&endDate`, không cần quyền quản lý đại lý hoặc xem đơn hàng riêng.
+- Xem trước (`POST /preview`) dùng lượng thực giao, tiền và chiết khấu backend, không thay bằng lượng đặt hay tính tiền ở JS. Thay đại lý/kỳ/phiếu hoặc thông tin phát hành sẽ hủy bản xem trước. Nút phát hành cần xác nhận; trước khi gửi kiểm tra lại bản xem trước từ server, nếu số liệu đổi phải đối chiếu/xác nhận bản mới.
+- Chỉ backend cấp số khi `POST /invoices` thành công; preview không cấp số. Không có nút sửa/xóa hóa đơn đã phát hành, không gửi PUT/DELETE. Chứng từ điều chỉnh được lập riêng qua `POST /{id}/adjustments`, lịch sử và giá trị sau điều chỉnh lấy từ server.
+- Chặn bấm lặp trong lúc ghi; lỗi nghiệp vụ giữ thông tin để sửa/xem trước lại. Mất kết nối hoặc HTTP 5xx sau khi gửi lệnh ghi được coi là chưa xác định kết quả, khóa thao tác ghi tiếp cho tới **Tải lại** để kiểm tra hóa đơn/chứng từ đã tạo. Không tự retry lệnh phát hành/điều chỉnh.
+- In lấy HTML qua API xác thực, giữ style nội tuyến, bỏ script/event handler/nút in cũ và tài nguyên ngoài; hiển thị trong iframe sandbox không chạy script, CSP chặn kết nối ngoài, nút **In bản này** gọi hộp in. PDF hóa đơn/chứng từ lấy bằng Bearer fetch, kiểm tra MIME/chữ ký PDF rồi tải Blob, không đưa token vào URL.
+- Thu hồi quyền xóa phiếu chọn/xem trước/chi tiết/bản in, bỏ phản hồi trễ và ẩn nút/menu; HTTP 403 dùng luồng lỗi chung. Dữ liệu nghiệp vụ chỉ ở bộ nhớ tạm, không local/sessionStorage. Giữ phiên đăng nhập theo cơ chế Auth chung sẵn có.
+- Backend chỉ sửa lỗi S7-01 đã có: PDF chứng từ phải thuộc đúng hóa đơn trong đường dẫn. Không thêm API hay thay schema/nghiệp vụ cấp số. Cần restart frontend để nạp route mới và backend để nạp bản sửa kiểm tra chứng từ; không cần xóa/reset DB.
+
 ## S6-09 — Frontend theo dõi giao hàng của đại lý (23/10/2026)
 
 - **Kinh doanh → Đơn hàng của tôi → Theo dõi giao hàng**, `/dealer-orders`; dùng cửa sổ chi tiết và shell hiện có. Có nút **Cập nhật trạng thái**, đóng bằng Escape, giữ focus trong cửa sổ và trả focus về nút mở.

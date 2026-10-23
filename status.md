@@ -1,5 +1,20 @@
 # Trạng thái sprint 1–8
 
+## S7-01 — Frontend phát hành hóa đơn bán hàng — 23/10/2026
+
+| Hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Tra cứu và phiếu nguồn | Dùng API S7-01 sẵn có, không thêm API/schema | Tài chính → Hóa đơn bán hàng; lọc/phân trang, chọn đại lý và nhiều phiếu đã giao trong kỳ | INVOICE_VIEW; không cần quyền quản lý đại lý/kho/đơn hàng riêng |
+| Xem trước và phát hành | Tính tiền theo deliveredQuantity, cấp số trong transaction, kiểm tra phiếu trùng | Đối chiếu lượng đặt/thực giao/lập hóa đơn và tổng server; xác nhận rõ trước ghi | VIEW + CREATE, ADMIN toàn quyền; thay lựa chọn hủy preview, số liệu đổi phải xác nhận lại, không tự sinh số hoặc tính tiền JS |
+| Bất biến và điều chỉnh | Dùng API chứng từ riêng hiện có | Không có sửa/xóa hóa đơn gốc; tăng/giảm tiền, thông tin, hủy bằng chứng từ và lịch sử | VIEW + ADJUST, bắt buộc lý do/xác nhận; số tiền sau điều chỉnh lấy từ server |
+| In và PDF | Sửa lỗi PDF chứng từ bỏ qua invoiceId trong URL, nay kiểm tra đúng hóa đơn trước xuất | Bearer fetch PDF/HTML, Blob kiểm tra MIME/chữ ký; bản in sandbox + CSP, bỏ script/event/tài nguyên ngoài | VIEW; đóng/thu hồi giải phóng tài liệu, bỏ phản hồi trễ |
+| Độ an toàn thao tác | Giữ luồng ghi S7-01 đã có | Khóa bấm lặp; 400 giữ thông tin, network/5xx sau ghi khóa tới Tải lại để kiểm tra | Không tự retry lệnh tài chính, không ghi DB thật trong kiểm thử frontend |
+| Kiểm thử | 32 test S7-01 PASS (service/controller/security/integration), H2 từ bản sao source cách ly | 176 test Node + 11 test route PASS; Chrome luồng S7-01/6 widths PASS; layout 192 kiểm tra / 32 trang PASS | JWT hiện hành: VIEW/CREATE/ADJUST cấp-thu hồi hiệu lực; non-admin chỉ một role, ADMIN luôn được phép; không kiểm thử ghi DB thật |
+
+Đọc AGENTS và hai skill repo; cập nhật đúng dòng S7-01 trong FUNCTION_MAP, FRONTEND_ROUTES và API docs cho bản sửa PDF. Phối hợp Antigravity CLI rà hợp đồng API và code chỉ đọc; Codex kiểm chứng các góp ý, giữ CSP/style nội tuyến đúng mẫu in thật và bổ sung khóa ghi khi kết quả HTTP 5xx chưa rõ. Không yêu cầu Antigravity sửa file hay dùng DB thật. Chưa commit/push/merge.
+
+Log backend: `E:/DevTemp/UserTemp/s701-4fff3d8cee6e4cd58df7280eaccdf6fc/backend-verified.log`. Ảnh QA Chrome dùng API fixture tại `E:/DevTemp/UserTemp/qlbh-s701/`, không phải chứng từ phát hành trên DB thật. Chỉ chạy các test backend liên quan S7-01, không tuyên bố toàn bộ suite dự án đã xanh. Không ghi vào backend/target đang chạy, không reset DB.
+
 ## S6-09 — Chỉ frontend theo dõi giao hàng của đại lý — 23/10/2026
 
 | Hạng mục | Backend | Frontend | Kết nối / quyền |

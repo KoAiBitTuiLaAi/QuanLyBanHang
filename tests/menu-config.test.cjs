@@ -8,6 +8,17 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S7-01 invoices use INVOICE_VIEW matrix, not accountant role or unrelated finance grants',()=>{
+  for(const role of ['ROLE_ACCOUNTANT','ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_STAFF']){
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('invoices'));
+    assert.ok(!ids({roles:[role],permissions:['FINANCE_VIEW_DEBT','INVOICE_CREATE']}).includes('invoices'));
+    assert.ok(ids({roles:[role],permissions:['INVOICE_VIEW']}).includes('invoices'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('invoices'));
+  assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['INVOICE_VIEW']}).includes('invoices'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/invoices')).id,'invoices');
+});
+
 test('S6-08 delivery and stocktaking remain separate and follow their own matrix grants',()=>{
   assert.ok(menu.menuItems.some(i=>i.id==='delivery-confirmation'&&i.href==='/warehouse/delivery'));
   const has=permissions=>ids({roles:['ROLE_VIEWER'],permissions}).includes('delivery-confirmation');
