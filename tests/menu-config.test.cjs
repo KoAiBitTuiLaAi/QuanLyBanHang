@@ -8,6 +8,19 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S8-05 dashboard follows DASHBOARD_VIEW without locking the generic landing or debt view', () => {
+  for (const role of ['ROLE_VIEWER','ROLE_SALES_MANAGER','ROLE_ACCOUNTANT','ROLE_WAREHOUSE_MANAGER']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('operations-dashboard'));
+    assert.ok(!ids({roles:[role],permissions:['REPORT_SALES','FINANCE_VIEW_DEBT']}).includes('operations-dashboard'));
+    assert.ok(ids({roles:[role],permissions:['DASHBOARD_VIEW']}).includes('operations-dashboard'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('operations-dashboard'));
+  assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['DASHBOARD_VIEW']}).includes('operations-dashboard'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/reports/dashboard')).id,'operations-dashboard');
+  assert.notEqual(menu.getPageForLocation(new URL('http://test/dashboard')).id,'operations-dashboard');
+  assert.notEqual(menu.getPageForLocation(new URL('http://test/dashboard?view=debt-limits')).id,'operations-dashboard');
+});
+
 test('S8-01 returns follow existing read matrix, including IMPORT-only, with no role grant', () => {
   for (const role of ['ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_MANAGER','ROLE_WAREHOUSE_STAFF']) {
     assert.ok(!ids({roles:[role],permissions:[]}).includes('dealer-returns'));

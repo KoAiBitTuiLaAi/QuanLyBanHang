@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard điều hành | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/operations-dashboard.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content operations-dashboard-page">
+  <header class="ops-heading"><div><h1>Dashboard điều hành</h1><p>Doanh số, đơn hàng và rủi ro tồn kho trên toàn công ty.</p></div><button id="ops-reload" class="btn btn--primary" type="button">Tải lại dữ liệu</button></header>
+  <p id="ops-error" class="ops-error" role="alert" hidden></p>
+  <p id="ops-access" class="ops-notice" role="status" hidden>Bạn chưa có quyền xem dashboard điều hành. Liên hệ quản trị viên để cấp DASHBOARD_VIEW trong ma trận quyền.</p>
+  <section id="ops-workspace" hidden aria-busy="false">
+    <div class="ops-meta"><p id="ops-snapshot" role="status">Đang tải dữ liệu…</p><p id="ops-performance" role="status"></p></div>
+    <dl class="ops-metrics" aria-label="Sáu chỉ số điều hành">
+      <div class="ops-metric"><dt>Doanh số hôm nay</dt><dd id="ops-today-sales">—</dd><small id="ops-today-label">Theo ngày máy chủ</small></div>
+      <div class="ops-metric"><dt>Doanh số tháng này</dt><dd id="ops-month-sales">—</dd><small id="ops-month-label">Theo tháng máy chủ</small></div>
+      <div class="ops-metric"><dt>Đơn chờ duyệt</dt><dd id="ops-pending-approval">—</dd><small>Chờ phê duyệt đơn hàng</small></div>
+      <div class="ops-metric"><dt>Đơn chờ xuất</dt><dd id="ops-pending-export">—</dd><small>Đã duyệt, đang chuẩn bị xuất</small></div>
+      <div class="ops-metric ops-metric--risk"><dt>Công nợ quá hạn</dt><dd id="ops-overdue-debt">—</dd><small>Phần chưa trả đã quá hạn</small></div>
+      <div class="ops-metric ops-metric--risk"><dt>SKU dưới tồn tối thiểu</dt><dd id="ops-low-stock">—</dd><small>Số SKU khác nhau trên toàn công ty</small></div>
+    </dl>
+    <div class="ops-charts">
+      <section class="ops-panel" aria-labelledby="ops-daily-title"><header class="ops-heading"><div><h2 id="ops-daily-title">Doanh số theo ngày</h2><p id="ops-daily-description">Các ngày trong tháng do máy chủ cung cấp.</p></div></header><div id="ops-daily-chart" class="ops-daily-chart"></div><p id="ops-daily-empty" class="ops-muted" hidden>Chưa có doanh số trong tháng này.</p><details><summary>Xem số liệu từng ngày</summary><div class="ops-scroll" role="region" aria-label="Số liệu doanh số từng ngày" tabindex="0"><table><thead><tr><th>Ngày</th><th>Doanh số</th></tr></thead><tbody id="ops-daily-table"></tbody></table></div></details></section>
+      <section class="ops-panel" aria-labelledby="ops-territory-title"><header class="ops-heading"><div><h2 id="ops-territory-title">Doanh số theo khu vực</h2><p>Cùng kỳ doanh số tháng, bao gồm đơn chưa phân khu vực.</p></div></header><div id="ops-territory-chart" class="ops-territories" aria-label="Doanh số các khu vực"></div></section>
+    </div>
+    <section class="ops-panel" aria-labelledby="ops-dealers-title">
+      <header class="ops-heading"><div><h2 id="ops-dealers-title">Đại lý quá hạn công nợ</h2><p>Sắp theo số tiền quá hạn từ cao xuống thấp. Tổng nợ có thể bao gồm phần chưa đến hạn.</p></div><span id="ops-dealer-count" role="status"></span></header>
+      <p id="ops-page-error" class="ops-error" role="alert" hidden></p>
+      <div class="ops-scroll" role="region" aria-label="Đại lý quá hạn theo số tiền" tabindex="0"><table class="ops-dealers-table"><thead><tr><th scope="col">Đại lý</th><th scope="col">Khu vực</th><th scope="col">Tổng còn nợ</th><th scope="col" aria-sort="descending">Tiền quá hạn ↓</th><th scope="col">Số ngày quá hạn lớn nhất</th></tr></thead><tbody id="ops-dealers"></tbody></table></div>
+      <footer class="ops-pagination"><label>Số dòng mỗi trang<select id="ops-size"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label><div class="ops-actions"><button id="ops-prev" class="btn btn--secondary" type="button">Trước</button><span id="ops-page" role="status"></span><button id="ops-next" class="btn btn--secondary" type="button">Sau</button></div></footer>
+      <p class="ops-muted">Danh sách đọc lại khi đổi trang; các chỉ số và biểu đồ giữ thời điểm chụp ở đầu trang. Bấm Tải lại dữ liệu để đồng bộ toàn bộ.</p>
+    </section>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/operations-dashboard-utils.js"></script><script src="/js/operations-dashboard.js"></script>
+</body></html>

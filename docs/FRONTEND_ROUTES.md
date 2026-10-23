@@ -1,5 +1,17 @@
 # Chạy frontend và đường dẫn trang
 
+## S8-05 — Dashboard điều hành (24/10/2026, frontend nối backend hiện có)
+
+- **Báo cáo → Dashboard điều hành**, `/reports/dashboard`; lối tắt **Tổng quan → Công việc → Dashboard điều hành**. Giữ nguyên trang Tổng quan dùng chung, hồ sơ cá nhân và màn `/dashboard?view=debt-limits`; không yêu cầu DASHBOARD_VIEW để dùng các trang cũ này.
+- Menu/trang/API theo quyền **DASHBOARD_VIEW** trong ma trận DB; ADMIN luôn có quyền. Không fallback theo SALES_MANAGER hoặc REPORT_SALES/FINANCE_VIEW_DEBT. Tài khoản chỉ có vai trò đại lý không được vào màn điều hành nội bộ, theo bộ lọc menu/phạm vi API hiện có. DB đã cấu hình cần ADMIN cấp quyền từ ma trận.
+- Một GET `/api/reports/dashboard?overdueLimit=20` tải đồng thời **doanh số hôm nay/tháng này, đơn chờ duyệt/chờ xuất, công nợ quá hạn, số SKU dưới tồn tối thiểu**, hai biểu đồ và trang đầu đại lý. Không gọi bổ sung catalog, đơn, hóa đơn, tồn kho hay công nợ từng đại lý. Sau đó GET `/api/reports/dashboard/overdue-dealers?page=0&size=20` khi đổi trang/cỡ trang (10/20/50/100); giữ thứ tự tiền quá hạn giảm dần của server, tự quay về trang cuối hợp lệ nếu tổng giảm.
+- Biểu đồ SVG theo đủ ngày của tháng máy chủ, gồm ngày doanh số 0 và ngày sau thời điểm chụp; có bảng số liệu chính xác và nhãn bàn phím. Biểu đồ khu vực có nhóm chưa phân khu vực. Dùng `date`, `month`, `generatedAt`, `timezone` từ API, không lấy ngày/tháng thiết bị để thay số liệu. Tiền JSON BigDecimal được giữ chữ số và hiển thị qua BigInt, chỉ tỷ lệ vẽ hình dùng Number; không tự tính lại KPI/nghiệp vụ.
+- Dùng chung sidebar/topbar/content frame SaleStock, không CDN/thư viện biểu đồ bên ngoài. Bảng và biểu đồ cuộn trong khung khi màn hình nhỏ, không làm tràn trang; không override lề/chiều rộng chung. Đã xem ảnh desktop/mobile và kiểm tra 1920/1440/1024/768/390/320 px.
+- Có trạng thái đang tải/rỗng/lỗi/tải lại; lỗi không biến thành KPI 0 hoặc giữ số cũ như kết quả mới. Lỗi đổi trang chỉ xóa bảng, giữ KPI/biểu đồ ở thời điểm chụp đã ghi; bấm Tải lại để đồng bộ cả trang. Hủy phản hồi trễ khi tải lại, đổi quyền hoặc rời trang; thu hồi quyền xóa dữ liệu nhạy cảm và chặn trang/menu trên cùng phiên. Không thêm browser storage nghiệp vụ hoặc endpoint ghi.
+- Hiển thị thời gian đo từ bắt đầu điều hướng đến dữ liệu vẽ xong (qua hai animation frame); lần tải lại đo API + hiển thị riêng. Vượt 2 giây báo rõ, không báo thành công hiệu năng giả. Chrome fixture lần đo 24/10: **205 ms** cho mở trang/script thật + API cách ly; bài chậm 2.150 ms xác minh cảnh báo. Backend tích hợp H2 có 10.000 đơn/1.000 đại lý/1.000 SKU: tối đa **355 ms** trong 3 request. **Chưa nghiệm thu SLA 2 giây trên mạng/MySQL thật**, không cộng hai phép đo ở hai môi trường thành số đo end-to-end.
+- Kiểm chứng: **198 unit tests JS**, **12 tests server/route**, **16 kịch bản Chrome S8-05**, **210 kiểm tra bố cục trên 35 trang × 6 kích thước**, backend **22 tests DashboardIntegrationTest + RolePermissionConfigTest** qua. Chrome dùng HTTP fixtures cách ly; backend dùng DB H2 riêng. Không sửa code backend, không tạo/sửa/xóa dữ liệu DB nghiệp vụ.
+- Chạy lại: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/operations-dashboard.browser.cjs` (mặc định frontend cổng 5537, có thể đặt `NAV_TEST_URL`); `node tests/content-layout.browser.cjs`; backend `mvn -q "-Dtest=DashboardIntegrationTest,RolePermissionConfigTest" test`.
+
 ## S8-01 — Trả hàng đại lý (24/10/2026, chỉ frontend)
 
 - **Kho hàng → Trả hàng đại lý**, `/warehouse/dealer-returns`. Dùng chung sidebar/topbar và content frame SaleStock; bảng cuộn trong khung, dòng trả dạng form thích ứng màn hình nhỏ.
@@ -114,6 +126,7 @@ Backend vẫn chạy ở cổng 8080 theo cấu hình trong README.
 |---|---|
 | Đăng nhập | `/login` |
 | Tổng quan | `/dashboard` |
+| Dashboard điều hành (S8-05) | `/reports/dashboard` — DASHBOARD_VIEW hoặc ADMIN; lối tắt từ Tổng quan |
 | Hồ sơ | `/profile` |
 | Sản phẩm | `/products` |
 | Nhóm hàng | `/product-groups` |
