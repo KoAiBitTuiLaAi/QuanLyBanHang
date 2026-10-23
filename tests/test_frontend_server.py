@@ -47,6 +47,7 @@ class FrontendRoutingTest(unittest.TestCase):
             "/admin/audit-logs": "Nhật ký thao tác",
             "/warehouse/inventory": "Tồn kho theo SKU và kho",
             "/warehouse/lots": "Lô & hạn sử dụng",
+            "/warehouse/delivery": "Xác nhận giao hàng",
             "/warehouse/stock-card": "Thẻ kho sản phẩm",
             "/warehouses": "Kho & vị trí lưu",
             "/products": "Sản phẩm",
@@ -70,7 +71,7 @@ class FrontendRoutingTest(unittest.TestCase):
                 self.assertEqual(200, status)
                 self.assertIn(title, body.decode("utf-8"))
                 self.assertEqual("no-store", headers["Cache-Control"])
-        for path in ["/js/auth.js", "/js/order-pdf.js", "/css/dashboard.css", "/assets/brand-mark.svg"]:
+        for path in ["/js/auth.js", "/js/order-pdf.js", "/js/delivery-confirmation.js", "/js/warehouse-fefo.js", "/css/dashboard.css", "/assets/brand-mark.svg"]:
             with self.subTest(asset=path):
                 self.assertEqual(200, self.get(path)[0])
 

@@ -142,9 +142,16 @@ if(typeof document!=='undefined') (async()=>{
     $('lot-settings-count').textContent=rows.length+' SKU';
     $('lot-settings-rows').innerHTML=rows.map(p=>`<tr><td><strong>${esc(p.productName)}</strong><small>${esc(p.productCode)}</small></td><td>${esc(p.unit)}</td><td>${p.manageLot?'Đang bật':'Đang tắt'}</td><td>${esc(p.effectiveThresholdDays)} ngày</td><td>${client.configure()?`<button type="button" class="btn btn--secondary" data-lot-config="${esc(p.productId)}" ${client.state.loading||client.state.busy?'disabled':''}>Cấu hình</button>`:'<small>Chỉ xem</small>'}</td></tr>`).join('')||'<tr><td colspan="5" class="stock-empty">Không có SKU phù hợp.</td></tr>';
   }
-  for(const [button,panel] of [['lot-tab-inventory','lot-inventory-panel'],['lot-tab-settings','lot-settings-panel']])$(button).addEventListener('click',()=>{
-    for(const [b,p] of [['lot-tab-inventory','lot-inventory-panel'],['lot-tab-settings','lot-settings-panel']]){$(b).setAttribute('aria-pressed',String(b===button));$(p).hidden=p!==panel;}
+  const lotTabs=[['lot-tab-inventory','lot-inventory-panel'],['lot-tab-settings','lot-settings-panel'],['lot-tab-fefo','lot-fefo-panel']];
+  for(const [button,panel] of lotTabs)$(button).addEventListener('click',()=>{
+    if($(button).hidden)return;
+    for(const [b,p] of lotTabs){$(b).setAttribute('aria-pressed',String(b===button));$(p).hidden=p!==panel;}
+    const url=new URL(location.href);url.searchParams.set('tab',button.replace('lot-tab-',''));history.replaceState(history.state,'',url);
   });
+  if(new URLSearchParams(location.search).get('tab')==='fefo' && Auth.hasAnyPermission('WAREHOUSE_VIEW','WAREHOUSE_EXPORT')){
+    $('lot-tab-fefo').hidden=false;$('lot-tab-fefo').click();
+  }
+  window.addEventListener('warehouse:stock-changed',()=>{if(client.allowed() && !client.state.busy)client.initialize(client.state.filters);});
   $('lot-filter').addEventListener('submit',async e=>{e.preventDefault();page=0;const f=filters();const url=new URL(location.href);url.search=new URLSearchParams(Object.entries(f).filter(([,v])=>v)).toString();history.replaceState(history.state,'',url);await client.load(f);});
   $('lot-reset').addEventListener('click',()=>{$('lot-filter').reset();page=0;history.replaceState(history.state,'',location.pathname);client.load({});});
   $('lot-reload').addEventListener('click',()=>{if(!client.state.busy)client.initialize(client.state.filters);});

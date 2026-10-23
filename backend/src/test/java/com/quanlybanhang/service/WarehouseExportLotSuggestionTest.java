@@ -102,6 +102,12 @@ class WarehouseExportLotSuggestionTest {
                 .build();
     }
 
+    private void lockExportStock() {
+        when(lotInventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 100L)).thenReturn(List.of(lotA, lotB, lotC));
+        lenient().when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 100L)).thenReturn(Optional.of(
+                WarehouseInventory.builder().warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("75")).baseUnit("hộp").build()));
+    }
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -173,12 +179,10 @@ class WarehouseExportLotSuggestionTest {
     @Test
     @DisplayName("Xuất kho: Không truyền lotNumber -> tự động chọn lô gợi ý FEFO (Lot B khi cần 10 hộp) và không cần lý do")
     void exportGoods_NoLotNumberProvided_AutoPicksFefoLot() {
+        lockExportStock();
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(100L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(List.of(lotA, lotB, lotC));
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 100L, "LOT-2026-B"))
-                .thenReturn(Optional.of(lotB));
 
         WarehouseInventory totalInventory = WarehouseInventory.builder()
                 .warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("75")).baseUnit("hộp").build();
@@ -214,12 +218,10 @@ class WarehouseExportLotSuggestionTest {
     @Test
     @DisplayName("Xuất kho: Chọn đúng lô gợi ý (Lot B) -> thành công không cần nhập lý do")
     void exportGoods_SelectSameAsSuggestedLot_SuccessWithoutReason() {
+        lockExportStock();
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(100L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(List.of(lotA, lotB, lotC));
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 100L, "LOT-2026-B"))
-                .thenReturn(Optional.of(lotB));
 
         WarehouseInventory totalInventory = WarehouseInventory.builder()
                 .warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("75")).baseUnit("hộp").build();
@@ -246,12 +248,10 @@ class WarehouseExportLotSuggestionTest {
     @Test
     @DisplayName("Xuất kho: Chọn lô khác (Lot C) nhưng KHÔNG nhập lý do -> ném ngoại lệ yêu cầu lý do")
     void exportGoods_SelectDifferentLotWithoutReason_ThrowsException() {
+        lockExportStock();
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(100L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(List.of(lotA, lotB, lotC));
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 100L, "LOT-2026-C"))
-                .thenReturn(Optional.of(lotC));
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
                 .warehouseId(1L)
@@ -272,12 +272,10 @@ class WarehouseExportLotSuggestionTest {
     @Test
     @DisplayName("Xuất kho: Chọn lô khác (Lot C) và CÓ nhập lý do -> thành công, lưu cả lô gợi ý và lý do")
     void exportGoods_SelectDifferentLotWithReason_SuccessAndRecordsReason() {
+        lockExportStock();
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(100L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(List.of(lotA, lotB, lotC));
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 100L, "LOT-2026-C"))
-                .thenReturn(Optional.of(lotC));
 
         WarehouseInventory totalInventory = WarehouseInventory.builder()
                 .warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("75")).baseUnit("hộp").build();
@@ -317,12 +315,10 @@ class WarehouseExportLotSuggestionTest {
     @Test
     @DisplayName("Xuất kho vượt quá tồn của lô đã chọn -> ném ngoại lệ không đủ tồn lô")
     void exportGoods_ExceedLotStock_ThrowsException() {
+        lockExportStock();
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(100L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(List.of(lotA, lotB, lotC));
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 100L, "LOT-2026-A"))
-                .thenReturn(Optional.of(lotA)); // Lot A chỉ có 5 hộp
 
         WarehouseInventory totalInventory = WarehouseInventory.builder()
                 .warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("75")).baseUnit("hộp").build();
@@ -348,12 +344,10 @@ class WarehouseExportLotSuggestionTest {
     @Test
     @DisplayName("Xuất kho chọn lô không tồn tại trong kho -> ném ngoại lệ")
     void exportGoods_NonExistentLot_ThrowsException() {
+        lockExportStock();
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(100L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(List.of(lotA, lotB, lotC));
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 100L, "LOT-UNKNOWN"))
-                .thenReturn(Optional.empty());
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
                 .warehouseId(1L)

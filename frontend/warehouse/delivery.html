@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/css/app-navigation.css" />
     <link rel="stylesheet" href="/css/toast.css" />
     <link rel="stylesheet" href="/css/delivery-confirmation.css" />
+    <script src="/js/app-transition.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -83,20 +84,6 @@
           <div class="topbar__breadcrumb"></div>
 
           <div class="topbar__actions">
-            <div class="warehouse-select-wrap">
-              <label for="active-warehouse-select" class="sr-only">Kho đang làm việc</label>
-              <select id="active-warehouse-select" class="dc-select" title="Chọn kho đang làm việc">
-                <option value="">Tất cả kho làm việc</option>
-              </select>
-            </div>
-
-            <a href="/dashboard" class="topbar__btn topbar__btn--back" title="Về tổng quan">
-              <svg viewBox="0 0 24 24" width="16" height="16">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-              <span>Tổng quan</span>
-            </a>
-
             <button
               class="topbar__btn topbar__btn--logout"
               id="btn-logout-topbar"
@@ -119,17 +106,19 @@
               <p class="dc-heading__section">Kho hàng</p>
               <h1>Xác nhận giao hàng &amp; Chứng từ</h1>
               <p class="dc-heading__desc">
-                Ghi nhận người nhận, thời điểm giao thực tế và lưu trữ ảnh biên bản có chữ ký của đại lý để làm bằng chứng đối soát. Kích hoạt phát hành hoá đơn GTGT ở Sprint 7 cho đơn hoàn tất.
+                Xem dữ liệu đơn từ hệ thống, mở form giao nhận và xem trước ảnh chứng từ. Backend S6-08 chưa có: chưa lưu người nhận, ảnh, hoàn kho hay kích hoạt hoá đơn từ trang này.
               </p>
             </div>
             <div class="dc-heading__badge">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>Quyền hạn: Nhân viên kho</span>
+              <span>Quyền theo ma trận đã cấp</span>
             </div>
           </div>
 
+          <p id="dc-backend-notice" class="dc-notice" role="status">Chỉ xem và chuẩn bị biểu mẫu. Nút lưu bị khóa vì chưa có API S6-08; đóng form hoặc tải lại sẽ mất nội dung nhập và ảnh xem trước. Thống kê/bộ lọc kho bên dưới chỉ áp dụng cho trang dữ liệu hiện tại.</p>
+          <p id="dc-error" class="dc-notice dc-notice--danger" role="alert" hidden></p>
           <!-- Stats Overview Cards -->
           <section class="dc-stats" aria-label="Thống kê giao nhận kho">
             <div class="dc-stat-card dc-stat-card--shipping">
@@ -140,17 +129,17 @@
             <div class="dc-stat-card dc-stat-card--delivered">
               <span class="dc-stat-card__label">Giao thành công</span>
               <span class="dc-stat-card__value" id="stat-delivered">0</span>
-              <span class="dc-stat-card__hint">Đã có biên bản ký nhận đối soát</span>
+              <span class="dc-stat-card__hint">Theo trạng thái đơn, chưa có ảnh ký nhận S6-08</span>
             </div>
             <div class="dc-stat-card dc-stat-card--failed">
               <span class="dc-stat-card__label">Giao thất bại / Hoàn kho</span>
-              <span class="dc-stat-card__value" id="stat-failed">0</span>
-              <span class="dc-stat-card__hint">Đại lý từ chối hoặc trả hàng về kho</span>
+              <span class="dc-stat-card__value" id="stat-failed">—</span>
+              <span class="dc-stat-card__hint">Chưa có dữ liệu S6-08</span>
             </div>
             <div class="dc-stat-card dc-stat-card--invoice">
               <span class="dc-stat-card__label">Đủ điều kiện hoá đơn</span>
-              <span class="dc-stat-card__value" id="stat-invoice-ready">0</span>
-              <span class="dc-stat-card__hint">Đã kích hoạt điều kiện Sprint 7</span>
+              <span class="dc-stat-card__value" id="stat-invoice-ready">—</span>
+              <span class="dc-stat-card__hint">Chưa có API kiểm tra điều kiện</span>
             </div>
           </section>
 
@@ -166,7 +155,7 @@
                   type="text"
                   id="dc-search"
                   class="dc-search-input"
-                  placeholder="Tìm theo mã đơn, đại lý, người nhận, địa chỉ…"
+                  placeholder="Tìm mã đơn, đại lý (Enter để tìm)…"
                   autocomplete="off"
                 />
                 <button
@@ -185,14 +174,16 @@
               </div>
 
               <div class="dc-filter-group">
+                <label for="active-warehouse-select" class="sr-only">Lọc kho trên trang hiện tại</label>
+                <select id="active-warehouse-select" class="dc-select" title="Lọc kho trên trang hiện tại"><option value="">Tất cả kho trên trang này</option></select>
                 <select id="dc-filter-status" class="dc-select" aria-label="Lọc theo trạng thái giao hàng">
                   <option value="">Tất cả trạng thái</option>
-                  <option value="PENDING">Chờ giao / Đang giao</option>
+                  <option value="EXPORTED">Đã xuất kho / Chờ giao</option>
                   <option value="DELIVERED">Giao thành công</option>
-                  <option value="DELIVERY_FAILED">Giao thất bại / Đã hoàn kho</option>
+                  <option value="DELIVERY_FAILED" disabled>Giao thất bại (chưa có API)</option>
                 </select>
 
-                <select id="dc-filter-invoice" class="dc-select" aria-label="Lọc theo điều kiện hoá đơn Sprint 7">
+                <select id="dc-filter-invoice" class="dc-select" aria-label="Lọc theo điều kiện hoá đơn Sprint 7" disabled title="Chưa có API kết nối điều kiện hóa đơn S6-08">
                   <option value="">Tất cả điều kiện hoá đơn</option>
                   <option value="ELIGIBLE">Đã kích hoạt hoá đơn (Sprint 7)</option>
                   <option value="NOT_ELIGIBLE">Chưa kích hoạt / Bị khoá</option>
@@ -238,6 +229,7 @@
               </table>
             </div>
           </div>
+          <div class="dc-toolbar dc-pagination"><button id="dc-prev" type="button" class="dc-btn dc-btn--secondary" disabled>Trang trước</button><span id="dc-page" role="status"></span><button id="dc-next" type="button" class="dc-btn dc-btn--secondary" disabled>Trang sau</button></div>
         </main>
       </div>
     </div>
@@ -290,8 +282,8 @@
                 <path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div>
-                <strong>Kích hoạt điều kiện phát hành hoá đơn Sprint 7:</strong>
-                Xác nhận giao thành công kèm ảnh biên bản có chữ ký sẽ mở khoá phát hành hoá đơn điện tử cho bộ phận kế toán.
+                <strong>Biểu mẫu xem trước — chưa có API S6-08:</strong>
+                Người nhận, thời điểm và ảnh chưa được lưu. Trang này không cập nhật đơn, tồn kho hoặc điều kiện hoá đơn.
               </div>
             </div>
 
@@ -347,7 +339,7 @@
                   id="confirm-warehouse-name"
                   class="dc-input"
                   readonly
-                  value="Kho Tân Bình (Kho xuất hàng)"
+                  value=""
                 />
               </div>
             </div>
@@ -386,7 +378,7 @@
                 <div class="dc-proof-preview__info">
                   <div class="dc-proof-preview__name" id="proof-file-name">bien_ban_giao_hang.jpg</div>
                   <div class="dc-proof-preview__meta" id="proof-file-size">1.2 MB</div>
-                  <span class="dc-proof-preview__badge">Đã xác thực chứng từ hợp lệ</span>
+                  <span class="dc-proof-preview__badge">Chỉ xem trước trên máy — chưa lưu</span>
                 </div>
                 <div class="dc-proof-preview__actions">
                   <button type="button" class="dc-btn dc-btn--secondary dc-btn--sm" id="btn-zoom-proof">
@@ -424,8 +416,8 @@
             <button type="button" class="dc-btn dc-btn--secondary" data-close-confirm>
               Huỷ bỏ
             </button>
-            <button type="submit" class="dc-btn dc-btn--success" id="btn-submit-confirm">
-              Xác nhận giao thành công
+            <button type="submit" class="dc-btn dc-btn--success" id="btn-submit-confirm" disabled title="Chờ backend S6-08">
+              Chưa thể lưu — chờ API S6-08
             </button>
           </div>
         </form>
@@ -441,7 +433,7 @@
           <div class="dc-modal__title-wrap">
             <h2 id="modal-failed-title">Giao không thành công &amp; Ghi nhận hoàn kho</h2>
             <p class="dc-modal__desc">
-              Ghi nhận lý do đại lý chưa nhận được hàng. Hàng hoá sẽ được tạo phiếu tiếp nhận nhập quay về kho lưu trữ.
+              Chuẩn bị lý do giao thất bại. Chưa có API S6-08 nên biểu mẫu không ghi nhận trạng thái hay tạo phiếu hoàn kho.
             </p>
           </div>
           <button class="dc-modal__close" type="button" data-close-failed aria-label="Đóng">
@@ -482,8 +474,8 @@
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
               <div>
-                <strong>Khoá phát hành hoá đơn điện tử:</strong>
-                Đơn hàng giao không thành công sẽ bị khoá phát hành hoá đơn ở Sprint 7. Toàn bộ dòng hàng được điều phối nhập quay về kho.
+                <strong>Chưa có API S6-08:</strong>
+                Nội dung chưa được lưu; không tự đưa hàng về tồn kho và không thay đổi điều kiện hoá đơn.
               </div>
             </div>
 
@@ -523,9 +515,8 @@
                 <label for="failed-return-warehouse" class="dc-label">
                   Kho tiếp nhận hàng quay về <span class="dc-req">*</span>
                 </label>
-                <select id="failed-return-warehouse" class="dc-select-field" required>
-                  <option value="1">Kho Tân Bình (Kho xuất hàng ban đầu)</option>
-                  <option value="2">Kho Bình Thạnh (Kho trung tâm)</option>
+                <select id="failed-return-warehouse" class="dc-select-field" disabled title="Chưa có API tiếp nhận hoàn kho S6-08">
+                  <option value="">Chưa có API xác định kho tiếp nhận</option>
                 </select>
               </div>
 
@@ -538,7 +529,7 @@
                   id="failed-voucher-code"
                   class="dc-input"
                   readonly
-                  value="NK-HOAN-202610-001"
+                  value="Chưa tạo phiếu"
                 />
               </div>
             </div>
@@ -585,8 +576,8 @@
             <button type="button" class="dc-btn dc-btn--secondary" data-close-failed>
               Huỷ bỏ
             </button>
-            <button type="submit" class="dc-btn dc-btn--danger" id="btn-submit-failed">
-              Xác nhận ghi nhận hàng về kho
+            <button type="submit" class="dc-btn dc-btn--danger" id="btn-submit-failed" disabled title="Chờ backend S6-08">
+              Chưa thể lưu — chờ API S6-08
             </button>
           </div>
         </form>

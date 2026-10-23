@@ -4,6 +4,22 @@ Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
+## S6-04 — Gợi ý FEFO và giao diện xuất theo lô (23/10/2026)
+
+Giao diện **Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO**, `/warehouse/lots?tab=fefo`. Dùng các API hiện có, không đổi schema:
+
+| Method | Endpoint (sau `/api`) | Hợp đồng hiện tại |
+|---|---|---|
+| GET | `/warehouse/lots/options` | Kho đang hoạt động trong phạm vi, SKU/đơn vị cơ sở, `canExport`; VIEW hoặc MANAGE, ADMIN toàn quyền |
+| GET | `/warehouse/export/suggest-lot?warehouseId=1&productId=10&quantity=10&unit=lon` | VIEW hoặc EXPORT; lượng >0, tối đa 11 chữ số nguyên/4 số lẻ. Trả kho/SKU/lượng/đơn vị, `suggestedLot`, `availableLots`, `message`, `hasSufficientStock` |
+| POST | `/warehouse/export/suggest-lots` | Quyền tương tự GET; danh sách yêu cầu gợi ý, không ghi tồn |
+| POST | `/warehouse/export` | EXPORT; `{warehouseId,items:[{productId,quantity,unit,lotNumber,suggestedLotNumber?,overrideReason?}]}`. Server tự sinh mã phiếu, kiểm quyền/scope, đọc lại tồn/lô và ghi phiếu+tồn+audit cùng giao dịch |
+
+- `suggestedLot` chỉ là **một lô còn hạn, có HSD, đủ lượng**, sắp HSD gần nhất, sau đó NSX/ID. HSD hôm nay vẫn còn hạn. Không lấy lô quá hạn/thiếu HSD làm mặc định, kể cả ADMIN. `hasSufficientStock` là có một lô hợp lệ đủ lượng, không phải tổng tồn chia nhiều lô. `availableLots` vẫn trả các lô có tồn để giải thích trường hợp bị chặn; UI không cho chọn quá hạn/thiếu HSD trong tab FEFO.
+- SKU legacy tắt `manageLot` nhưng còn tồn theo lô vẫn được gợi ý theo lô để khớp quy tắc xuất S6-01. SKU không quản lý và không có tồn lô trả danh sách rỗng/thông báo; FEFO không thay luồng xuất hàng không quản lý lô.
+- Server bỏ qua gợi ý do client giả mạo và tính lại dưới khóa khi xuất. Khác lô gợi ý hiện tại bắt buộc lý do; không tự đổi lô người dùng đã chọn khi tồn thay đổi. Không đủ tồn lô hoặc tồn khả dụng (thực tế trừ giữ chỗ) thì 400 và rollback toàn bộ. Lô quá hạn chỉ có thể xuất qua cơ chế ghi đè S6-01 có quyền, xác nhận và lý do; không bỏ kiểm tra này.
+- Xuất lấy khóa tồn vật lý trước, rồi khóa các lô cùng kho/SKU theo ID bằng current read để hai yêu cầu đồng thời không dùng chung số dư lô cũ. Chỉ lô đã chọn bị trừ; không giải phóng giữ chỗ của đơn khác. Thu hồi quyền trả 403 trên JWT hiện tại, không cần đăng nhập lại.
+
 ## S6-03 — Phiếu soạn hàng, frontend + backend (23/10/2026)
 
 Trang `/warehouse/picking`, menu **Kho hàng → Phiếu soạn hàng**. Quyền đọc: `WAREHOUSE_VIEW` **hoặc** `WAREHOUSE_EXPORT`; quyền tạo/lưu dòng/hoàn tất/hủy: `WAREHOUSE_EXPORT`. `ROLE_ADMIN` luôn được phép; người dùng khác chỉ thao tác kho được gán, kể cả khi role không phải Thủ kho. Không có kho được gán không đồng nghĩa truy cập toàn bộ kho. Thu hồi quyền có hiệu lực với JWT hiện tại ở request tiếp theo; UI đóng/xóa form và vô hiệu phản hồi trễ khi nhận thay đổi quyền.
