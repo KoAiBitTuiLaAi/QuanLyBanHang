@@ -36,6 +36,9 @@ public class StockCardService {
     private final OrderStatusHistoryRepository historyRepo;
     private final DeliveryTripStopItemRepository returnItemRepo;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DealerReturnItemRepository dealerReturnItemRepo;
+
     public Map<String,Object> options() {
         var warehouses=ledgerService.visibleWarehousesFor("WAREHOUSE_VIEW");
         return Map.of("warehouses",warehouses.stream().map(w->Map.of("id",w.getId(),"code",w.getCode(),"name",w.getName())).toList(),
@@ -45,7 +48,7 @@ public class StockCardService {
 
     /** Warehouse-scoped, read-only original-document projection for the selected SKU. No sales prices/PII. */
     public Map<String,Object> source(Long productId,String sourceType,Long sourceId,Long warehouseId) {
-        if(sourceId==null || sourceId<1 || !Set.of("VOUCHER","TRANSFER","STOCK_COUNT","ORDER","DELIVERY_RETURN").contains(sourceType))
+        if(sourceId==null || sourceId<1 || !Set.of("VOUCHER","TRANSFER","STOCK_COUNT","ORDER","DELIVERY_RETURN","DEALER_RETURN").contains(sourceType))
             throw new IllegalArgumentException("Chứng từ không hợp lệ");
         var scope=ledgerService.visibleWarehousesFor("WAREHOUSE_VIEW").stream().map(Warehouse::getId).toList();
         if(warehouseId!=null && !scope.contains(warehouseId))throw new AccessDeniedException("Kho ngoài phạm vi");
@@ -176,6 +179,13 @@ public class StockCardService {
             var s=i.getStop();var t=s.getTrip();var w=t.getWarehouse();
             if(scopeIds.contains(w.getId()))raw.add(new RawEntry(s.getReturnedAt(),"IMPORT","Nhập trả chuyến giao",
                     i.getQuantity(),product.getUnit(),i.getQuantity(),product.getUnit(),w.getId(),w.getCode(),w.getName(),"DELIVERY_RETURN",s.getId(),t.getTripCode(),s.getNote()));
+        }
+        if(dealerReturnItemRepo!=null){
+            for(var i:dealerReturnItemRepo.findForStockCard(product.getId(),scopeIds)){
+                var r=i.getDealerReturn();var w=i.getTargetWarehouse();
+                if(r.getConfirmedAt()!=null && w!=null && scopeIds.contains(w.getId()))raw.add(new RawEntry(r.getConfirmedAt(),"IMPORT","Nhập hàng đại lý trả",
+                        i.getBaseReturnQuantity(),i.getBaseUnit(),i.getReturnQuantity(),i.getUnit(),w.getId(),w.getCode(),w.getName(),"DEALER_RETURN",r.getId(),r.getReturnCode(),i.getReturnReason()));
+            }
         }
 
         List<WarehouseVoucherItem> voucherItems =

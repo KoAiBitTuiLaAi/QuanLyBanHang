@@ -209,6 +209,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .manager(manager)
                 .managerName(managerName)
                 .active(request.getActive() != null ? request.getActive() : true)
+                .defective(Boolean.TRUE.equals(request.getDefective()))
                 .build();
 
         Warehouse saved = warehouseRepository.save(warehouse);
@@ -276,6 +277,9 @@ public class WarehouseServiceImpl implements WarehouseService {
 
         if (request.getActive() != null) {
             warehouse.setActive(request.getActive());
+        }
+        if (request.getDefective() != null) {
+            warehouse.setDefective(request.getDefective());
         }
 
         Warehouse saved = warehouseRepository.save(warehouse);
@@ -2299,6 +2303,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .managerFullName(managerFullName)
                 .managerName(managerName)
                 .active(warehouse.getActive())
+                .defective(warehouse.isDefectiveWarehouse())
                 .locationCount(locCount)
                 .defaultDealerCount(defaultDealerCount)
                 .createdAt(warehouse.getCreatedAt())
