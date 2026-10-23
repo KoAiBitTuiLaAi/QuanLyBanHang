@@ -123,6 +123,7 @@ async function createDealerOrdersEnvironment(options = {}) {
     JSON,
     RegExp,
     URLSearchParams,
+    AbortController,
     Boolean,
     CSS: { escape: (s) => s },
     setTimeout,
@@ -219,6 +220,7 @@ async function createDealerOrdersEnvironment(options = {}) {
   const scriptPath = path.join(__dirname, "../frontend/js/dealer-orders.js");
   const code = fs.readFileSync(scriptPath, "utf8");
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/js/dealer-portal-context.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/js/dealer-delivery-tracking.js'), 'utf8'), context);
   vm.runInContext(code, context);
 
   // Chờ loadOrders hoàn tất

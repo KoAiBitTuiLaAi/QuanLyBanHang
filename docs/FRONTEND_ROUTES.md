@@ -1,5 +1,15 @@
 # Chạy frontend và đường dẫn trang
 
+## S6-09 — Frontend theo dõi giao hàng của đại lý (23/10/2026)
+
+- **Kinh doanh → Đơn hàng của tôi → Theo dõi giao hàng**, `/dealer-orders`; dùng cửa sổ chi tiết và shell hiện có. Có nút **Cập nhật trạng thái**, đóng bằng Escape, giữ focus trong cửa sổ và trả focus về nút mở.
+- Hiển thị 5 mốc **Đã duyệt → Đang soạn → Đã xuất → Đang giao → Đã giao**. Chỉ dùng dữ liệu thật do API cổng đại lý trả về; không suy diễn các bước trước đã hoàn thành từ trạng thái sau, không đổi Đã xuất thành Đang giao. Ngày giao chỉ có ngày thì không tự thêm giờ.
+- Bảng **Số lượng thực giao từng dòng** giữ số lẻ và số 0; thiếu dữ liệu hiện **Chưa cập nhật**, không lấy lượng đặt thay lượng giao. Có cảnh báo đơn còn nợ hàng và đơn dừng xử lý.
+- **Chỉ frontend, chưa có backend S6-09 riêng.** Chỉ đọc GET `/api/portal/orders` và `/api/portal/orders/{id}` sẵn có (ADMIN chọn đại lý qua GET `/api/portal/dealers`, giữ `dealerId`). Không gọi API tracking đơn chung hoặc API chuyến kho, không bổ sung endpoint giả, không ghi trạng thái giao hàng/tồn kho.
+- Cần `ORDER_VIEW` theo ma trận DB trong phạm vi cổng đại lý; ADMIN luôn được phép. Không cần quyền kho, công nợ, `ORDER_CREATE` hoặc `PRODUCT_VIEW`. Thu hồi quyền xóa dữ liệu/đóng chi tiết, chặn phản hồi cũ; cấp lại có thể mở trang. HTTP 403 theo luồng lỗi chung, không gọi API khác để vượt quyền.
+- Mốc chưa có dữ liệu lịch sử/thời gian xác nhận hiện **Chưa có dữ liệu**, không đồng nghĩa chưa diễn ra. Chưa có vị trí xe, giờ xe tới hoặc lịch sử giao theo chuyến; cần backend S6-09 sau này để hoàn thiện dữ liệu, không tuyên bố đã hoàn tất end-to-end.
+- Thử nghiệm Chrome dùng API fixture cách ly, không phải minh chứng giao dịch trên DB thật; luồng đặt lại đơn S5-02 giữ nguyên.
+
 ## S6-07 — Theo dõi chuyến giao (23/10/2026)
 
 - **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`; mở thẳng chi tiết bằng `?tripId=...`. Dùng shell/sidebar/topbar/gutters chung; không thay token layout hoặc font của dự án.

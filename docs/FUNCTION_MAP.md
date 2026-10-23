@@ -77,7 +77,7 @@
 - S6-06: Một phần, chỉ backend → `/api/warehouse/delivery-trips` tạo chuyến, gộp đơn đã xuất, gán tài xế/xe; chưa có menu phân tuyến/in danh sách điểm giao.
 - S6-07: Kho hàng → Theo dõi chuyến giao → Tiền hàng trên đường, điểm đã giao/còn lại, lọc kho/trạng thái/quá hạn, Xem điểm giao và chuyến còn hàng chưa xử lý.
 - S6-08: Một phần (frontend): Kho hàng → Xác nhận giao hàng → Xem đơn thật, mở form/xem trước ảnh; khóa lưu xác nhận/hoàn kho vì chưa có API S6-08.
-- S6-09: Một phần: Kinh doanh → Đơn hàng của tôi → Xem chi tiết → Trạng thái, ngày giao, thực giao từng dòng; chưa có dòng thời gian riêng của chuyến giao.
+- S6-09: Một phần (frontend): Kinh doanh → Đơn hàng của tôi → Theo dõi giao hàng → 5 mốc, thực giao từng dòng; mốc thiếu API hiện “Chưa có dữ liệu”.
 
 ## Phần S7 đã có trên develop
 

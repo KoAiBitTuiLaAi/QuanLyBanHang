@@ -1,5 +1,20 @@
 # Trạng thái sprint 1–8
 
+## S6-09 — Chỉ frontend theo dõi giao hàng của đại lý — 23/10/2026
+
+| Hạng mục | Backend | Frontend | Kết nối / quyền |
+|---|---|---|---|
+| Vị trí chức năng | Không sửa | Kinh doanh → Đơn hàng của tôi → Theo dõi giao hàng; dùng chi tiết hiện có | GET cổng đại lý sẵn có, không gọi tracking đơn chung/chuyến kho |
+| Dòng thời gian 5 mốc | Chưa triển khai backend S6-09 riêng; API cũ thiếu lịch sử soạn/xuất/giao | Đã duyệt, Đang soạn, Đã xuất, Đang giao, Đã giao; mốc thiếu hiện chưa có dữ liệu | Chỉ hiển thị trạng thái/ngày được xác nhận; không suy diễn đã đi qua mọi bước, không dựng giờ hoặc ETA xe |
+| Thực giao từng dòng | Dùng deliveredQuantity và shortageQuantity từ chi tiết cổng đại lý | Giữ số lẻ/số 0, phân biệt chưa cập nhật; cảnh báo còn nợ hàng | Không lấy số đặt thay số giao, không gửi lệnh ghi |
+| Ma trận và phạm vi | Đọc đối chiếu controller/service có ORDER_VIEW + scope đại lý; không chỉnh BE | ORDER_VIEW + phạm vi cổng đại lý, ADMIN toàn quyền; thu hồi đóng/xóa dữ liệu | Chrome fixture kiểm tra cấp/thu hồi, phản hồi trễ và HTTP 403; không xác nhận đã thử ma trận trên DB thật trong lượt này |
+| Khả dụng | Không thêm API/schema | Cập nhật trạng thái, lỗi/thử lại, focus bàn phím, bảng cuộn trong cửa sổ, 320–1920px | S5-02 đặt lại đơn giữ nguyên; không lưu dữ liệu nghiệp vụ trên browser storage |
+| Kiểm thử | Không chạy hoặc sửa backend trong lượt frontend này | 170 test Node, 11 test route PASS; Chrome S6-09 và hồi quy S5-01/02 PASS; layout 186 kiểm tra / 31 trang / 6 widths PASS | Chrome chạy trang/script thật với API fixture cách ly GET-only cho S6-09, không ghi DB thật |
+
+Chỉ triển khai frontend theo xác nhận của người dùng; backend S6-09 chưa ai làm nên story vẫn **Một phần**, chưa hoàn thiện lịch sử giao end-to-end. Cập nhật đúng dòng S6-09 trong FUNCTION_MAP và FRONTEND_ROUTES; không commit/push/merge.
+
+Phối hợp Antigravity CLI rà soát chỉ đọc bản diff/adapter; áp dụng góp ý hợp lệ về kiểm tra kiểu dữ liệu, mốc hiện tại và nhãn bảng/focus. Đối chiếu code gốc trước khi dùng đề xuất: giữ `SHIPPED` là tên cũ của **Đã xuất** theo `OrderStatus`, không tự đổi sang Đang giao; nút đặt lại vẫn được bật trong `renderDetail`. Antigravity không sửa file, chạy lệnh ghi hoặc truy cập DB. Ảnh kiểm thử fixture tại `E:/DevTemp/UserTemp/qlbh-s609/`.
+
 ## S6-07 — Frontend theo dõi hàng đã xuất/chưa giao xong — 23/10/2026
 
 | Hạng mục | Backend | Frontend | Kết nối / quyền |
