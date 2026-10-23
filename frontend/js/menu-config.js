@@ -287,6 +287,15 @@ const MenuConfig = (() => {
       roles: ALL_ROLES,
     },
     {
+      id: "dealer-returns",
+      section: "Kho hàng",
+      label: "Trả hàng đại lý",
+      icon: '<path d="M9 5 4 10l5 5M4 10h11a5 5 0 0 1 0 10H9M14 3h7v8"/>',
+      href: "/warehouse/dealer-returns",
+      roles: ALL_ROLES,
+      permissions: ["ORDER_VIEW", "ORDER_CREATE", "INVOICE_VIEW", "WAREHOUSE_VIEW", "WAREHOUSE_APPROVE", "WAREHOUSE_IMPORT"],
+    },
+    {
       id: "debt-limits",
       section: "Tài chính",
       label: "Hạn mức công nợ",
