@@ -878,22 +878,22 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
 
-## S8-05 — Dashboard điều hành bán hàng và kho (2026-10-23)
+## S8-05 — Dashboard điều hành bán hàng và kho (cập nhật frontend 2026-10-24)
 
-Branch `feature/S8-05/xem-dashboard-ban-hang-va-kho`, repo GitHub Desktop tại `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend; không commit/push.
+Backend đã có trên develop; frontend nối tại branch `feature/S8-05-frontend-xem_dashboard_dieu_hanh_ban_hang_va_kho`. Vị trí: **Báo cáo → Dashboard điều hành**, `/reports/dashboard`; lối tắt từ **Tổng quan → Công việc**. Không sửa code/backend/schema, không commit/push/merge trong lượt này.
 
 | Yêu cầu | Backend | Frontend | Kết nối và kiểm chứng |
 |---|---|---|---|
-| KPI doanh số hôm nay/tháng này, đơn chờ duyệt/chờ xuất, nợ quá hạn, SKU dưới tồn tối thiểu | Hoàn thành: số liệu trực tiếp DB; dùng quy ước trạng thái ghi nhận, công nợ FIFO, tồn khả dụng và minimum hiện có | Chưa nối theo yêu cầu chỉ backend | GET `/api/reports/dashboard`, một response gồm đầy đủ dữ liệu |
-| Biểu đồ doanh số từng ngày trong tháng và theo khu vực | Hoàn thành: đủ ngày, điền 0 ngày không có doanh số; nhóm cả đơn chưa có khu vực, không nhân đôi theo dòng hàng | Chưa nối | Test mốc tháng, ngày tương lai, múi giờ Việt Nam và tháng nhuận |
-| Đại lý quá hạn, xếp theo số tiền | Hoàn thành: tính số dư sau thanh toán FIFO, sắp overdueAmount giảm dần; danh sách đầu có tổng toàn bộ, API phân trang xem thêm | Chưa nối | GET `/api/reports/dashboard/overdue-dealers`; test đã trả hết, trả một phần, đúng ngày hạn, maxDebtDays=0, trang vượt cuối |
-| Toàn bộ dữ liệu tải dưới 2 giây | Đạt trong môi trường tích hợp: tối đa 210 ms ở lần hồi quy, 3 HTTP request đầy đủ trên 10.000 đơn/1.000 đại lý/1.000 SKU minimum | Chưa đo render hoặc mạng frontend | 5 truy vấn tổng hợp nghiệp vụ/request; không N+1; chưa đo MySQL thật |
-| Ma trận quyền DB | Hoàn thành: quyền DASHBOARD_VIEW, ROLE_ADMIN luôn có quyền; không fallback từ vai trò hoặc quyền báo cáo khác; thu hồi có hiệu lực request kế tiếp với JWT cũ | Catalog ma trận hiện có tải động; menu/dashboard hiện tại chưa gắn quyền và chưa nối API S8-05 | Test non-admin chỉ có một vai trò, cấp/thu hồi và kiểm 403 cả hai endpoint |
-| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 53 tests liên quan qua, 8 ca tích hợp dashboard | Không sửa file frontend | Có sửa assertion audit tiền cũ phụ thuộc locale; không thay đổi thanh toán |
+| KPI doanh số hôm nay/tháng này, đơn chờ duyệt/chờ xuất, nợ quá hạn, SKU dưới tồn tối thiểu | Đã có: DB, công nợ FIFO, tồn khả dụng/minimum hiện có | Đã nối đủ sáu thẻ, giữ nguyên chữ số tiền BigDecimal; thời điểm và ngày/tháng theo máy chủ | Một GET `/api/reports/dashboard?overdueLimit=20`, không gọi riêng từng nguồn hoặc tự tính lại KPI |
+| Biểu đồ doanh số từng ngày trong tháng và theo khu vực | Đã có đủ ngày và nhóm chưa có khu vực | SVG ngày + bảng số liệu, thanh doanh số khu vực; không CDN, hỗ trợ bàn phím/màn hình nhỏ | Test đủ 28/29/30/31 ngày, ngày doanh số 0/ngày tương lai và múi giờ thiết bị khác máy chủ |
+| Đại lý quá hạn, xếp theo số tiền | Đã có FIFO/sort giảm dần, tổng và endpoint phân trang | Trang đầu nhúng trong overview, đổi trang/cỡ 10/20/50/100 dùng API page; tự sửa trang vượt cuối khi số đại lý giảm | Test trước/sau/cỡ trang, tổng về 0, lỗi trang không xóa KPI đã chụp; thứ tự giữ từ server |
+| Toàn bộ dữ liệu tải dưới 2 giây | Hồi quy tích hợp 24/10: tối đa 355 ms, 3 request đầy đủ trên 10.000 đơn/1.000 đại lý/1.000 SKU | Chrome HTTP fixture: 205 ms từ điều hướng đến dữ liệu vẽ xong; có số đo/cảnh báo thật khi vượt mốc, tải lại đo riêng | Chưa nghiệm thu SLA MySQL/mạng thật. Phép đo BE và Chrome độc lập, không cộng thành một số end-to-end |
+| Ma trận quyền DB | DASHBOARD_VIEW hoặc ADMIN, thu hồi trả 403 với JWT cũ; không sửa backend | Menu/guard/API, thu hồi xóa dữ liệu và hủy/bỏ phản hồi trễ; VIEWER được cấp quyền dùng được, vai trò quản lý không tự cấp quyền | Test thu hồi khi đang tải overview/page và API 403; Tổng quan chung/Công nợ giữ quyền riêng, đại lý không vào màn nội bộ |
+| Tài liệu và hồi quy | 22/22 tests DashboardIntegrationTest (8) + RolePermissionConfigTest (14) qua | 198 unit JS, 12 test route, 16 kịch bản Chrome và 210 kiểm tra bố cục (35 trang × 6 kích thước) qua | Cập nhật FUNCTION_MAP/FRONTEND_ROUTES/API_DOCUMENTATION; xem ảnh desktop/mobile, rà cùng Antigravity rồi đối chiếu kết quả bằng kiểm thử |
 
-DB mới khởi tạo DASHBOARD_VIEW cho SALES_MANAGER và ADMIN. DB đã cấu hình giữ nguyên ma trận: ADMIN cần chủ động cấp quyền mới. Không dùng dữ liệu giả/localStorage. Các truy vấn là read-only với snapshot REPEATABLE_READ; không sửa dữ liệu nghiệp vụ. Bằng chứng hiệu năng trên H2 MySQL mode, chưa nghiệm thu MySQL hoặc UI thực tế.
+DB mới khởi tạo DASHBOARD_VIEW cho SALES_MANAGER và ADMIN. DB đã cấu hình giữ nguyên ma trận: ADMIN cần chủ động cấp quyền mới. Ứng dụng không dùng dữ liệu giả/browser storage nghiệp vụ; fixtures chỉ nằm trong tests. API read-only với snapshot REPEATABLE_READ; danh sách đọc lại khi đổi trang có thể mới hơn các KPI/biểu đồ đã chụp, UI ghi rõ và có Tải lại để đồng bộ. Không tạo/sửa/xóa dữ liệu DB nghiệp vụ.
 
-Lệnh kiểm thử: `mvn -q "-Dtest=DashboardIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,DebtRiskSecurityTest,DealerDebtServiceTest,DebtRiskIntegrationTest" test`. Sau khi sửa assertion locale, bộ DealerDebtServiceTest được chạy lại và 20/20 qua; kết quả cuối các bộ cộng lại 53/53 qua.
+Kiểm thử: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/operations-dashboard.browser.cjs`; `node tests/content-layout.browser.cjs`; `mvn -q "-Dtest=DashboardIntegrationTest,RolePermissionConfigTest" test`. Chrome dùng script thật/HTTP fixtures cách ly trên frontend cổng 5537, backend tests dùng H2 MySQL mode; chưa nghiệm thu dữ liệu MySQL đang chạy. Các kết quả 53 tests BE ở lần triển khai backend trước là lịch sử, không thay thế 22 tests đã chạy lại lượt này.
 
 ## S7-05 — Ghi nhận khoản thu theo tuyến (cập nhật 2026-10-24)
 

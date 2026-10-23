@@ -3617,7 +3617,9 @@ Bài đo tích hợp qua MockMvc HTTP/JWT/DB với **10.000 đơn, 1.000 đại 
 
 401 nếu chưa xác thực; 403 nếu thiếu hoặc bị thu hồi DASHBOARD_VIEW; 400 khi page/size/overdueLimit ngoài giới hạn hoặc không phải số nguyên. Không cung cấp endpoint ghi dữ liệu.
 
-Chỉ backend: dashboard/menu frontend hiện có chưa nối API S8-05 và chưa gắn guard DASHBOARD_VIEW. Màn hình quản trị ma trận hiện có tải catalog quyền động nên có thể nhận quyền mới; chưa nghiệm thu ẩn/hiện dashboard theo quyền cho tới khi frontend được nối.
+Frontend đã nối (24/10/2026): **Báo cáo → Dashboard điều hành**, `/reports/dashboard`, lối tắt ở Tổng quan → Công việc. Trang riêng dùng DASHBOARD_VIEW/ADMIN ở menu, guard và API; không khóa trang Tổng quan chung hoặc màn Hạn mức công nợ bằng quyền dashboard. Một request tổng quan gồm sáu KPI/hai biểu đồ/trang đầu đại lý; endpoint phân trang chỉ gọi khi đổi trang/cỡ trang. Thu hồi quyền xóa dữ liệu, bỏ phản hồi trễ và chuyển trang lỗi 403 trên phiên JWT hiện tại. Không đổi hợp đồng hoặc code backend.
+
+Chrome trang/script thật với HTTP fixtures riêng đo mở trang đến hiển thị **205 ms**; bài API chậm trên 2 giây hiển thị cảnh báo. Hồi quy backend 24/10 với 10.000 đơn/1.000 đại lý/1.000 SKU: tối đa **355 ms**. Hai phép đo độc lập, chưa chứng minh SLA end-to-end dưới 2 giây trên MySQL/mạng thật. Xem `docs/FRONTEND_ROUTES.md` và `status.md` để biết đầy đủ phạm vi kiểm thử.
 
 Kiểm thử: DashboardIntegrationTest (8 ca), RolePermissionConfigTest, PermissionRevocationTest, DebtRiskSecurityTest, DealerDebtServiceTest, DebtRiskIntegrationTest; tổng **53 tests passed**, 0 failure/error/skip ở kết quả cuối từng bộ. Assertion audit tiền cũ được sửa để không phụ thuộc dấu phân cách locale; không thay đổi nghiệp vụ thanh toán.
 

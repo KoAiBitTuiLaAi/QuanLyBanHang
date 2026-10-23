@@ -323,6 +323,15 @@ const MenuConfig = (() => {
       permission: "INVOICE_VIEW",
     },
     {
+      id: "operations-dashboard",
+      section: "Báo cáo",
+      label: "Dashboard điều hành",
+      icon: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 21v-7h7M17 21v-4h4"/>',
+      href: "/reports/dashboard",
+      roles: ALL_ROLES,
+      permission: "DASHBOARD_VIEW",
+    },
+    {
       id: "users",
       section: "Hệ thống",
       label: "Quản lý tài khoản",

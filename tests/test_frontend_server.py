@@ -111,6 +111,17 @@ class FrontendRoutingTest(unittest.TestCase):
         self.assertEqual(308, status)
         self.assertEqual("/warehouses?warehouseId=1", headers["Location"])
 
+    def test_s805_dashboard_route_and_legacy_url(self):
+        status, _, body = self.get('/reports/dashboard')
+        self.assertEqual(200, status)
+        html = body.decode('utf-8')
+        for text in ['Dashboard điều hành', 'ops-dealers', 'operations-dashboard.js', 'app-shell.js', 'app-navigation.css']:
+            self.assertIn(text, html)
+        self.assertEqual(200, self.get('/reports/dashboard', method='HEAD')[0])
+        status, headers, _ = self.get('/operations-dashboard.html')
+        self.assertEqual(308, status)
+        self.assertEqual('/reports/dashboard', headers['Location'])
+
     def test_s507_transfer_route(self):
         status, _, body = self.get('/warehouse/transfers')
         self.assertEqual(status, 200)
