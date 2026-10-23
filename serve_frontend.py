@@ -37,6 +37,7 @@ ROUTES = {
     "/warehouse/transfers": "warehouse/transfers.html",
     "/warehouse/picking": "warehouse/picking.html",
     "/warehouse/order-shipments": "warehouse/order-shipments.html",
+    "/warehouse/dealer-returns": "warehouse/dealer-returns.html",
     "/warehouses": "warehouses.html",
     "/admin/users": "admin/users.html",
     "/admin/audit-logs": "admin/audit-logs.html",

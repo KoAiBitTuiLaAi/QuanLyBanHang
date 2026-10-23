@@ -8,6 +8,17 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S8-01 returns follow existing read matrix, including IMPORT-only, with no role grant', () => {
+  for (const role of ['ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_MANAGER','ROLE_WAREHOUSE_STAFF']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('dealer-returns'));
+    assert.ok(!ids({roles:[role],permissions:['ORDER_CANCEL']}).includes('dealer-returns'));
+    for (const permission of ['ORDER_VIEW','ORDER_CREATE','INVOICE_VIEW','WAREHOUSE_VIEW','WAREHOUSE_APPROVE','WAREHOUSE_IMPORT'])
+      assert.ok(ids({roles:[role],permissions:[permission]}).includes('dealer-returns'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('dealer-returns'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/warehouse/dealer-returns')).id,'dealer-returns');
+});
+
 test('S7-05 menu follows each collection permission and revocations, not finance roles', () => {
   for (const role of ['ROLE_SALES','ROLE_ACCOUNTANT','ROLE_VIEWER','ROLE_WAREHOUSE_STAFF']) {
     assert.ok(!ids({roles:[role],permissions:[]}).includes('cash-collections'));

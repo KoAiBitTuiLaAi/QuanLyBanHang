@@ -911,3 +911,18 @@ Branch `feature/S8-10/xuat-so-chi-tiet-cong-no` trong repo GitHub Desktop `C:\Us
 Không sửa dữ liệu tài chính hoặc hành vi API tổng hợp cũ. Sổ giữ số dư có dấu và bao gồm điều chỉnh; API tổng hợp cũ trên branch chưa trừ/cộng điều chỉnh và có cắt âm nên số hiển thị có thể khác sổ. Dữ liệu xuất là chứng từ hiện có/trạng thái hiện tại, không tái dựng lịch sử đã xóa. Mặc định tối đa 20.000 dòng kỳ, vượt trả 400 chứ không xuất thiếu; SUM đầu kỳ không bị cắt theo giới hạn dòng kỳ.
 
 Lệnh kiểm thử: `mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test`.
+
+## S8-01 — Frontend trả hàng đại lý (2026-10-24)
+
+Nhánh `feature/S8-01-frontend-nhap_phieu_tra_hang_tu_dai_ly_va_nhap_lai_kho`. Phạm vi **chỉ frontend**, giữ nguyên toàn bộ `backend/`; backend thuộc thành viên khác. Vị trí: **Kho hàng → Trả hàng đại lý**, `/warehouse/dealer-returns`.
+
+| Yêu cầu | Backend hiện có | Frontend | Kết nối / kiểm chứng |
+|---|---|---|---|
+| Hóa đơn gốc, dòng trả, lý do | Dùng API `/dealer-returns/options`, `/eligible-invoices`, chi tiết nguồn và POST tạo sẵn có | Đã nối tìm/phân trang hóa đơn, chọn/tách nhiều dòng trả, bắt buộc lý do; OTHER cần nội dung | Chỉ gửi invoiceItemId, số trả theo đơn vị hóa đơn, lý do, tình trạng/lô/kho/ghi chú; không gửi tồn/trạng thái/giá do client tự tính |
+| Không trả vượt số đã giao trừ phần trả trước | Dùng `returnableQuantity`, đã tính cả PENDING + CONFIRMED | Đã kiểm tra số dương/4 số thập phân bằng BigInt, cộng dồn mọi dòng cùng invoiceItemId; có nút cập nhật số còn được trả | 400 giữ bản nháp cho sửa; không âm thầm xóa số người dùng nhập khi kiểm tra lại |
+| Lô đúng và hàng hỏng vào kho lỗi | Dùng availableLots và hai danh mục kho từ options | Chọn lô, giữ ngày gốc; chỉ nhập số lô/HSD thực tế khi thiếu dữ liệu, không tự sinh; hàng hỏng bắt buộc kho lỗi | Không tự tạo kho lỗi, không lấy tồn hiện tại làm trần hàng nhập trả; kiểm chứng lô xuất gốc/transaction thuộc backend |
+| Chỉ xác nhận nhận hàng mới cộng tồn | Dùng POST confirm và cờ inventoryAdded, không sửa BE | Có chi tiết từng dòng/lô/kho; nhận đủ + xác nhận; cờ inventoryAdded từ API là nguồn hiển thị tồn | WAREHOUSE_APPROVE + options.canConfirm + detail.canConfirm + PENDING; chống xác nhận lặp; hủy riêng có lý do, chỉ cho PENDING |
+| Ma trận quyền và dữ liệu thật | Theo các quyền/DTO sẵn có; không sửa role/permission backend | Menu/trang/nút theo quyền, cờ server có hiệu lực bổ sung; cấp/thu hồi xóa nháp/chi tiết và bỏ phản hồi cũ | IMPORT đơn lẻ không gọi hóa đơn nguồn; không role fallback, không dữ liệu demo/bản nháp trong browser storage |
+| Giao diện và tài liệu | Không chỉnh backend/API docs | Dùng chung shell/gutter, hỗ trợ desktop/tablet/mobile; cập nhật FUNCTION_MAP và FRONTEND_ROUTES | 190 test Node, 11 test route, 14 kịch bản Chrome và 204 kiểm tra bố cục / 34 trang qua; HTTP fixtures cách ly, không ghi DB nghiệp vụ, chưa nghiệm thu MySQL thật |
+
+**Lưu ý bàn giao backend:** bộ `DealerReturnSecurityTest` hiện có chạy 6 ca, 3 qua/3 thất bại. Các ca `admin_AlwaysAllowed`, `createReturn_WithOrderCreatePermission_Returns200`, `createReturn_WithoutOrderCreatePermission_Returns403` nhận HTTP 400 (`HttpMessageNotReadableException`) thay vì 200/403 khi gửi JSON do test dựng từ DTO. Không sửa backend hoặc bộ test để ép xanh; cần thành viên backend kiểm tra. Không tuyên bố toàn bộ S8-01 đã nghiệm thu end-to-end.

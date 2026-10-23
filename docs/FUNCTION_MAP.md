@@ -87,9 +87,9 @@
 - S7-05: Tài chính → Thu tiền theo tuyến → Ghi khoản thu kèm biên lai, xem chi tiết, xác nhận nhận tiền, đối chiếu theo nhân viên/ngày thu.
 - S7-07: Một phần: Kinh doanh → Cổng đại lý → Xem giỏ hàng → Tổng kết & Công nợ; chưa có danh sách/tải hoá đơn cho đại lý.
 
-## Phần S8 đã có trên develop
+## Sprint 8 — Trả hàng và báo cáo
 
-- S8-01: Chỉ backend → `/api/dealer-returns` → Chọn hoá đơn gốc/dòng hàng/lý do lập phiếu trả hàng đại lý, nhập lại đúng lô hoặc kho hàng lỗi, Quản lý kho xác nhận nhận hàng mới cộng tồn; chưa có màn hình/menu.
+- S8-01: Kho hàng → Trả hàng đại lý → Lập phiếu từ hóa đơn gốc, chọn dòng/số lượng/lý do/lô và kho nhận, xem chi tiết, xác nhận nhập lại kho hoặc hủy phiếu chờ.
 - S8-03: Một phần: Kho hàng → Sổ cái kho → Chi tiết phiếu nhập đã xác nhận → Lập phiếu điều chỉnh tăng/giảm kèm lý do; chưa có luồng lập/duyệt hai người riêng.
 - S8-04: Chỉ backend → `/api/sales-targets` (đặt/sửa/khóa chỉ tiêu tháng theo nhân viên và khu vực, sửa kỳ đã khóa kèm lý do và nhật ký), `/api/sales-targets/my-progress` (nhân viên xem tiến độ thực tế giữa tháng), `/api/sales-targets/summary` (tổng hợp tiến độ); tự động khóa chỉ tiêu đã qua kỳ.
 - S8-05: Một phần: Tổng quan → Cảnh báo tồn dưới mức tối thiểu, Công việc; chưa có dashboard đầy đủ KPI/biểu đồ doanh số theo backlog.

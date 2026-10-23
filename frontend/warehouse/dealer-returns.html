@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trả hàng đại lý | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/dealer-returns.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content dealer-returns-page">
+  <header class="dr-heading"><div><h1>Trả hàng đại lý</h1><p>Lập phiếu từ hóa đơn gốc. Chỉ cộng tồn sau khi kho xác nhận đã nhận hàng trả.</p></div><div class="dr-actions"><button id="dr-reload" class="btn btn--secondary" type="button">Tải lại</button><button id="dr-new" class="btn btn--primary" type="button" hidden>Lập phiếu trả</button></div></header>
+  <p id="dr-error" class="dr-error" role="alert" hidden></p><p id="dr-success" class="dr-success" role="status" hidden></p>
+  <section id="dr-workspace" hidden>
+    <p id="dr-options-error" class="dr-error" role="alert" hidden></p>
+    <section id="dr-create" class="dr-panel" hidden aria-labelledby="dr-create-title">
+      <header class="dr-heading"><div><h2 id="dr-create-title" tabindex="-1">Lập phiếu trả hàng</h2><p>Phiếu mới ở trạng thái Chờ kho xác nhận, chưa làm tăng tồn kho.</p></div><button id="dr-create-close" class="btn btn--secondary" type="button">Đóng</button></header>
+      <p id="dr-create-error" class="dr-error" role="alert" hidden></p>
+      <form id="dr-invoice-filter" class="dr-form"><label>Tìm hóa đơn gốc<input id="dr-invoice-keyword" type="search" maxlength="150" placeholder="Số hóa đơn, mã hoặc tên đại lý"></label><label>Mã đại lý (tùy chọn)<input id="dr-invoice-dealer" inputmode="numeric" pattern="[1-9][0-9]*" placeholder="Để trống xem các hóa đơn được phép"></label><button id="dr-invoice-search" class="btn btn--secondary" type="submit">Tìm hóa đơn</button></form>
+      <div class="dr-scroll" role="region" aria-label="Chọn hóa đơn gốc" tabindex="0"><table><thead><tr><th>Hóa đơn</th><th>Đại lý</th><th>Kho gốc</th><th>Còn được trả</th><th>Thao tác</th></tr></thead><tbody id="dr-invoice-list"></tbody></table></div>
+      <div class="dr-actions dr-pagination"><button id="dr-invoice-prev" class="btn btn--secondary" type="button">Hóa đơn trước</button><span id="dr-invoice-page" role="status"></span><button id="dr-invoice-next" class="btn btn--secondary" type="button">Hóa đơn sau</button></div>
+      <section id="dr-editor" hidden aria-labelledby="dr-invoice-title">
+        <header class="dr-heading"><h3 id="dr-invoice-title" tabindex="-1"></h3><button id="dr-invoice-refresh" class="btn btn--secondary" type="button">Cập nhật số còn được trả</button></header>
+        <p class="dr-notice">Số còn được trả đã trừ cả phiếu chờ và phiếu đã xác nhận. Số lượng nhập theo đơn vị trên hóa đơn, tối đa 4 số thập phân. Có thể thêm nhiều dòng cùng sản phẩm để tách lô hoặc hàng tốt/hỏng.</p>
+        <div id="dr-source-lines"></div>
+        <form id="dr-create-form">
+          <div class="dr-form"><label>Kho thường nhận hàng tốt<select id="dr-warehouse" required><option value="">Chọn kho thường</option></select></label><label>Ghi chú phiếu<textarea id="dr-note" maxlength="500" rows="2"></textarea></label></div>
+          <h3>Dòng hàng trả</h3><p id="dr-empty-draft" class="dr-muted">Bấm Thêm dòng trả tại sản phẩm cần trả ở bảng trên.</p><div id="dr-draft-lines"></div>
+          <p id="dr-draft-summary" class="dr-muted" role="status"></p>
+          <label class="dr-check"><input id="dr-create-check" type="checkbox" required>Tôi đã đối chiếu hàng trả, số lượng, lý do, lô và kho nhận. Phiếu này chưa cộng tồn kho.</label>
+          <button id="dr-save" class="btn btn--primary" type="submit" disabled>Tạo phiếu — Chờ kho xác nhận</button>
+        </form>
+      </section>
+    </section>
+    <section class="dr-panel" aria-labelledby="dr-list-title">
+      <form id="dr-filter" class="dr-form" role="search">
+        <label>Từ khóa<input id="dr-keyword" type="search" maxlength="150" placeholder="Mã phiếu, hóa đơn, đại lý"></label><label>Trạng thái<select id="dr-status"><option value="">Tất cả trạng thái</option></select></label><label>Kho nhận<select id="dr-filter-warehouse"><option value="">Tất cả kho</option></select></label>
+        <label>Từ ngày lập<input id="dr-from" type="date"></label><label>Đến ngày lập<input id="dr-to" type="date"></label><button id="dr-filter-save" class="btn btn--secondary" type="submit">Lọc phiếu trả</button>
+      </form>
+      <header class="dr-heading"><h2 id="dr-list-title">Phiếu trả hàng</h2><span id="dr-count" role="status"></span></header>
+      <div class="dr-scroll" role="region" aria-label="Danh sách phiếu trả hàng" tabindex="0"><table><thead><tr><th>Mã phiếu / Ngày lập</th><th>Hóa đơn / Đại lý</th><th>Kho nhận</th><th>Trạng thái / Tồn kho</th><th>Thao tác</th></tr></thead><tbody id="dr-list"></tbody></table></div>
+      <div class="dr-actions dr-pagination"><button id="dr-prev" class="btn btn--secondary" type="button">Trước</button><span id="dr-page" role="status"></span><button id="dr-next" class="btn btn--secondary" type="button">Sau</button></div>
+    </section>
+    <section id="dr-detail" class="dr-panel" hidden aria-labelledby="dr-detail-title">
+      <header class="dr-heading"><h2 id="dr-detail-title" tabindex="-1">Chi tiết phiếu trả</h2><button id="dr-detail-close" class="btn btn--secondary" type="button">Đóng chi tiết</button></header>
+      <p id="dr-detail-error" class="dr-error" role="alert" hidden></p><div id="dr-detail-body"></div>
+      <div class="dr-actions"><button id="dr-view-invoice" class="btn btn--secondary" type="button" hidden>Xem hóa đơn gốc</button><button id="dr-confirm-open" class="btn btn--primary" type="button" hidden>Xác nhận nhận hàng</button><button id="dr-cancel-open" class="btn btn--secondary" type="button" hidden>Hủy phiếu</button></div>
+      <form id="dr-confirm-form" hidden>
+        <h3>Xác nhận nhận hàng trả và nhập kho</h3><p class="dr-notice">Kiểm tra thực nhận, lô và từng kho đích trước khi xác nhận. Kho sẽ được cộng tồn theo phiếu đã lập; không sửa số lượng tại bước này.</p>
+        <div class="dr-form"><label id="dr-confirm-warehouse-label">Đổi kho hàng lỗi (tùy chọn)<select id="dr-confirm-warehouse"><option value="">Giữ kho hàng lỗi trên phiếu</option></select></label><label>Ghi chú nhận hàng<textarea id="dr-confirm-note" maxlength="500" rows="2"></textarea></label></div>
+        <label class="dr-check"><input id="dr-confirm-check" type="checkbox" required>Tôi đã nhận đủ hàng, đối chiếu lô và kho đích theo phiếu.</label><div class="dr-actions"><button id="dr-confirm-save" class="btn btn--primary" type="submit">Xác nhận nhập lại kho</button><button id="dr-confirm-close" class="btn btn--secondary" type="button">Đóng xác nhận</button></div>
+      </form>
+      <form id="dr-cancel-form" hidden><h3>Hủy phiếu chưa nhập kho</h3><div class="dr-form"><label class="dr-wide">Lý do hủy bắt buộc<textarea id="dr-cancel-reason" rows="2" maxlength="500" required></textarea></label></div><label class="dr-check"><input id="dr-cancel-check" type="checkbox" required>Tôi xác nhận hủy phiếu trả chưa cộng tồn.</label><div class="dr-actions"><button id="dr-cancel-save" class="btn btn--primary" type="submit">Xác nhận hủy phiếu</button><button id="dr-cancel-close" class="btn btn--secondary" type="button">Đóng hủy</button></div></form>
+    </section>
+    <section id="dr-source" class="dr-panel" hidden aria-labelledby="dr-source-title"><header class="dr-heading"><h2 id="dr-source-title" tabindex="-1">Hóa đơn gốc</h2><button id="dr-source-close" class="btn btn--secondary" type="button">Đóng hóa đơn</button></header><p id="dr-source-error" class="dr-error" role="alert" hidden></p><div id="dr-source-body"></div></section>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/dealer-return-utils.js"></script><script src="/js/dealer-returns.js"></script>
+</body></html>

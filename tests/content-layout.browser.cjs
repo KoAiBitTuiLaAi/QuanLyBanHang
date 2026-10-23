@@ -13,6 +13,7 @@ const cases = [
   '/admin/users', '/admin/audit-logs', '/warehouses', '/warehouse/inventory', '/warehouse/transfers', '/warehouse/minimums',
   '/warehouse/units?tab=stocktake', '/warehouse/lots', '/warehouse/stock-card',
   '/warehouse/picking', '/warehouse/delivery', '/warehouse/order-shipments', '/warehouse/delivery-trips',
+  '/warehouse/dealer-returns',
 ];
 const user = { id: 1, username: 'admin', fullName: 'Quản trị viên', email: 'admin@example.invalid',
   phone: '0900000000', roles: ['ROLE_ADMIN'], permissions: [], warehouses: [], territories: [] };
@@ -41,6 +42,8 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       else if (endpoint === '/invoices') data = {content:[],totalPages:0,totalElements:0};
       else if (endpoint === '/finance/cash-collections') data = {content:[],totalPages:0,totalElements:0};
       else if (endpoint === '/finance/cash-collections/reconciliation') data = [];
+      else if (endpoint === '/dealer-returns') data = {content:[],totalPages:0,totalElements:0};
+      else if (endpoint === '/dealer-returns/options') data = {warehouses:[],defectiveWarehouses:[],returnReasons:[],statuses:[],canCreate:true,canConfirm:true};
       else if (['/users/profile', '/auth/me'].includes(endpoint)) data = user;
       else if (endpoint === '/admin/assignment-options') data = { roles: user.roles, warehouses: [], territories: [], dealers: [] };
       else if (['/admin/users', '/admin/audit-logs'].includes(endpoint)) data = { content: [], totalElements: 0, totalPages: 1, number: 0, first: true, last: true };
