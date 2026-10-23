@@ -88,6 +88,7 @@
 
 ## Phần S8 đã có trên develop
 
+- S8-02: Tài chính → Điều chỉnh công nợ → Lập chứng từ từ phiếu trả hàng, chọn dòng/SL trả, giảm trừ theo giá HĐ gốc, xem chi tiết và tải PDF.
 - S8-03: Một phần: Kho hàng → Sổ cái kho → Chi tiết phiếu nhập đã xác nhận → Lập phiếu điều chỉnh tăng/giảm kèm lý do; chưa có luồng lập/duyệt hai người riêng.
 - S8-05: Một phần: Tổng quan → Cảnh báo tồn dưới mức tối thiểu, Công việc; chưa có dashboard đầy đủ KPI/biểu đồ doanh số theo backlog.
 - S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel (ba cột tồn); tên tệp hiện là `So-ton-kho.xlsx`, chưa kèm mã kho/ngày.

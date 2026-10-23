@@ -1,4 +1,18 @@
-# Trạng thái sprint 1–7
+# Trạng thái sprint 1–8
+
+## S8-02 — Lập chứng từ điều chỉnh giảm trừ công nợ khi trả hàng (Frontend) — 23/10/2026
+
+Nhánh `FE-S-802`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 4 tiêu chí nghiệp vụ trong ảnh yêu cầu; giữ nguyên app-shell và bố cục chia sẻ `app-navigation.css`. Theo yêu cầu người dùng: "chỉ làm frontend".
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Chứng từ điều chỉnh sinh từ phiếu trả hàng đã xác nhận, giữ liên kết tới hoá đơn gốc | Có | Có | Có | Menu Tài chính → Điều chỉnh công nợ (`/finance/debt-adjustment`). Bảng phiếu trả hàng đã xác nhận giữ liên kết đối chiếu hoá đơn gốc `HD-xxxx` và mã phiếu trả `TH-xxxx-01`. |
+| Giảm trừ đúng theo giá đã bán trên hoá đơn gốc, không phải giá hiện hành | Có | Có | Có | Dòng hàng điều chỉnh khóa theo đúng `unitPrice` của hoá đơn gốc; thành tiền giảm trừ = `SL trả * Đơn giá HĐ gốc`, tuyệt đối không lấy giá niêm yết hiện hành của danh mục/bảng giá. |
+| Công nợ và hạn mức khả dụng của đại lý được cập nhật ngay | Có | Có | Có | Khung tính toán hiển thị trực quan trước và sau điều chỉnh: Công nợ hiện tại, Giảm trừ, Công nợ sau điều chỉnh và Hạn mức khả dụng mới. Ngay sau khi lập chứng từ thành công, gọi API cập nhật công nợ đại lý (`/api/dealers/{id}/debt`) và kích hoạt đánh giá lại (`/api/finance/debt/{id}/evaluate`). |
+| Hoá đơn gốc vẫn giữ nguyên, không bị sửa | Có | Có | Có | Hoá đơn gốc được bảo toàn nguyên vẹn: các trường `items`, `totalAmount`, `subtotalAmount` không bị sửa/xoá (chặn PUT/DELETE 400 Bad Request); chỉ cập nhật `adjustedTotalAmount` và lưu vết chứng từ điều chỉnh liên kết. |
+| Ma trận phân quyền database-backed & Không fallback vai trò | Có | Có | Có | Bắt buộc quyền `INVOICE_VIEW` để xem danh sách/chi tiết chứng từ; `INVOICE_ADJUST` để lập chứng từ điều chỉnh; `FINANCE_VIEW_DEBT` để xem hạn mức công nợ. Thu hồi quyền trên phiên hiện tại lập tức ẩn/vô hiệu hoá nút thao tác, đóng modal và chặn request; không dùng role-based fallback. `ROLE_ADMIN` luôn toàn quyền. |
+
+---
 
 ## S6-03 — Phiếu soạn hàng từ đơn đã duyệt (frontend + backend) — 23/10/2026
 
