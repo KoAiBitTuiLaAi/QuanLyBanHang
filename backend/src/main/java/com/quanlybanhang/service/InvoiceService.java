@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Service Quản lý Hóa đơn bán hàng và Chứng từ điều chỉnh (S7-01).
+ * Service Quản lý Hóa đơn bán hàng và Chứng từ điều chỉnh (S7-01, S7-07).
  */
 public interface InvoiceService {
 
@@ -34,6 +34,22 @@ public interface InvoiceService {
      * Tìm kiếm và phân trang danh sách hóa đơn.
      */
     Page<InvoiceResponse> search(Long dealerId, InvoiceStatus status, LocalDate startDate, LocalDate endDate, String keyword, int page, int size);
+
+    /**
+     * S7-07: Đại lý xem và lọc danh sách hóa đơn của chính mình kèm số tiền, hạn thanh toán, trạng thái.
+     */
+    Page<InvoiceResponse> getDealerInvoices(Long dealerId, InvoiceStatus status, String paymentStatus,
+                                            LocalDate startDate, LocalDate endDate, String keyword, int page, int size);
+
+    /**
+     * S7-07: Lấy toàn bộ danh sách hóa đơn của một đại lý kèm phân bổ thanh toán FIFO và hạn thanh toán.
+     */
+    List<InvoiceResponse> getDealerInvoiceList(Long dealerId);
+
+    /**
+     * S7-07: Đại lý xem chi tiết một hóa đơn của chính mình (kiểm tra quyền sở hữu cấp dòng dữ liệu).
+     */
+    InvoiceResponse getDealerInvoiceById(Long dealerId, Long invoiceId);
 
     /**
      * Thử chỉnh sửa hóa đơn (luôn bị từ chối với 400 Bad Request theo tiêu chí S7-01).
@@ -65,4 +81,3 @@ public interface InvoiceService {
      */
     List<EligibleDealerResponse> getDealersWithEligibleOrders();
 }
-

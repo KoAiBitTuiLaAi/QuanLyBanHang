@@ -1,0 +1,9 @@
+/* Internal layout only; outer frame is shared app-navigation.css. */
+.shipment-page #ship-detail { scroll-margin-top: 100px; }
+.shipment-page .ship-line-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; margin-top: 14px; }
+.shipment-page .ship-receipt { overflow-wrap: anywhere; }
+.shipment-page .ship-receipt ul { padding-left: 20px; line-height: 1.7; }
+.shipment-page .ship-totals { color: var(--ink-600); line-height: 1.7; }
+.shipment-page #ship-confirm { margin-block: 12px; }
+.shipment-page #ship-note { margin-block: 7px; }
+@media (max-width: 640px) { .shipment-page #ship-confirm { width: 100%; } }

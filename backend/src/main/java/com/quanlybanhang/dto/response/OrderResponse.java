@@ -38,6 +38,7 @@ public class OrderResponse {
     private String priceListCode;
     private String status;
     private String statusDisplayName;
+    private Boolean backordered;
     private Boolean canCancel;
     private Boolean isExported;
     private Boolean inventoryReserved;

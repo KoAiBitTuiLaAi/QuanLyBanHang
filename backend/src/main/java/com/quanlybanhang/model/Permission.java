@@ -53,6 +53,9 @@ public enum Permission {
     FINANCE_VIEW_COST_PRICE("Xem giá vốn"),
     FINANCE_VIEW_PROFIT_MARGIN("Xem biên lợi nhuận"),
     FINANCE_VIEW_DEBT("Xem công nợ"),
+    COLLECTION_CREATE("Ghi nhận khoản thu"),
+    COLLECTION_CONFIRM("Xác nhận nhận tiền khoản thu"),
+    COLLECTION_RECONCILE("Đối chiếu khoản thu nhân viên"),
     FINANCE_MANAGE("Quản lý công nợ"),
 
     // ── Hóa đơn bán hàng (S7-01) ──

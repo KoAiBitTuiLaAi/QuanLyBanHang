@@ -360,5 +360,54 @@ class InvoiceIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(issueReq)))
                 .andExpect(status().isForbidden());
+
+        rolePermissionConfig.updateRolePermissions(ERole.ROLE_ACCOUNTANT, EnumSet.of(
+                Permission.INVOICE_VIEW, Permission.INVOICE_CREATE));
+        mockMvc.perform(post("/api/invoices/preview")
+                        .header("Authorization", "Bearer " + accountantToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(issueReq)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void viewAndAdjustGrantRevokeApplyToSameSingleRoleToken() throws Exception {
+        CreateInvoiceRequest issueReq = CreateInvoiceRequest.builder()
+                .dealerId(dealer.getId()).orderIds(List.of(order1.getId())).build();
+        MvcResult issued = mockMvc.perform(post("/api/invoices")
+                        .header("Authorization", "Bearer " + accountantToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(issueReq)))
+                .andExpect(status().isOk()).andReturn();
+        long invoiceId = objectMapper.readTree(issued.getResponse().getContentAsString())
+                .path("data").path("id").asLong();
+
+        rolePermissionConfig.updateRolePermissions(ERole.ROLE_ACCOUNTANT, EnumSet.of(
+                Permission.INVOICE_CREATE, Permission.INVOICE_ADJUST));
+        mockMvc.perform(get("/api/invoices/" + invoiceId)
+                        .header("Authorization", "Bearer " + accountantToken))
+                .andExpect(status().isForbidden());
+        rolePermissionConfig.updateRolePermissions(ERole.ROLE_ACCOUNTANT, EnumSet.of(
+                Permission.INVOICE_VIEW, Permission.INVOICE_CREATE));
+        mockMvc.perform(get("/api/invoices/" + invoiceId)
+                        .header("Authorization", "Bearer " + accountantToken))
+                .andExpect(status().isOk());
+
+        CreateInvoiceAdjustmentRequest adjustment = CreateInvoiceAdjustmentRequest.builder()
+                .adjustmentType(InvoiceAdjustmentType.INCREASE)
+                .adjustmentReason("Kiểm thử cấp/thu hồi quyền trên cùng JWT")
+                .adjustmentAmount(new BigDecimal("1000")).build();
+        mockMvc.perform(post("/api/invoices/" + invoiceId + "/adjustments")
+                        .header("Authorization", "Bearer " + accountantToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustment)))
+                .andExpect(status().isForbidden());
+        rolePermissionConfig.updateRolePermissions(ERole.ROLE_ACCOUNTANT, EnumSet.of(
+                Permission.INVOICE_VIEW, Permission.INVOICE_CREATE, Permission.INVOICE_ADJUST));
+        mockMvc.perform(post("/api/invoices/" + invoiceId + "/adjustments")
+                        .header("Authorization", "Bearer " + accountantToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustment)))
+                .andExpect(status().isOk());
     }
 }

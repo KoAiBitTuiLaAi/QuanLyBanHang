@@ -11,3 +11,12 @@ Every feature must enforce permissions from the database-backed permission matri
 - Frontend permissions must stay synchronized with the backend; hiding a menu alone is insufficient.
 - Verify both cases: granting permission enables the feature; revoking it makes the API return 403 and hides or disables the frontend action.
 - Test with a non-admin account and ensure another assigned role is not granting the permission being tested.
+## Mandatory feature location updates
+- Use `docs/FUNCTION_MAP.md` as the shared feature location guide for all stories from S1 to S8.
+- Whenever adding a feature or changing a menu/tab/button location, update this file on the same working branch and commit it together with the code.
+- Keep one concise line per story, using the actual Vietnamese UI labels. Example:
+  `S6-03: Kho hàng → Phiếu soạn hàng → Tạo lượt soạn, lưu thực soạn, hoàn tất.`
+- Sort entries numerically by sprint, then story: S1-01, S1-02, ..., S8-10. Insert entries into the correct sprint section, not at the end of the file.
+- Update existing entries instead of creating duplicate story IDs.
+- Document only locations and actions implemented in the code. Use `Chỉ backend` when no UI exists, `Một phần` for partial implementation, and describe the trigger for automatic features.
+- When resolving conflicts, preserve other stories and check for duplicate IDs and incorrect ordering before committing.

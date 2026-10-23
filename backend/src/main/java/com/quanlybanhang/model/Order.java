@@ -33,6 +33,16 @@ public class Order {
     @Column(nullable = false, columnDefinition = "bigint default 0")
     private Long version;
 
+    /** S6-05: outstanding quantities after an actual, immutable shipment. */
+    @Column(name = "backordered", columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean backordered = false;
+
+    /** Makes every shipment increment the order version, even repeated partial exports. */
+    @Column(name = "shipment_sequence", columnDefinition = "bigint default 0")
+    @Builder.Default
+    private Long shipmentSequence = 0L;
+
     @Column(name = "order_code", nullable = false, length = 50, unique = true)
     private String orderCode;
 
