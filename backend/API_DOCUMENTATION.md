@@ -1,8 +1,51 @@
-# SaleStock API — Sprint 1–5
+# SaleStock API — Sprint 1–7
 
 Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
+
+## S6-04 — Gợi ý FEFO và giao diện xuất theo lô (23/10/2026)
+
+Giao diện **Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO**, `/warehouse/lots?tab=fefo`. Dùng các API hiện có, không đổi schema:
+
+| Method | Endpoint (sau `/api`) | Hợp đồng hiện tại |
+|---|---|---|
+| GET | `/warehouse/lots/options` | Kho đang hoạt động trong phạm vi, SKU/đơn vị cơ sở, `canExport`; VIEW hoặc MANAGE, ADMIN toàn quyền |
+| GET | `/warehouse/export/suggest-lot?warehouseId=1&productId=10&quantity=10&unit=lon` | VIEW hoặc EXPORT; lượng >0, tối đa 11 chữ số nguyên/4 số lẻ. Trả kho/SKU/lượng/đơn vị, `suggestedLot`, `availableLots`, `message`, `hasSufficientStock` |
+| POST | `/warehouse/export/suggest-lots` | Quyền tương tự GET; danh sách yêu cầu gợi ý, không ghi tồn |
+| POST | `/warehouse/export` | EXPORT; `{warehouseId,items:[{productId,quantity,unit,lotNumber,suggestedLotNumber?,overrideReason?}]}`. Server tự sinh mã phiếu, kiểm quyền/scope, đọc lại tồn/lô và ghi phiếu+tồn+audit cùng giao dịch |
+
+- `suggestedLot` chỉ là **một lô còn hạn, có HSD, đủ lượng**, sắp HSD gần nhất, sau đó NSX/ID. HSD hôm nay vẫn còn hạn. Không lấy lô quá hạn/thiếu HSD làm mặc định, kể cả ADMIN. `hasSufficientStock` là có một lô hợp lệ đủ lượng, không phải tổng tồn chia nhiều lô. `availableLots` vẫn trả các lô có tồn để giải thích trường hợp bị chặn; UI không cho chọn quá hạn/thiếu HSD trong tab FEFO.
+- SKU legacy tắt `manageLot` nhưng còn tồn theo lô vẫn được gợi ý theo lô để khớp quy tắc xuất S6-01. SKU không quản lý và không có tồn lô trả danh sách rỗng/thông báo; FEFO không thay luồng xuất hàng không quản lý lô.
+- Server bỏ qua gợi ý do client giả mạo và tính lại dưới khóa khi xuất. Khác lô gợi ý hiện tại bắt buộc lý do; không tự đổi lô người dùng đã chọn khi tồn thay đổi. Không đủ tồn lô hoặc tồn khả dụng (thực tế trừ giữ chỗ) thì 400 và rollback toàn bộ. Lô quá hạn chỉ có thể xuất qua cơ chế ghi đè S6-01 có quyền, xác nhận và lý do; không bỏ kiểm tra này.
+- Xuất lấy khóa tồn vật lý trước, rồi khóa các lô cùng kho/SKU theo ID bằng current read để hai yêu cầu đồng thời không dùng chung số dư lô cũ. Chỉ lô đã chọn bị trừ; không giải phóng giữ chỗ của đơn khác. Thu hồi quyền trả 403 trên JWT hiện tại, không cần đăng nhập lại.
+
+## S6-03 — Phiếu soạn hàng, frontend + backend (23/10/2026)
+
+Trang `/warehouse/picking`, menu **Kho hàng → Phiếu soạn hàng**. Quyền đọc: `WAREHOUSE_VIEW` **hoặc** `WAREHOUSE_EXPORT`; quyền tạo/lưu dòng/hoàn tất/hủy: `WAREHOUSE_EXPORT`. `ROLE_ADMIN` luôn được phép; người dùng khác chỉ thao tác kho được gán, kể cả khi role không phải Thủ kho. Không có kho được gán không đồng nghĩa truy cập toàn bộ kho. Thu hồi quyền có hiệu lực với JWT hiện tại ở request tiếp theo; UI đóng/xóa form và vô hiệu phản hồi trễ khi nhận thay đổi quyền.
+
+| Method | Endpoint (sau `/api`) | Hợp đồng |
+|---|---|---|
+| GET | `/warehouse/picking-batches/options` | Kho đang dùng trong phạm vi, nhãn trạng thái, `canCreate`, `maxOrders=100`, `maxLines=500`, `quantityScale=4`, mô tả tuyến |
+| GET | `/warehouse/picking-batches/eligible-orders?warehouseId=1&page=0&size=20&keyword=DH` | Chỉ đơn cùng kho, đã duyệt/đang soạn (`RECORDED/APPROVED/PICKING/PROCESSING`), còn giữ chỗ, chưa hết hạn và chưa có lượt soạn chưa hủy. Trả `Page<EligibleOrder>` không có giá/công nợ |
+| GET | `/warehouse/picking-batches?warehouseId=1&status=IN_PROGRESS&keyword=PSH&page=0&size=20` | `Page<Summary>`, lọc trong phạm vi kho; `size` 1–100, `page` không âm |
+| GET | `/warehouse/picking-batches/{id}` | `Detail{summary,note,cancelReason,completedAt,items,canEdit,canComplete,canCancel,blockedReason}` |
+| POST | `/warehouse/picking-batches` | `{warehouseId,orderIds:[101,102],code?:"PSH-001",note?:"..."}`; mã trống tự sinh; 1–100 đơn không trùng, cùng kho, tối đa 500 dòng |
+| PUT | `/warehouse/picking-batches/{id}/items/{itemId}` | `{version:0,pickedQuantity:1.5,checked:true,shortageReason:"Thiếu tại kệ"}`. `version` là phiên bản phiếu đang xem; số lượng theo đơn vị đóng băng của dòng đơn gốc |
+| POST | `/warehouse/picking-batches/{id}/complete` | `{version:1}`; mọi dòng đã lưu/đánh dấu, số thực soạn hợp lệ; hoàn tất rồi không sửa/hủy |
+| POST | `/warehouse/picking-batches/{id}/cancel` | `{version:1,reason:"Đổi tuyến soạn"}`; chỉ lượt đang soạn, bắt buộc lý do; giải phóng quyền chọn các đơn cho lượt mới, không đổi tồn |
+
+`Summary` gồm `id,version,code,warehouseId,warehouseCode,warehouseName,status,statusLabel,orderCount,lineCount,checkedCount,shortageCount,createdAt,createdBy`. Mỗi dòng trả `id,orderId,orderCode,productId,productCode,productName,unit,baseUnit,quantity,conversionFactor,pickedQuantity,pickedBaseQuantity,checked,shortageQuantity,shortageReason,locationId,locationCode,locationDisplay,routePosition`. Không tự mặc định số đặt thành thực soạn; chưa nhập trả null, số 0 được lưu nguyên.
+
+Quy tắc dữ liệu:
+
+- Tạo mới chốt số lượng/đơn vị/hệ số từ đơn và vị trí mặc định đang dùng trong kho. Dòng thuộc nhiều đơn được giữ liên kết riêng, nhưng sắp liền theo tuyến khu/kệ. Cột `pickingSequence` (0–1.000.000 hoặc null) được bổ sung vào API tạo/sửa/đọc vị trí hiện có; cấu hình ở **Kho & vị trí lưu → Thêm/Sửa vị trí → Thứ tự đường đi khi soạn**. Số nhỏ trong cùng khu đi trước, chưa khai báo thì so mã tự nhiên (`KE-2` trước `KE-10`), chưa có vị trí hợp lệ xếp cuối và hiển thị cảnh báo. Đây là thứ tự tuyến được khai báo, không tuyên bố đường ngắn nhất theo tọa độ.
+- Sau khi tạo, thay đổi tên/thứ tự/đơn vị trong danh mục không sửa lại snapshot phiếu cũ. Đơn đã duyệt chuyển sang `PICKING` trong cùng giao dịch; không trừ tồn thực hoặc nhả giữ chỗ.
+- Thực soạn từ 0 đến số yêu cầu, tối đa 11 chữ số nguyên và 4 số lẻ; quy đổi cơ sở cũng phải hợp lệ. Có ghi thực soạn thiếu thì bắt buộc lý do, kể cả 0 và dòng chưa đánh dấu. Đánh dấu đã soạn bắt buộc nhập thực soạn. API kiểm tra lại trạng thái/giữ chỗ/hạn của đơn và trạng thái kho mỗi lần lưu/hoàn tất; vẫn cho hủy lượt bị chặn để đối soát.
+- Khóa đơn theo ID tăng dần, claim DB duy nhất cho mỗi đơn chống tạo trùng đồng thời. Claim của phiếu hoàn tất được giữ để không soạn lại cùng đơn; hủy lượt giải phóng claim nhưng giữ các dòng lịch sử. Parent `@Version` + khóa phiếu ngăn ghi đè, phiên bản cũ trả **409**; frontend giữ nguyên dữ liệu nhập để người dùng đối chiếu/tải lại. Mọi lỗi giao dịch, kể cả audit, rollback cả dữ liệu/trạng thái/claim.
+- Phiếu soạn **không phải** phiếu xuất/giao hàng; không tự cập nhật `deliveredQuantity` hoặc nhập trả phần thiếu. Việc xuất/giao vẫn theo luồng chứng từ riêng. Không lưu nghiệp vụ vào localStorage/sessionStorage.
+
+Schema mới do cấu hình Hibernate `ddl-auto=update` hiện có tạo khi triển khai: `picking_batches`, `picking_batch_items`, `picking_order_claims`; thêm `warehouse_locations.picking_sequence`. Kiểm thử chạy trên H2 tạm và Chrome HTTP fixtures, không migration/reset/ghi dữ liệu DB thật.
 
 ## S5 — bản sửa tích hợp 22/10/2026
 
@@ -3468,7 +3511,6 @@ Response:
 }
 ```
 
-
 ---
 
 ## S7-07 — Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn (23/10/2026)
@@ -3577,112 +3619,84 @@ Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứ
 }
 ```
 
-
 ---
 
-## S7-07 — Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn (23/10/2026)
+## S8-10 — Sổ chi tiết công nợ một đại lý, PDF và Excel
 
-Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứu công nợ của chính mình qua Cổng Đại lý (`/api/portal/**`), để biết còn nợ bao nhiêu, còn được lấy hàng bao nhiêu, xem danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái, và xem/tải lại hóa đơn đã phát hành.
+### Endpoints và quyền
 
-### 1. Nguyên tắc nghiệp vụ cốt lõi
-
-1. **Hiển thị tổng còn nợ và hạn mức còn lại**:
-   - `currentDebt`: Tổng công nợ còn lại hiện tại của đại lý (tính từ tổng giá trị các hóa đơn hiệu lực `adjustedTotalAmount` cộng các đơn hàng ghi sổ chưa xuất hóa đơn `uninvoicedOrderDebt`, trừ đi tổng số tiền đã thu `totalPaid` theo nguyên tắc không tính trùng lặp).
-   - `debtLimit`: Hạn mức công nợ tối đa được cấp cho đại lý.
-   - `remainingLimit`: Phần hạn mức còn lại (`debtLimit - currentDebt`).
-   - `availableOrderLimit`: Hạn mức còn được lấy hàng thực tế (`0` nếu đại lý đang bị khoá giao dịch hoặc bị chặn do quá hạn công nợ `isBlocked = true`, ngược lại bằng `max(0, remainingLimit)`).
-2. **Danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái**:
-   - Mỗi hóa đơn (`InvoiceResponse`) trả về:
-     - `totalAmount` (tổng tiền hóa đơn gốc), `adjustedTotalAmount` (tổng tiền sau điều chỉnh), `paidAmount` (số tiền đã thanh toán phân bổ FIFO), `remainingAmount` (số tiền còn nợ của hóa đơn).
-     - `dueDate`: Hạn thanh toán của hóa đơn (mặc định = `invoiceDate + dealer.maxDebtDays`).
-     - `status` & `statusLabel`: Trạng thái phát hành hóa đơn (`ISSUED` - Đã phát hành, `ADJUSTED` - Đã điều chỉnh, `CANCELLED` - Đã hủy).
-     - `paymentStatus` & `paymentStatusLabel`: Trạng thái thanh toán công nợ của hóa đơn theo phân bổ FIFO:
-       - `UNPAID` ("Chưa thanh toán")
-       - `PARTIALLY_PAID` ("Thanh toán một phần")
-       - `PAID` ("Đã thanh toán")
-       - `OVERDUE` ("Quá hạn thanh toán")
-       - `CANCELLED` ("Đã hủy")
-     - `isOverdue`, `overdueDays`, `daysUntilDue`: Cờ quá hạn, số ngày quá hạn hoặc số ngày còn lại đến hạn thanh toán.
-3. **Xem và tải lại hóa đơn đã phát hành**:
-   - Đại lý xem chi tiết hóa đơn đã phát hành (`GET /api/portal/invoices/{id}`), xem bản in HTML (`GET /api/portal/invoices/{id}/print-preview`), tải lại file PDF hóa đơn (`GET /api/portal/invoices/{id}/pdf`) và tải lại file PDF chứng từ điều chỉnh (`GET /api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf`).
-4. **Cách ly dữ liệu cấp dòng (Row-Level Security) & Ma trận phân quyền DB**:
-   - Đại lý chỉ được xem công nợ, lịch sử thanh toán và xem/tải hóa đơn của **chính đại lý mình**. Mọi nỗ lực truyền `dealerId` của đại lý khác hoặc truy cập `invoiceId` của đại lý khác đều bị chặn với `403 Forbidden`.
-   - Quyền truy cập được kiểm soát chặt chẽ từ ma trận phân quyền DB (`RolePermissionConfig`):
-     - `FINANCE_VIEW_DEBT`: Xem tổng quan công nợ và lịch sử thanh toán (`GET /api/portal/debt/summary`, `GET /api/portal/debt/payments`, `GET /api/portal/debt`).
-     - `INVOICE_VIEW`: Xem danh sách, chi tiết, bản in HTML và tải lại PDF hóa đơn (`GET /api/portal/invoices/**`, `GET /api/portal/debt/invoices/**`).
-     - Thu hồi quyền trên ma trận lập tức trả về `403 Forbidden` trên phiên JWT hiện tại mà không có bất kỳ role-based fallback nào. `ROLE_ADMIN` luôn có toàn quyền.
-
-### 2. Danh sách Endpoints (`/api/portal`)
-
-| Method | Endpoint | Quyền yêu cầu | Mô tả |
+| Method | URL | Tham số bắt buộc | Kết quả |
 |---|---|---|---|
-| `GET` | `/api/portal/debt` | `ORDER_VIEW` hoặc `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Tra cứu thông tin công nợ, hạn mức còn lại, hạn mức còn được lấy hàng và danh sách hóa đơn của đại lý |
-| `GET` | `/api/portal/debt/summary` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem tổng quan công nợ, tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, thống kê hóa đơn và lịch sử thanh toán |
-| `GET` | `/api/portal/debt/payments` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem lịch sử các đợt thanh toán công nợ của chính đại lý |
-| `GET` | `/api/portal/invoices` (alias `/api/portal/debt/invoices`) | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách hóa đơn phân trang kèm số tiền, hạn thanh toán, trạng thái (`status`, `paymentStatus`, `startDate`, `endDate`, `keyword`, `page`, `size`) |
-| `GET` | `/api/portal/invoices/{id}` (alias `/api/portal/debt/invoices/{id}`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem chi tiết hóa đơn đã phát hành của chính đại lý |
-| `GET` | `/api/portal/invoices/{id}/pdf` (alias `/api/portal/debt/invoices/{id}/pdf`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem hoặc tải lại file PDF hóa đơn đã phát hành của chính đại lý (`application/pdf`) |
-| `GET` | `/api/portal/invoices/{id}/print-preview` (alias `/api/portal/debt/invoices/{id}/print-preview`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem bản in HTML hóa đơn đã phát hành của chính đại lý (`text/html;charset=UTF-8`) |
-| `GET` | `/api/portal/invoices/{id}/adjustments` | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách chứng từ điều chỉnh của hóa đơn thuộc đại lý |
-| `GET` | `/api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf` | `INVOICE_VIEW` hoặc `ADMIN` | Tải lại file PDF chứng từ điều chỉnh của hóa đơn thuộc đại lý (`application/pdf`) |
+| GET | `/api/finance/debt/{dealerId}/statement` | `from`, `to` dạng YYYY-MM-DD | JSON ApiResponse chứa toàn bộ sổ trong kỳ và số dư đầu/cuối kỳ |
+| GET | `/api/finance/debt/{dealerId}/statement/export` | `from`, `to`, `format=pdf` hoặc `format=xlsx` | Tệp PDF hoặc XLSX thực, không có envelope JSON |
 
-### 3. Payload mẫu (`GET /api/portal/debt/summary`)
+Yêu cầu Bearer JWT và **FINANCE_VIEW_DEBT** từ ma trận DB. ADMIN luôn có quyền; FINANCE_MANAGE hoặc vai trò ACCOUNTANT đơn lẻ không thay thế quyền bị thiếu. Service và controller đều kiểm tra quyền. Thu hồi quyền có hiệu lực ở request kế tiếp với cùng token, trên JSON và cả hai định dạng xuất.
 
-```json
-{
-  "success": true,
-  "message": "Tổng quan công nợ và hạn mức của đại lý",
-  "data": {
-    "dealerId": 100,
-    "dealerCode": "DL-001",
-    "dealerName": "Đại lý Minh Phát",
-    "currentDebt": 13000000.00,
-    "debtLimit": 50000000.00,
-    "remainingLimit": 37000000.00,
-    "availableOrderLimit": 37000000.00,
-    "totalInvoicedAmount": 25000000.00,
-    "uninvoicedOrderDebt": 0.00,
-    "totalPaid": 12000000.00,
-    "totalInvoiceCount": 2,
-    "unpaidInvoiceCount": 1,
-    "overdueInvoiceCount": 0,
-    "paidInvoiceCount": 1,
-    "maxDebtDays": 30,
-    "hasOverdueDebt": false,
-    "overdueAmount": 0.00,
-    "maxOverdueDays": 0,
-    "isBlocked": false,
-    "invoices": [
-      {
-        "id": 2,
-        "invoiceNumber": "00000002",
-        "invoiceCode": "HD-00000002",
-        "invoiceDate": "2026-10-18T09:00:00",
-        "dueDate": "2026-11-17",
-        "status": "ISSUED",
-        "statusLabel": "Đã phát hành",
-        "totalAmount": 15000000.00,
-        "adjustedTotalAmount": 15000000.00,
-        "paidAmount": 2000000.00,
-        "remainingAmount": 13000000.00,
-        "paymentStatus": "PARTIALLY_PAID",
-        "paymentStatusLabel": "Thanh toán một phần",
-        "isOverdue": false,
-        "overdueDays": 0,
-        "daysUntilDue": 25
-      }
-    ],
-    "payments": [
-      {
-        "id": 10,
-        "paymentCode": "PT-20261023-0001",
-        "amount": 12000000.00,
-        "paymentDate": "2026-10-23",
-        "paymentMethod": "CHUYEN_KHOAN",
-        "referenceCode": "UNC-S707-001"
-      }
-    ]
-  }
-}
+Phạm vi dữ liệu giữ quy tắc công nợ hiện tại: nhân viên SALES không có vai trò tài chính/quản lý rộng hơn chỉ xem đại lý được giao; tài khoản có ROLE_DEALER chỉ xem đại lý liên kết. Dealer-only vẫn chịu scope filter cổng đại lý hiện có. Vai trò chỉ thu hẹp phạm vi, không cấp quyền thay ma trận. ADMIN được bỏ qua hạn chế phạm vi. Không thêm quyền mới hay tự thay đổi ma trận đã lưu.
+
+Ví dụ:
+
+```text
+GET /api/finance/debt/12/statement?from=2026-10-01&to=2026-10-31
+GET /api/finance/debt/12/statement/export?from=2026-10-01&to=2026-10-31&format=pdf
+GET /api/finance/debt/12/statement/export?from=2026-10-01&to=2026-10-31&format=xlsx
 ```
 
+### Số liệu và thứ tự
+
+Một sổ hợp nhất các nguồn đang có trên branch:
+
+| sourceType | Nguồn | Ngày phát sinh | Số tiền có dấu |
+|---|---|---|---|
+| ORDER | Đơn đang thuộc trạng thái ghi nợ | recordedAt, fallback createdAt | totalAmount |
+| PAYMENT | debt_payments | paymentDate lúc 00:00 (dữ liệu gốc chỉ lưu ngày) | -amount |
+| INVOICE_ADJUSTMENT | Điều chỉnh INCREASE/DECREASE/CANCEL có tiền khác 0 | adjustmentDate | adjustmentAmount đã có dấu trong DB |
+
+Tập trạng thái đơn: APPROVED, RECORDED, PICKING, PROCESSING, EXPORTED, SHIPPED, DELIVERED, CLOSED, COMPLETED. Không cộng đơn nháp/chờ duyệt/hủy/từ chối/hết hạn. Hóa đơn gốc **không được cộng thêm một lần nữa** vì tiền nợ đã ghi từ đơn. Điều chỉnh INFORMATION và điều chỉnh không có tiền không phải dòng tăng/giảm công nợ. Khoản thu âm nếu có là bút toán tăng trở lại theo đúng dấu số tiền.
+
+- Số dư đầu kỳ = tổng các phát sinh có ngày trước 00:00 ngày from.
+- Kỳ lọc bao gồm cả from và to: >= from 00:00 và < (to+1 ngày) 00:00.
+- Dòng sắp theo thời điểm, rồi loại nguồn ORDER → PAYMENT → INVOICE_ADJUSTMENT, rồi ID tăng dần để ổn định khi trùng thời điểm.
+- Phát sinh tăng/giảm luôn không âm. Số dư từng dòng = số dư trước + tăng - giảm.
+- Số dư cuối kỳ = đầu kỳ + tổng tăng - tổng giảm. **Không cắt số dư âm về 0**: âm phản ánh thanh toán dư/credit, cần được giữ để đối chiếu.
+- Kỳ không có dòng vẫn trả đúng đầu kỳ/cuối kỳ, không tạo dòng giả. Dữ liệu đại lý khác không được đưa vào sổ.
+- Dùng BigDecimal và số tiền chính xác từ DB. JSON giữ biểu diễn số thập phân; client tài chính cần tránh ép tiền lớn sang số dấu phẩy động không chính xác.
+
+Sổ là đối chiếu từ chứng từ **hiện còn trong DB và các trạng thái hiện tại**, không tái dựng lịch sử đã xóa hoặc lịch sử đổi trạng thái không được lưu. Không sửa đơn, hóa đơn, phiếu thu hoặc tạo phát sinh mới khi xuất. Phần sổ bao gồm điều chỉnh hóa đơn và giữ số dư có dấu; có thể khác API tổng hợp công nợ cũ trên branch vốn chỉ lấy tổng đơn trừ thu tiền và cắt âm về 0. S8-10 không thay đổi hành vi API tổng hợp cũ.
+
+### JSON data
+
+Các trường: `dealerId`, `dealerCode`, `dealerName`, `from`, `to`, `openingBalance`, `totalIncrease`, `totalDecrease`, `closingBalance`, `entries`.
+
+Mỗi entry gồm `occurredAt`, `sourceType`, `sourceId`, `documentCode`, `description`, `increase`, `decrease`, `balance`. Source type/ID và mã chứng từ dùng để truy vết bản ghi gốc. Không đọc dữ liệu từ localStorage.
+
+### Tệp xuất
+
+Cả hai định dạng dùng cùng DTO/snapshot sổ, gồm thông tin đại lý, kỳ lọc, số dư đầu kỳ, toàn bộ dòng và tổng cuối kỳ. Cột: **Ngày phát sinh | Số chứng từ | Diễn giải | Phát sinh tăng | Phát sinh giảm | Số dư lũy kế**. Đơn vị VND, hiển thị hai chữ số thập phân.
+
+- PDF: A4 ngang, nhúng phông Arial Unicode từ resource dự án; bảng lặp tiêu đề ở trang sau và có số trang. Hỗ trợ tiếng Việt, diễn giải xuống dòng và sổ nhiều trang.
+- Excel: sheet `Chi tiết công nợ`, cố định phần đầu, dòng tiêu đề lặp khi in. Mã/diễn giải là ô text, không thực thi chuỗi bắt đầu bằng dấu `=` như công thức. Tiền có <=15 chữ số có nghĩa ghi Number; tiền lớn hơn khả năng chính xác của Excel được ghi nguyên văn dạng text để không làm sai số dư.
+- Content-Type: `application/pdf` hoặc `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+- Content-Disposition: attachment, filename UTF-8. Ví dụ `So-cong-no_DL-A_2026-10-01_2026-10-31.pdf` và `.xlsx`. Mã đại lý được làm sạch để không chèn đường dẫn/header.
+- Cache-Control: no-store. CORS expose Content-Disposition để frontend lấy tên file.
+- Dùng SXSSF 100 dòng cho workbook, dọn tệp tạm trước khi đóng kể cả khi có lỗi. PDF/XLSX được hoàn tất trước khi trả response, không trả nửa tệp.
+
+### Giới hạn và lỗi
+
+dealerId phải dương; from <= to, hỗ trợ năm 1000–9998 phù hợp khoảng ngày SQL. Không giới hạn số năm một kỳ một cách tùy ý. Mặc định tối đa **20.000 dòng trong kỳ**, cấu hình `app.debt-statement.max-rows` từ 1 đến 100.000. Truy vấn lấy maxRows+1 để phát hiện vượt, trả 400 yêu cầu thu hẹp ngày, **không âm thầm cắt dòng**. Phát sinh trước kỳ vẫn tính đầy đủ vào openingBalance bằng SUM riêng.
+
+Các truy vấn theo cùng dealerId, trong read-only REPEATABLE_READ transaction để opening và dòng kỳ khớp snapshot trên MySQL. Không gọi API riêng từng chứng từ hoặc tải entity graph để tính số dư.
+
+- 400: sai/thiếu ngày, dealerId không hợp lệ, from > to, format không hỗ trợ hoặc vượt số dòng.
+- 401: chưa xác thực. 403: thiếu quyền hoặc ngoài phạm vi đại lý.
+- 404: đại lý không tồn tại. 500: lỗi tạo tệp/hệ thống, không trả nội dung lỗi nội bộ.
+
+### Kết nối và kiểm thử
+
+Chỉ backend; frontend chưa có luồng gọi API sổ chi tiết hoặc tải hai định dạng này. Quyền FINANCE_VIEW_DEBT đã có trong ma trận quản trị và menu công nợ hiện có, nhưng chưa nghiệm thu ẩn/hiện nút xuất S8-10 cho đến khi frontend triển khai.
+
+**44/44 tests qua**, 0 failure/error/skip: DealerDebtStatementIntegrationTest (10), FinanceControllerTest (13), DebtRiskSecurityTest (6), PermissionRevocationTest (1), RolePermissionConfigTest (14). Kiểm thử có dữ liệu đầu kỳ, các ngày biên, loại trừ dòng không ghi nợ, điều chỉnh/hủy/thu âm, số dư âm, không cộng trùng hóa đơn, cách ly đại lý, quyền với JWT cũ, Excel tiền lớn, PDF nhiều trang và giới hạn không xuất thiếu. Đã render và xem toàn bộ 3 trang PDF kiểm thử bằng Poppler: tiếng Việt, lặp header, số trang và số dư hiển thị đúng. DB H2 MySQL mode; chưa kiểm thử MySQL hoặc giao diện thực tế.
+
+```text
+mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
+```

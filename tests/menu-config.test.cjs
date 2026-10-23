@@ -8,6 +8,25 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S6-08 delivery and stocktaking remain separate and follow their own matrix grants',()=>{
+  assert.ok(menu.menuItems.some(i=>i.id==='delivery-confirmation'&&i.href==='/warehouse/delivery'));
+  const has=permissions=>ids({roles:['ROLE_VIEWER'],permissions}).includes('delivery-confirmation');
+  assert.equal(has(['ORDER_VIEW','WAREHOUSE_EXPORT']),true);
+  assert.equal(has(['ORDER_VIEW']),false);assert.equal(has(['WAREHOUSE_EXPORT']),false);
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('delivery-confirmation'));
+  const stocktake=menu.menuItems.find(i=>i.id==='warehouse-stocktake');assert.equal(stocktake.permission,undefined);
+});
+
+test('S6-03 picking menu uses live VIEW/EXPORT matrix for every internal role, ADMIN always allowed', () => {
+  for (const role of ['ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_STAFF','ROLE_WAREHOUSE_MANAGER']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('warehouse-picking'));
+    for (const permission of ['WAREHOUSE_VIEW','WAREHOUSE_EXPORT'])
+      assert.ok(ids({roles:[role],permissions:[permission]}).includes('warehouse-picking'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('warehouse-picking'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/warehouse/picking')).id, 'warehouse-picking');
+});
+
 test('S6-02 stock card is VIEW only, ADMIN allowed, no hardcoded warehouse role grant',()=>{
   for(const role of ['ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_MANAGER','ROLE_WAREHOUSE_STAFF']){
     assert.ok(!ids({roles:[role],permissions:[]}).includes('warehouse-stock-card'));

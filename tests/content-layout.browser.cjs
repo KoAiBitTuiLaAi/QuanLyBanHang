@@ -12,6 +12,7 @@ const cases = [
   '/warehouse/units?tab=units', '/warehouse/units?tab=receipts', '/warehouse/units?tab=ledger',
   '/admin/users', '/admin/audit-logs', '/warehouses', '/warehouse/inventory', '/warehouse/transfers', '/warehouse/minimums',
   '/warehouse/units?tab=stocktake', '/warehouse/lots', '/warehouse/stock-card',
+  '/warehouse/picking', '/warehouse/delivery',
 ];
 const user = { id: 1, username: 'admin', fullName: 'Quản trị viên', email: 'admin@example.invalid',
   phone: '0900000000', roles: ['ROLE_ADMIN'], permissions: [], warehouses: [], territories: [] };
@@ -48,6 +49,8 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       else if (endpoint === '/warehouse/stock-minimums') data = {content: [], totalElements: 0, totalPages: 0};
       else if (endpoint === '/warehouse/transfers/options') data = {sourceWarehouses: [], destinationWarehouses: [], statuses: [], canCreate: true};
       else if (endpoint === '/warehouse/transfers/search') data = {content: [], totalElements: 0, totalPages: 0};
+      else if (endpoint === '/warehouse/picking-batches/options') data = {warehouses: [], statuses: [], canCreate: true, quantityScale: 4, maxOrders: 100, maxLines: 500, routeStrategy: 'Thứ tự khu/kệ'};
+      else if (endpoint === '/warehouse/picking-batches') data = {content: [], totalElements: 0, totalPages: 0};
       else if (endpoint === '/dealers/options') data = { assignedUsers: [], territories: [] };
       else if (['/dealers', '/dealers/active', '/finance/debt', '/portal/dealers'].includes(endpoint)) data = dealers;
       else if (endpoint === '/orders/draft') data = null;

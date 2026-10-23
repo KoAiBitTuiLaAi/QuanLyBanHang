@@ -1,5 +1,53 @@
 # Trạng thái sprint 1–7
 
+## S6-08 — Sửa lỗi frontend, chưa triển khai backend — 23/10/2026
+
+Phạm vi bổ sung do người dùng yêu cầu ngay trên nhánh S6-04; đã hỏi và xác nhận **chỉ frontend**. Không bổ sung API lưu ảnh/người nhận/hoàn kho S6-08.
+
+| Hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Menu và script bị thiếu | Không sửa | Tách menu Xác nhận giao hàng khỏi Kiểm kê; thêm `delivery-confirmation.js`, `app-transition.js` trong head | Menu/guard cần ORDER_VIEW + WAREHOUSE_EXPORT; ADMIN luôn vào được. Kiểm kê trở về VIEW hoặc ADJUST, không còn nhận nhầm EXPORT |
+| Danh sách/chi tiết đơn thật | Dùng GET `/orders`, `/orders/{id}` sẵn có | Có — phân trang server, từ khóa/trạng thái, lỗi/tải lại; lọc kho và thống kê theo trang có nhãn | Không dùng danh sách demo/fallback; quyền/scope đơn do API quyết định. Thu hồi quyền xóa dữ liệu/form, bỏ phản hồi trễ |
+| Form người nhận/thời điểm và xem trước ảnh | Chưa có API S6-08 | Có — nhập tạm, kiểm tra loại/kích thước/decode ảnh, đổi/xóa/phóng to; không lưu local/sessionStorage | Blob chỉ ở bộ nhớ, giải phóng khi đóng/reload/revoke; không khẳng định đã xác thực chữ ký hay lưu chứng từ |
+| Ghi xác nhận/hoàn kho/điều kiện hoá đơn | **Chưa triển khai** | **Khóa nút lưu**, chặn submit, giải thích thiếu API; không giả số phiếu/kho/mã chứng từ hoặc thông báo thành công | Không gửi lệnh ghi nào từ trang S6-08, không đổi trạng thái đơn, tồn, công nợ hoặc hoá đơn |
+
+Kiểm thử: Node toàn repo **163/163 qua** (gồm 5 test client S6-08 và test menu tách biệt/cấp-thu hồi); 2 lỗi tồn từ PR S6-08 đã hết. Chrome S6-08 qua GET-only, menu, phân trang/tìm, form, ảnh hợp lệ/không hợp lệ, XSS, lỗi tải, revoke/phản hồi trễ và 6 widths 320–1920px. Python routes **11/11**, bố cục cuối **174 checks / 29 trang / 6 widths** qua. API intercept fixtures không ghi DB thật. `docs/FUNCTION_MAP.md` và `docs/FRONTEND_ROUTES.md` cập nhật rõ S6-08 còn một phần; không tuyên bố S6-08 đạt toàn bộ AC.
+
+## S6-04 — Frontend gợi ý lô xuất FEFO và sửa backend liên quan — 23/10/2026
+
+Nhánh `feature/S6-04-frontend-he_thong_goi_y_lo_xuat_theo_nguyen_tac`. Đã đọc AGENTS.md và hai skill của repo. Dùng lại trang Lô & hạn sử dụng và khung `app-navigation.css`; không thêm shell/menu riêng. Vị trí đã cập nhật đúng dòng S6-04 trong `docs/FUNCTION_MAP.md`: **Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO**, URL `/warehouse/lots?tab=fefo`.
+
+| Yêu cầu / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Mặc định lô HSD gần nhất còn đủ lượng | Có — dùng cùng hàm chọn FEFO cho gợi ý và ghi phiếu; sửa không tự chọn lô quá hạn/thiếu HSD, hỗ trợ SKU legacy còn tồn lô | Có — chọn kho/SKU/lượng theo đơn vị cơ sở, lấy gợi ý, tự chọn radio lô server trả; bảng giữ thứ tự server | GET `/warehouse/export/suggest-lot`; không tính FEFO bằng JS, không tự gộp nhiều lô khi một lô không đủ |
+| Chọn lô khác phải có lý do | Có — tự tính lại gợi ý khi ghi, bỏ qua `suggestedLotNumber` giả; khác gợi ý hiện tại thì chặn nếu thiếu lý do | Có — hiển thị lô/lượng sẽ xuất, lý do bắt buộc khi đổi lô, checkbox xác nhận ghi sổ | POST `/warehouse/export` gửi đúng lô và lý do; lỗi 400 giữ input để sửa; lô quá hạn chỉ theo luồng ghi đè S6-01, không thuộc mặc định FEFO |
+| Trừ đúng tồn lô đã chọn | Có — khóa tồn vật lý trước rồi current-read/khóa các lô theo ID; phiếu/tồn/lô/audit cùng transaction; không dùng tồn giữ chỗ của đơn khác | Có — chỉ ghi khi xác nhận, chống gửi lặp; hiện mã phiếu/lô thực từ API, tải lại tồn sau thành công | Hai yêu cầu cùng xuất lô không đủ cho cả hai: một thành công, một 400; không trừ lô khác, không âm/ghi đè số dư cũ |
+| Quyền đọc/ghi và phiên hiện tại | Đọc gợi ý VIEW hoặc EXPORT, đọc options VIEW hoặc MANAGE; ghi EXPORT; ADMIN luôn được phép, scope kho giữ theo service | Trang cần VIEW/MANAGE; tab cần thêm VIEW/EXPORT, nút ghi cần EXPORT + `canExport` từ options; VIEW chỉ xem gợi ý | Không role fallback. Thu hồi xóa form/gợi ý và ẩn tab/nút; bỏ phản hồi đọc/ghi trễ, API JWT hiện tại trả 403 khi mất quyền |
+| Điện thoại / thao tác lỗi | Validate lượng dương, 11 chữ số nguyên/4 số lẻ; kiểm lại dữ liệu khi ghi | Có — frame chung, form co về một cột, bảng cuộn bên trong, controls 44px; đổi đầu vào xóa gợi ý cũ | Chrome 320–1920px, không tràn ngang toàn trang. Mất kết nối/5xx không rõ kết quả POST thì chặn gửi lại ngay, nhắc kiểm tra Sổ cái trước |
+
+Kiểm chứng: toàn bộ backend **866/866 qua** (`clean test`, bản sao backend/H2 tạm); tập trung **78 test backend qua**, gồm 6 ca S6-04 mới qua HTTP/JWT/JPA (loại quá hạn/thiếu HSD, validation/legacy/scope, single-role grant/revoke cùng JWT, giả gợi ý/thay đổi FEFO, xuất đồng thời, rollback khi tồn giữ chỗ không đủ). **11 test Node S6-04 và 6 test S6-01 qua**. Chrome S6-04 qua luồng gợi ý/chọn lô/lý do/ghi/lỗi/quyền/phản hồi trễ/XSS/không có lô đủ và 6 widths; Chrome S6-01, nhập kho S5-04 và thẻ kho S6-02 hồi quy qua. Python router **11/11**. Bố cục chung cuối **174 checks / 29 trang / 6 widths** qua, bao gồm trang S6-08 sau sửa frontend.
+
+Lượt Node ban đầu **155/157 qua**, phát hiện 2 lỗi sẵn từ S6-08; sau đó người dùng yêu cầu sửa frontend S6-08 ngay trên nhánh này, kết quả cuối **163/163 qua** (xem mục trên). Kiểm thử dùng HTTP fixtures cho Chrome và H2 cách ly, không phải nghiệm thu xuất hàng trên MySQL thật. Không tạo/sửa/hủy phiếu hoặc seed/reset DB thật; không khởi động lại backend thật. Cần build/restart backend để nhận sửa FEFO/khóa tồn; **không thay schema và không cần xóa DB**. Chưa commit/push/merge.
+
+## S6-03 — Phiếu soạn hàng từ đơn đã duyệt (frontend + backend) — 23/10/2026
+
+Nhánh `feature/S6-03-frontend-va-backend-tao_phieu_soan_hang`. Đã đọc AGENTS.md và hai skill trong SKILLS. Triển khai theo 5 tiêu chí trong ảnh; giữ shared shell/frame hiện có, lưu nghiệp vụ ở DB. Theo yêu cầu cập nhật của người dùng: chỉ commit local, không tự push/merge develop. Không restart backend hoặc ghi/reset DB thật trong quá trình kiểm thử.
+
+| Tiêu chí / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Tạo phiếu từ đơn đã duyệt, còn giữ chỗ | Có — kiểm tra trạng thái, hạn giữ chỗ, kho đang hoạt động và phạm vi được gán | Có — chọn kho, tìm/chọn đơn có thể soạn | `/warehouse/picking-batches/eligible-orders` + POST; không đòi thêm ORDER_VIEW/PRODUCT_VIEW |
+| Dòng hàng có vị trí, sắp theo tuyến kho | Có — snapshot vị trí mặc định đang dùng, mã/tên SKU, lượng/đơn vị/hệ số; thứ tự khu/kệ có thể cấu hình bằng `pickingSequence`, fallback mã tự nhiên | Có — thẻ theo tuyến, thể hiện đơn gốc/SKU/vị trí/lượng cần; hàng chưa gán vị trí hiện cuối tuyến | Cấu hình tuyến trong Thêm/Sửa vị trí; vị trí/số lượng chốt từ server, thay danh mục không sửa snapshot cũ |
+| Gộp nhiều đơn một lượt | Có — cùng kho, tối đa 100 đơn/500 dòng; khóa đơn theo ID + claim DB duy nhất chống trùng đồng thời | Có — chọn nhiều đơn qua các trang, có bộ đếm đơn đã chọn | Mỗi dòng vẫn gắn đơn gốc để không mất phân bổ; đơn chuyển PICKING cùng giao dịch, không xuất/trừ tồn |
+| Đánh dấu đã soạn, lưu thực soạn từng dòng | Có — lưu null/0/số lẻ đúng nghĩa, quy đổi theo hệ số đóng băng; DB version + khóa phiếu trả 409 khi cũ | Có — input số, checkbox, Lưu dòng; chống gửi trùng, giữ input khi lỗi và giữ dòng khác đang nhập dở | PUT từng dòng; phản hồi DB cập nhật tiến độ; reload đọc dữ liệu thật từ API, không dùng local/sessionStorage cho nghiệp vụ |
+| Soạn thiếu bắt buộc lý do | Có — lượng 0..yêu cầu, tối đa 4 số lẻ; thiếu kể cả 0 bắt buộc lý do, không chỉ validate JS | Có — cảnh báo ngay trên dòng, không tự điền lượng đặt thành thực soạn | API vẫn chặn yêu cầu giả/bỏ qua UI; đánh dấu xong phải có thực soạn |
+| Hoàn tất/hủy lượt | Có — hoàn tất khi tất cả dòng đã soạn, bất biến sau hoàn tất; hủy phải lý do, giải phóng claim để tạo lượt mới | Có — chỉ bật hoàn tất sau lưu đủ dòng và không còn thay đổi chưa lưu; xem lịch sử, hủy an toàn | Mọi lỗi kể cả audit rollback trạng thái/dữ liệu/claim; không tự cập nhật thực giao hoặc hoàn tồn |
+| Điện thoại | API giữ payload hữu hạn/phân trang, dữ liệu thực soạn lưu lại được khi reload | Có — thẻ theo điểm dừng, input/nút tối thiểu 44px, bố cục 320–1920px, không tràn ngang toàn trang | Dùng `app-navigation.css`, không tạo outer frame riêng; đã xem screenshot mobile/desktop |
+| Phân quyền và giới hạn kho | Đọc WAREHOUSE_VIEW hoặc WAREHOUSE_EXPORT; ghi WAREHOUSE_EXPORT; ADMIN luôn có quyền, nghiệp vụ vẫn bắt buộc | Menu/guard và nút theo cùng ma trận; chỉ VIEW thì chỉ xem; grant/revoke trong phiên hiện tại | Role không cấp quyền thay DB; ngoài kho bị 403, không có kho gán không được đọc toàn hệ thống; phản hồi trễ không phục hồi form sau thu hồi |
+
+**Kiểm thử cuối:** Maven `clean test` trong bản sao backend/H2 tạm: **860 tests, 0 failures/errors**, trong đó **17 ca PickingBatchIntegrationTest** qua HTTP/JWT thật (gộp đơn, tuyến tự nhiên/cấu hình/snapshot, thiếu/0, hoàn tất/hủy, version cũ, đồng thời, kho ngừng hoạt động, scope, cấp/thu hồi JWT hiện tại, ADMIN và rollback audit). Node **146/146**; Python routes **11/11**. Chrome trang/script thật + HTTP fixtures S6-03 pass: chọn nhiều trang, tạo trùng, giữ input khi lỗi/409, giữ dòng khác nhập dở, hoàn tất/reload/hủy, read-only, grant/revoke + phản hồi đọc/ghi trễ, XSS, lọc/rỗng/retry và 6 widths. Hồi quy warehouses (kèm lưu/đọc thứ tự tuyến), S5 orders/reservation/import/stocktake/transfers, stock-card/lots/navigation pass; shared layout **168 checks / 28 trang / 6 widths (320–1920px)** pass. `git diff --cached --check` sạch. API_DOCUMENTATION.md và docs/FRONTEND_ROUTES.md đã cập nhật.
+
+**Triển khai / giới hạn:** cần build/restart backend để Hibernate theo cấu hình hiện có tạo ba bảng picking và thêm cột thứ tự cho vị trí; restart frontend server để nhận route Python mới. Kiểm thử dùng H2 tạm trong bản sao backend và Chrome với HTTP fixtures, không phải UAT MySQL thật. Tuyến theo cấu hình/mã khu-kệ, không tuyên bố tối ưu đường ngắn nhất theo tọa độ. Lượt soạn chỉ ghi thực soạn, chưa thay luồng chứng từ xuất/giao hàng.
+
 ## S7-01 — Phát hành hoá đơn bán hàng từ phiếu đã giao (Backend) — 22/10/2026
 
 Nhánh: `S7-01/phat-hanh-hoa-don-ban-hang-tu-phieu-da-giao-BE`. Nguồn tiêu chí: User story S7-01 (*"Là Kế toán công nợ, tôi muốn phát hành hoá đơn bán hàng từ phiếu đã giao, để xuất hoá đơn đúng số hàng thực giao thay vì số hàng đặt"*). Phạm vi thực hiện: **chỉ làm Backend** theo đúng yêu cầu người dùng, tuân thủ nghiêm ngặt `AGENTS.md` và ma trận phân quyền database-backed.
@@ -746,6 +794,7 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 |---|---|---|---|---|---|---|
 | S7-01 | Phát hành hoá đơn bán hàng từ phiếu đã giao | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | Đầy đủ ma trận: INVOICE_VIEW, INVOICE_CREATE, INVOICE_ADJUST từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend theo 5 tiêu chí user story. Sinh theo thực giao, số nhảy liên tục, gộp phiếu giao cùng đại lý, hóa đơn bất biến chỉ lập điều chỉnh, xuất PDF và HTML print preview. Đã kiểm thử 30 test mới (unit, controller, security, integration). Chưa làm FE theo yêu cầu. |
 | S7-04 | Hệ thống tự cảnh báo và khoá bán công nợ | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | FINANCE_VIEW_DEBT, FINANCE_MANAGE từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend: tự gắn cờ đại lý quá hạn/vượt hạn mức, chặn/cần duyệt khi tạo đơn, scheduler đánh giá hàng ngày và sau thu tiền. 24 test mới. Chưa làm FE theo yêu cầu. |
+| S7-07 | Đại lý tự xem công nợ, hạn mức còn lại và tải lại hoá đơn | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | FINANCE_VIEW_DEBT, INVOICE_VIEW, ORDER_VIEW từ ma trận DB; cách ly RLS theo đại lý liên kết; ADMIN toàn quyền, không role fallback | Đã hoàn thành 100% backend: hiển thị tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, danh sách hóa đơn kèm số tiền/hạn thanh toán/trạng thái FIFO, xem và tải lại PDF/bản in hóa đơn & điều chỉnh. Thu hồi quyền trên JWT hiện tại trả 403. Chưa làm FE theo yêu cầu. |
 
 ## Việc cần làm tiếp
 
@@ -755,3 +804,20 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 4. Nối preview chiết khấu cho cổng/đặt lại, UI sales xác nhận đơn cổng; nghiệm thu MySQL/SMTP/360px theo AC.
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
+
+## S8-10 — Xuất sổ chi tiết công nợ đại lý (2026-10-23)
+
+Branch `feature/S8-10/xuat-so-chi-tiet-cong-no` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend; không commit/push.
+
+| Yêu cầu | Backend | Frontend | Kết nối/phân quyền và bằng chứng |
+|---|---|---|---|
+| Liệt kê phát sinh tăng/giảm theo thời gian và số dư lũy kế | Hoàn thành: hợp nhất đơn ghi nợ, phiếu thu và điều chỉnh hóa đơn; thứ tự thời điểm/nguồn/ID; tính đầu kỳ, tăng/giảm, cuối kỳ bằng BigDecimal | Chưa triển khai | GET `/api/finance/debt/{dealerId}/statement`; test không cộng lại hóa đơn gốc, giữ credit âm và cách ly đại lý |
+| Lọc khoảng thời gian | Hoàn thành: from/to bao gồm hai ngày biên, opening lấy toàn bộ trước kỳ; kỳ rỗng vẫn có số dư đúng | Chưa triển khai | Test đầu kỳ 800, tăng 320, giảm 180, cuối kỳ 940; đổi từ ngày 19 thì đầu kỳ 1040, cuối kỳ vẫn 940 |
+| Xuất PDF | Hoàn thành: A4 ngang, font Unicode nhúng, thông tin đại lý/kỳ, bảng lặp header và số trang | Chưa nối | GET `/statement/export?from=...&to=...&format=pdf`; mở/trích text PDF và render kiểm tra cả 3 trang bằng Poppler |
+| Xuất Excel | Hoàn thành: cùng dữ liệu với PDF/JSON, sáu cột, đầu kỳ/tổng/cuối kỳ; tiền lớn hơn 15 chữ số có nghĩa ghi text chính xác | Chưa nối | format=xlsx; test mở lại POI, số dư 940, số tiền lớn 9007199254740993.01 không bị sai và chuỗi công thức là text |
+| Ma trận quyền DB và phạm vi đại lý | Hoàn thành: FINANCE_VIEW_DEBT, ADMIN luôn có quyền, không fallback FINANCE_MANAGE/role; scope SALES được giao và DEALER liên kết | Quyền/menu công nợ hiện có; chưa có nút/luồng S8-10 để nghiệm thu ẩn/hiện | Test non-admin một vai trò, thu hồi cùng JWT trả 403 cho JSON/PDF/XLSX; SALES ngoài phạm vi bị từ chối |
+| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 44/44 tests qua, 0 lỗi/skip | Không sửa frontend | 10 ca tích hợp sổ và 34 test hồi quy tài chính/phân quyền; H2 MySQL mode, chưa MySQL thật |
+
+Không sửa dữ liệu tài chính hoặc hành vi API tổng hợp cũ. Sổ giữ số dư có dấu và bao gồm điều chỉnh; API tổng hợp cũ trên branch chưa trừ/cộng điều chỉnh và có cắt âm nên số hiển thị có thể khác sổ. Dữ liệu xuất là chứng từ hiện có/trạng thái hiện tại, không tái dựng lịch sử đã xóa. Mặc định tối đa 20.000 dòng kỳ, vượt trả 400 chứ không xuất thiếu; SUM đầu kỳ không bị cắt theo giới hạn dòng kỳ.
+
+Lệnh kiểm thử: `mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test`.

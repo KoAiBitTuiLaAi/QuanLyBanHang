@@ -47,6 +47,7 @@ class FrontendRoutingTest(unittest.TestCase):
             "/admin/audit-logs": "Nhật ký thao tác",
             "/warehouse/inventory": "Tồn kho theo SKU và kho",
             "/warehouse/lots": "Lô & hạn sử dụng",
+            "/warehouse/delivery": "Xác nhận giao hàng",
             "/warehouse/stock-card": "Thẻ kho sản phẩm",
             "/warehouses": "Kho & vị trí lưu",
             "/products": "Sản phẩm",
@@ -70,7 +71,7 @@ class FrontendRoutingTest(unittest.TestCase):
                 self.assertEqual(200, status)
                 self.assertIn(title, body.decode("utf-8"))
                 self.assertEqual("no-store", headers["Cache-Control"])
-        for path in ["/js/auth.js", "/js/order-pdf.js", "/css/dashboard.css", "/assets/brand-mark.svg"]:
+        for path in ["/js/auth.js", "/js/order-pdf.js", "/js/delivery-confirmation.js", "/js/warehouse-fefo.js", "/css/dashboard.css", "/assets/brand-mark.svg"]:
             with self.subTest(asset=path):
                 self.assertEqual(200, self.get(path)[0])
 
@@ -107,6 +108,17 @@ class FrontendRoutingTest(unittest.TestCase):
         status, _, body = self.get('/warehouse/transfers')
         self.assertEqual(status, 200)
         self.assertIn('warehouse-transfers.js', body.decode('utf-8'))
+
+    def test_s603_picking_route_and_legacy_url(self):
+        status, _, body = self.get('/warehouse/picking')
+        self.assertEqual(status, 200)
+        html = body.decode('utf-8')
+        for text in ['Phiếu soạn hàng', 'pick-lines', 'warehouse-picking.js', 'app-shell.js', 'app-navigation.css']:
+            self.assertIn(text, html)
+        self.assertEqual(200, self.get('/warehouse/picking', method='HEAD')[0])
+        status, headers, _ = self.get('/warehouse/picking.html')
+        self.assertEqual(308, status)
+        self.assertEqual('/warehouse/picking', headers['Location'])
 
     def test_s508_stocktake_route_keeps_the_shared_shell_and_server_backed_scripts(self):
         status, _, body = self.get("/warehouse/units?tab=stocktake")
