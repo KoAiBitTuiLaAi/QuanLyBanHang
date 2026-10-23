@@ -64,6 +64,7 @@ public enum Permission {
     INVOICE_ADJUST("Lập chứng từ điều chỉnh"),
 
     // ── Báo cáo ──
+    DASHBOARD_VIEW("Xem dashboard điều hành bán hàng và kho"),
     REPORT_SALES("Xem báo cáo bán hàng"),
     REPORT_INVENTORY("Xem báo cáo tồn kho"),
     REPORT_FINANCE("Xem báo cáo tài chính");

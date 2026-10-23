@@ -3562,6 +3562,69 @@ Response:
 }
 ```
 
+## S8-05 — Dashboard điều hành bán hàng và kho
+
+### API và quyền
+
+| Method | URL | Tham số | Kết quả |
+|---|---|---|---|
+| GET | `/api/reports/dashboard` | `overdueLimit=20`, từ 1 đến 100 | Toàn bộ thẻ KPI, biểu đồ ngày/khu vực và danh sách đầu các đại lý quá hạn |
+| GET | `/api/reports/dashboard/overdue-dealers` | `page=0` không âm, `size=20` từ 1 đến 100 | Page đại lý quá hạn, cho phép tra cứu toàn bộ danh sách |
+
+Yêu cầu Bearer JWT và quyền **DASHBOARD_VIEW** trong ma trận DB; ROLE_ADMIN luôn được phép. Đây là quyền xem số liệu **toàn công ty**, gồm cả công nợ và kho, không phải quyền xem dữ liệu cá nhân. REPORT_SALES/REPORT_INVENTORY/REPORT_FINANCE hoặc tên vai trò riêng lẻ không thay thế quyền này. Hai endpoint cùng kiểm tra quyền.
+
+Đối với DB mới, quyền được khởi tạo cho SALES_MANAGER và ADMIN. Với ma trận DB đã cấu hình, giữ nguyên các lựa chọn hiện có: ADMIN phải cấp DASHBOARD_VIEW từ màn hình quản trị quyền. Không tự cấp lại quyền đã bị thu hồi. Quyền được nạp theo request từ cơ chế JWT/ma trận hiện có; thu hồi có hiệu lực ngay với token cũ. Khi kiểm tra nhiều vai trò, phải chắc chắn không có vai trò khác đang cấp quyền.
+
+### Response tổng quan
+
+Dùng envelope `ApiResponse` hiện có, `data` gồm:
+
+| Trường | Nội dung |
+|---|---|
+| `date`, `month` | Ngày và tháng hiện tại của dashboard, dạng YYYY-MM-DD và YYYY-MM |
+| `generatedAt`, `timezone` | Thời điểm tạo response có offset; mặc định Asia/Ho_Chi_Minh |
+| `metrics.todaySales` | Doanh số đơn ghi nhận trong ngày |
+| `metrics.monthSales` | Doanh số từ đầu tháng đến hết ngày hiện tại |
+| `metrics.pendingApprovalOrders` | Tổng đơn PENDING_APPROVAL trong toàn bộ backlog, không giới hạn tháng |
+| `metrics.pendingExportOrders` | Tổng đơn APPROVED/RECORDED/PICKING/PROCESSING chưa xuất, không giới hạn tháng |
+| `metrics.overdueDebt` | Tổng tiền thực sự quá hạn còn chưa thanh toán của tất cả đại lý; không chỉ tổng của danh sách đầu |
+| `metrics.belowMinimumSkus` | Số SKU khác nhau thiếu tồn tối thiểu ở ít nhất một kho hoạt động |
+| `dailySales[]` | `{date,sales}`, đủ mọi ngày trong tháng, ngày trống và ngày tương lai bằng 0 |
+| `territorySales[]` | `{territoryId,territoryName,sales}`, doanh số tháng theo khu vực, giảm dần theo tiền |
+| `overdueDealers[]` | Danh sách đầu theo `overdueLimit`, xếp giảm dần theo overdueAmount, trùng số tiền thì dealerId tăng dần |
+| `totalOverdueDealers` | Tổng số đại lý còn tiền quá hạn để frontend biết có thể xem thêm |
+
+Mỗi đại lý quá hạn gồm `dealerId`, `dealerCode`, `dealerName`, `territoryId`, `territoryName`, `currentDebt`, `overdueAmount`, `maxOverdueDays`. `currentDebt` là toàn bộ tiền chưa trả, có thể lớn hơn phần đã quá hạn. API phân trang trả cùng kiểu dòng trong Spring Page (`content`, `totalElements`, `totalPages`, ...). Trang vượt cuối vẫn trả đúng totalElements.
+
+### Quy tắc số liệu
+
+- Doanh số dùng `Order.totalAmount` sau chiết khấu, ngày ghi nhận `COALESCE(recordedAt,createdAt)`, và cùng tập trạng thái ghi nợ hiện có: APPROVED, RECORDED, PICKING, PROCESSING, EXPORTED, SHIPPED, DELIVERED, CLOSED, COMPLETED. Không cộng DRAFT, PENDING_APPROVAL, CANCELLED, REJECTED, EXPIRED. Đây là doanh số đơn đã ghi nhận, không phải tiền thu hoặc chỉ giá trị hóa đơn.
+- Khoảng ngày dùng cận đầu bao gồm, cận cuối không bao gồm; tháng hiện tại tính đến trước 00:00 ngày mai. Đơn tương lai không vào doanh số. Biểu đồ khu vực dùng địa bàn hiện tại của đại lý; đơn chưa gắn khu vực được gom vào `territoryId=null`, tên `Chưa phân khu vực`, để không mất doanh số. Không join dòng đơn nên không nhân đôi tổng tiền.
+- Khoản thanh toán lấy từ sổ `debt_payments` hiện có trên branch. SQL dùng running SUM theo đại lý, thứ tự ngày ghi nhận và ID, phân bổ tiền đã trả theo FIFO trước khi tính phần quá hạn. Đến đúng ngày hạn chưa tính quá hạn. maxDebtDays=0 nghĩa là không áp thời hạn nợ. Không lấy số tiền hoặc trạng thái từ cờ debtFlagged đã lưu; dữ liệu mới được tính trực tiếp.
+- Bao gồm cả đại lý ngừng hoạt động nếu vẫn còn nợ quá hạn. Đại lý đã trả đủ hoặc trả dư không còn trong danh sách. S8-05 không tự tạo bút toán hay sửa sổ công nợ. Các tính năng tài chính chưa được merge vào branch này không được tự nhập từ branch khác.
+- Tồn dưới tối thiểu dùng đúng biểu thức của StockLedgerRepository: tồn khả dụng = max(0, tồn thực - giữ chỗ), chỉ so khi có cấu hình minimum và đơn vị khớp. Kho/SKU phải đang hoạt động. SKU thiếu ở nhiều kho chỉ đếm một lần. Chưa có dòng tồn được xem là 0; chưa cấu hình mức tối thiểu không xem là thiếu; bằng mức tối thiểu không xem là thiếu. Không cộng hàng đang chuyển vào tồn khả dụng.
+- Clock riêng cho dashboard, mặc định Việt Nam, có thể cấu hình `app.dashboard.zone`; kiểm thử cố định clock để kiểm tra ranh giới ngày/tháng và năm nhuận.
+
+### Hiệu năng và tính nhất quán
+
+Một request tổng quan thực hiện **5 truy vấn tổng hợp DB** cho dữ liệu nghiệp vụ (ngoài truy vấn xác thực/phân quyền): theo ngày, khu vực, backlog, SKU thiếu và công nợ. Không gọi service công nợ từng đại lý, không tải entity graph hay toàn bộ đơn vào Java. FIFO chạy bằng window functions và derived tables; SQL dành cho MySQL 8+.
+
+Response được dựng trong read-only transaction REPEATABLE_READ để các phần dùng cùng snapshot trên MySQL. Không cache response nên dữ liệu được đọc lại ở mỗi request, không cache quyền.
+
+Bài đo tích hợp qua MockMvc HTTP/JWT/DB với **10.000 đơn, 1.000 đại lý, 1.000 SKU có mức tối thiểu**: 3 request đầy đủ, gồm request đầu sau khi nạp dữ liệu, thời gian lớn nhất ở lần chạy hồi quy **210 ms**, đều dưới 2.000 ms. Bài đo xác minh cả tiền quá hạn > 0 và các KPI để tránh đo một response rỗng. Đây là bằng chứng trên H2 MySQL mode tại máy kiểm thử; chưa đo MySQL thật, mạng hoặc thời gian render frontend.
+
+### Lỗi và frontend
+
+401 nếu chưa xác thực; 403 nếu thiếu hoặc bị thu hồi DASHBOARD_VIEW; 400 khi page/size/overdueLimit ngoài giới hạn hoặc không phải số nguyên. Không cung cấp endpoint ghi dữ liệu.
+
+Chỉ backend: dashboard/menu frontend hiện có chưa nối API S8-05 và chưa gắn guard DASHBOARD_VIEW. Màn hình quản trị ma trận hiện có tải catalog quyền động nên có thể nhận quyền mới; chưa nghiệm thu ẩn/hiện dashboard theo quyền cho tới khi frontend được nối.
+
+Kiểm thử: DashboardIntegrationTest (8 ca), RolePermissionConfigTest, PermissionRevocationTest, DebtRiskSecurityTest, DealerDebtServiceTest, DebtRiskIntegrationTest; tổng **53 tests passed**, 0 failure/error/skip ở kết quả cuối từng bộ. Assertion audit tiền cũ được sửa để không phụ thuộc dấu phân cách locale; không thay đổi nghiệp vụ thanh toán.
+
+```text
+mvn -q "-Dtest=DashboardIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,DebtRiskSecurityTest,DealerDebtServiceTest,DebtRiskIntegrationTest" test
+```
+
 ## S7-05 — Ghi nhận khoản thu theo tuyến và đối chiếu tiền nộp
 
 Base URL: `/api/finance/cash-collections`. Tất cả API yêu cầu Bearer access token.

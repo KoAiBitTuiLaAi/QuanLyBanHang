@@ -878,6 +878,23 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
 
+## S8-05 — Dashboard điều hành bán hàng và kho (2026-10-23)
+
+Branch `feature/S8-05/xem-dashboard-ban-hang-va-kho`, repo GitHub Desktop tại `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend; không commit/push.
+
+| Yêu cầu | Backend | Frontend | Kết nối và kiểm chứng |
+|---|---|---|---|
+| KPI doanh số hôm nay/tháng này, đơn chờ duyệt/chờ xuất, nợ quá hạn, SKU dưới tồn tối thiểu | Hoàn thành: số liệu trực tiếp DB; dùng quy ước trạng thái ghi nhận, công nợ FIFO, tồn khả dụng và minimum hiện có | Chưa nối theo yêu cầu chỉ backend | GET `/api/reports/dashboard`, một response gồm đầy đủ dữ liệu |
+| Biểu đồ doanh số từng ngày trong tháng và theo khu vực | Hoàn thành: đủ ngày, điền 0 ngày không có doanh số; nhóm cả đơn chưa có khu vực, không nhân đôi theo dòng hàng | Chưa nối | Test mốc tháng, ngày tương lai, múi giờ Việt Nam và tháng nhuận |
+| Đại lý quá hạn, xếp theo số tiền | Hoàn thành: tính số dư sau thanh toán FIFO, sắp overdueAmount giảm dần; danh sách đầu có tổng toàn bộ, API phân trang xem thêm | Chưa nối | GET `/api/reports/dashboard/overdue-dealers`; test đã trả hết, trả một phần, đúng ngày hạn, maxDebtDays=0, trang vượt cuối |
+| Toàn bộ dữ liệu tải dưới 2 giây | Đạt trong môi trường tích hợp: tối đa 210 ms ở lần hồi quy, 3 HTTP request đầy đủ trên 10.000 đơn/1.000 đại lý/1.000 SKU minimum | Chưa đo render hoặc mạng frontend | 5 truy vấn tổng hợp nghiệp vụ/request; không N+1; chưa đo MySQL thật |
+| Ma trận quyền DB | Hoàn thành: quyền DASHBOARD_VIEW, ROLE_ADMIN luôn có quyền; không fallback từ vai trò hoặc quyền báo cáo khác; thu hồi có hiệu lực request kế tiếp với JWT cũ | Catalog ma trận hiện có tải động; menu/dashboard hiện tại chưa gắn quyền và chưa nối API S8-05 | Test non-admin chỉ có một vai trò, cấp/thu hồi và kiểm 403 cả hai endpoint |
+| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 53 tests liên quan qua, 8 ca tích hợp dashboard | Không sửa file frontend | Có sửa assertion audit tiền cũ phụ thuộc locale; không thay đổi thanh toán |
+
+DB mới khởi tạo DASHBOARD_VIEW cho SALES_MANAGER và ADMIN. DB đã cấu hình giữ nguyên ma trận: ADMIN cần chủ động cấp quyền mới. Không dùng dữ liệu giả/localStorage. Các truy vấn là read-only với snapshot REPEATABLE_READ; không sửa dữ liệu nghiệp vụ. Bằng chứng hiệu năng trên H2 MySQL mode, chưa nghiệm thu MySQL hoặc UI thực tế.
+
+Lệnh kiểm thử: `mvn -q "-Dtest=DashboardIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,DebtRiskSecurityTest,DealerDebtServiceTest,DebtRiskIntegrationTest" test`. Sau khi sửa assertion locale, bộ DealerDebtServiceTest được chạy lại và 20/20 qua; kết quả cuối các bộ cộng lại 53/53 qua.
+
 ## S7-05 — Ghi nhận khoản thu theo tuyến (cập nhật 2026-10-24)
 
 Backend đã có trên `develop`; frontend nối API tại nhánh `feature/frontend/S7-05/thu-tien-theo-tuyen`. Vị trí: **Tài chính → Thu tiền theo tuyến**, `/cash-collections`.
