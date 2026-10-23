@@ -3700,3 +3700,96 @@ Chỉ backend; frontend chưa có luồng gọi API sổ chi tiết hoặc tải
 ```text
 mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
 ```
+
+
+---
+
+## S8-01 — Lập phiếu trả hàng từ đại lý và nhập lại kho (Backend — 23/10/2026)
+
+Hỗ trợ Nhân viên kinh doanh lập phiếu trả hàng từ đại lý gắn với hoá đơn gốc và Quản lý kho xác nhận nhận hàng để nhập lại kho theo đúng quy trình.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-01)
+
+1. **Chọn hoá đơn gốc, chọn dòng hàng và số lượng trả, bắt buộc chọn lý do trả**:
+   - Phiếu trả hàng bắt buộc gắn với `invoiceId` (hoá đơn gốc đang hiệu lực `ISSUED` hoặc `ADJUSTED`; chặn hoá đơn `CANCELLED`).
+   - Mỗi dòng trả hàng (`items`) tham chiếu tới `invoiceItemId` hoặc `productId` thuộc hoá đơn gốc, số lượng trả dương (`quantity > 0`) và **bắt buộc có lý do trả (`returnReason`)**.
+2. **Số lượng trả không vượt số lượng đã giao trừ phần đã trả trước đó**:
+   - Với từng dòng hoá đơn gốc, hệ thống tính:
+     - `deliveredQuantity`: Số lượng đã giao / lập hoá đơn (`InvoiceItem.invoicedQuantity`).
+     - `alreadyReturnedQuantity`: Tổng số lượng đã lập phiếu trả trước đó ở trạng thái `PENDING` hoặc `CONFIRMED` (không tính phiếu `CANCELLED`).
+     - `remainingReturnableQuantity = deliveredQuantity - alreadyReturnedQuantity`.
+   - Nếu số lượng trả (kể cả cộng dồn các dòng cùng `invoiceItemId` trong một request) vượt `remainingReturnableQuantity`, hệ thống chặn với `400 Bad Request`.
+   - Khi lập phiếu trả, hệ thống dùng khoá bi quan (`PESSIMISTIC_WRITE`) trên hoá đơn gốc để chống vượt số lượng trả dưới tải đồng thời.
+3. **Hàng trả về nhập lại đúng lô nếu SKU có quản lý lô; hàng hỏng nhập vào kho hàng lỗi**:
+   - **SKU quản lý lô (`Product.manageLot = true`)**: Bắt buộc cung cấp `lotNumber` (hoặc tự động kế thừa từ phiếu xuất kho gốc nếu có). Khi xác nhận nhận hàng, hệ thống kiểm tra và nhập lại đúng lô trong `WarehouseLotInventory` (nếu lô chưa tồn tại tại kho đích như kho hàng lỗi thì bắt buộc có `expiryDate` hoặc kế thừa HSD từ lô gốc).
+   - **Phân loại hàng tốt / hàng hỏng (`damaged` / `condition`)**:
+     - Hàng tốt (`damaged = false`, `condition = GOOD`): Nhập về kho thường (`warehouseId` chỉ định hoặc kho của đơn hàng gốc). Chặn nếu chọn kho hàng lỗi cho hàng tốt.
+     - Hàng hỏng (`damaged = true` hoặc `condition = DAMAGED`/`DEFECTIVE` hoặc lý do trả thuộc nhóm hàng hỏng/lỗi): Bắt buộc định tuyến vào **kho hàng lỗi** (`Warehouse.defective = true`). Nếu request truyền kho thường cho dòng hàng hỏng sẽ bị chặn `400 Bad Request`; nếu không truyền kho riêng, hệ thống tự động chọn kho hàng lỗi đang hoạt động (hoặc khởi tạo kho hàng lỗi mặc định `KHO-HANG-LOI`).
+4. **Phiếu trả phải được Quản lý kho xác nhận nhận hàng mới cộng tồn**:
+   - Khi Nhân viên kinh doanh lập phiếu (`POST /api/dealer-returns`), phiếu ở trạng thái `PENDING` (`Chờ kho xác nhận`) — **tuyệt đối chưa cộng tồn kho** (`WarehouseInventory` và `WarehouseLotInventory` giữ nguyên).
+   - Chỉ khi người dùng có quyền `WAREHOUSE_APPROVE` (Quản lý kho) hoặc `ROLE_ADMIN` gọi `POST /api/dealer-returns/{id}/confirm`, phiếu mới chuyển sang `CONFIRMED` (`Đã nhập lại kho`), cộng tồn kho vật lý (`WarehouseInventory.baseQuantity`), cộng tồn theo lô (`WarehouseLotInventory.quantity`), hiển thị trên Thẻ kho (`DEALER_RETURN`), và ghi `AuditLog`.
+5. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Lập phiếu trả hàng: Bắt buộc quyền `ORDER_CREATE` (hoặc `ROLE_ADMIN`). Nhân viên kinh doanh chỉ được lập phiếu cho đại lý mình phụ trách hoặc hoá đơn/đơn hàng mình tạo.
+   - Xác nhận nhận hàng trả và cộng tồn: Bắt buộc quyền `WAREHOUSE_APPROVE` (hoặc `ROLE_ADMIN`) và kho nhận hàng phải nằm trong phạm vi kho được phân công.
+   - Xem phiếu trả / tra cứu hoá đơn đủ điều kiện trả: Bắt buộc một trong các quyền `ORDER_VIEW`, `ORDER_CREATE`, `INVOICE_VIEW`, `WAREHOUSE_VIEW`, `WAREHOUSE_APPROVE`, `WAREHOUSE_IMPORT` (hoặc `ROLE_ADMIN`).
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay ở request kế tiếp trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/dealer-returns`, `/api/warehouse/dealer-returns`, `/api/returns`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/dealer-returns/options` | Quyền xem/tạo phiếu trả hoặc kho | Danh mục lý do trả hàng chuẩn, kho thường, kho hàng lỗi, trạng thái và cờ quyền `canCreate`, `canConfirm` |
+| `GET` | `/api/dealer-returns/eligible-invoices` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách hoá đơn gốc đủ điều kiện trả hàng kèm từng dòng hàng và số lượng còn được trả |
+| `GET` | `/api/dealer-returns/eligible-invoices/{invoiceId}` | Quyền xem/tạo phiếu trả hoặc kho | Chi tiết một hoá đơn gốc kèm số lượng đã giao, đã trả và còn được trả của từng dòng |
+| `POST` | `/api/dealer-returns` | `ORDER_CREATE` hoặc `ROLE_ADMIN` | Lập phiếu trả hàng từ đại lý ở trạng thái `PENDING` (chưa cộng tồn kho) |
+| `POST` | `/api/dealer-returns/{id}/confirm` | `WAREHOUSE_APPROVE` hoặc `ROLE_ADMIN` | Quản lý kho xác nhận đã nhận hàng trả, chuyển sang `CONFIRMED` và cộng tồn kho / tồn lô |
+| `POST` | `/api/dealer-returns/{id}/cancel` | `ORDER_CREATE`, `ORDER_CANCEL`, hoặc `WAREHOUSE_APPROVE` | Huỷ phiếu trả hàng đang ở trạng thái `PENDING` kèm lý do bắt buộc |
+| `GET` | `/api/dealer-returns/{id}` | Quyền xem/tạo phiếu trả hoặc kho | Xem chi tiết phiếu trả hàng |
+| `GET` | `/api/dealer-returns` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách phiếu trả hàng phân trang (`dealerId`, `invoiceId`, `warehouseId`, `status`, `keyword`, `startDate`, `endDate`, `page`, `size`) |
+
+
+---
+
+## S8-01 — Lập phiếu trả hàng từ đại lý và nhập lại kho (Backend — 23/10/2026)
+
+Hỗ trợ Nhân viên kinh doanh lập phiếu trả hàng từ đại lý gắn với hoá đơn gốc và Quản lý kho xác nhận nhận hàng để nhập lại kho theo đúng quy trình.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-01)
+
+1. **Chọn hoá đơn gốc, chọn dòng hàng và số lượng trả, bắt buộc chọn lý do trả**:
+   - Phiếu trả hàng bắt buộc gắn với `invoiceId` (hoá đơn gốc đang hiệu lực `ISSUED` hoặc `ADJUSTED`; chặn hoá đơn `CANCELLED`).
+   - Mỗi dòng trả hàng (`items`) tham chiếu tới `invoiceItemId` hoặc `productId` thuộc hoá đơn gốc, số lượng trả dương (`quantity > 0`) và **bắt buộc có lý do trả (`returnReason`)**.
+2. **Số lượng trả không vượt số lượng đã giao trừ phần đã trả trước đó**:
+   - Với từng dòng hoá đơn gốc, hệ thống tính:
+     - `deliveredQuantity`: Số lượng đã giao / lập hoá đơn (`InvoiceItem.invoicedQuantity`).
+     - `alreadyReturnedQuantity`: Tổng số lượng đã lập phiếu trả trước đó ở trạng thái `PENDING` hoặc `CONFIRMED` (không tính phiếu `CANCELLED`).
+     - `remainingReturnableQuantity = deliveredQuantity - alreadyReturnedQuantity`.
+   - Nếu số lượng trả (kể cả cộng dồn các dòng cùng `invoiceItemId` trong một request) vượt `remainingReturnableQuantity`, hệ thống chặn với `400 Bad Request`.
+   - Khi lập phiếu trả, hệ thống dùng khoá bi quan (`PESSIMISTIC_WRITE`) trên hoá đơn gốc để chống vượt số lượng trả dưới tải đồng thời.
+3. **Hàng trả về nhập lại đúng lô nếu SKU có quản lý lô; hàng hỏng nhập vào kho hàng lỗi**:
+   - **SKU quản lý lô (`Product.manageLot = true`)**: Bắt buộc cung cấp `lotNumber` (hoặc tự động kế thừa từ phiếu xuất kho gốc nếu có). Khi xác nhận nhận hàng, hệ thống kiểm tra và nhập lại đúng lô trong `WarehouseLotInventory` (nếu lô chưa tồn tại tại kho đích như kho hàng lỗi thì bắt buộc có `expiryDate` hoặc kế thừa HSD từ lô gốc).
+   - **Phân loại hàng tốt / hàng hỏng (`damaged` / `condition`)**:
+     - Hàng tốt (`damaged = false`, `condition = GOOD`): Nhập về kho thường (`warehouseId` chỉ định hoặc kho của đơn hàng gốc). Chặn nếu chọn kho hàng lỗi cho hàng tốt.
+     - Hàng hỏng (`damaged = true` hoặc `condition = DAMAGED`/`DEFECTIVE` hoặc lý do trả thuộc nhóm hàng hỏng/lỗi): Bắt buộc định tuyến vào **kho hàng lỗi** (`Warehouse.defective = true`). Nếu request truyền kho thường cho dòng hàng hỏng sẽ bị chặn `400 Bad Request`; nếu không truyền kho riêng, hệ thống tự động chọn kho hàng lỗi đang hoạt động (hoặc khởi tạo kho hàng lỗi mặc định `KHO-HANG-LOI`).
+4. **Phiếu trả phải được Quản lý kho xác nhận nhận hàng mới cộng tồn**:
+   - Khi Nhân viên kinh doanh lập phiếu (`POST /api/dealer-returns`), phiếu ở trạng thái `PENDING` (`Chờ kho xác nhận`) — **tuyệt đối chưa cộng tồn kho** (`WarehouseInventory` và `WarehouseLotInventory` giữ nguyên).
+   - Chỉ khi người dùng có quyền `WAREHOUSE_APPROVE` (Quản lý kho) hoặc `ROLE_ADMIN` gọi `POST /api/dealer-returns/{id}/confirm`, phiếu mới chuyển sang `CONFIRMED` (`Đã nhập lại kho`), cộng tồn kho vật lý (`WarehouseInventory.baseQuantity`), cộng tồn theo lô (`WarehouseLotInventory.quantity`), hiển thị trên Thẻ kho (`DEALER_RETURN`), và ghi `AuditLog`.
+5. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Lập phiếu trả hàng: Bắt buộc quyền `ORDER_CREATE` (hoặc `ROLE_ADMIN`). Nhân viên kinh doanh chỉ được lập phiếu cho đại lý mình phụ trách hoặc hoá đơn/đơn hàng mình tạo.
+   - Xác nhận nhận hàng trả và cộng tồn: Bắt buộc quyền `WAREHOUSE_APPROVE` (hoặc `ROLE_ADMIN`) và kho nhận hàng phải nằm trong phạm vi kho được phân công.
+   - Xem phiếu trả / tra cứu hoá đơn đủ điều kiện trả: Bắt buộc một trong các quyền `ORDER_VIEW`, `ORDER_CREATE`, `INVOICE_VIEW`, `WAREHOUSE_VIEW`, `WAREHOUSE_APPROVE`, `WAREHOUSE_IMPORT` (hoặc `ROLE_ADMIN`).
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay ở request kế tiếp trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/dealer-returns`, `/api/warehouse/dealer-returns`, `/api/returns`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/dealer-returns/options` | Quyền xem/tạo phiếu trả hoặc kho | Danh mục lý do trả hàng chuẩn, kho thường, kho hàng lỗi, trạng thái và cờ quyền `canCreate`, `canConfirm` |
+| `GET` | `/api/dealer-returns/eligible-invoices` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách hoá đơn gốc đủ điều kiện trả hàng kèm từng dòng hàng và số lượng còn được trả |
+| `GET` | `/api/dealer-returns/eligible-invoices/{invoiceId}` | Quyền xem/tạo phiếu trả hoặc kho | Chi tiết một hoá đơn gốc kèm số lượng đã giao, đã trả và còn được trả của từng dòng |
+| `POST` | `/api/dealer-returns` | `ORDER_CREATE` hoặc `ROLE_ADMIN` | Lập phiếu trả hàng từ đại lý ở trạng thái `PENDING` (chưa cộng tồn kho) |
+| `POST` | `/api/dealer-returns/{id}/confirm` | `WAREHOUSE_APPROVE` hoặc `ROLE_ADMIN` | Quản lý kho xác nhận đã nhận hàng trả, chuyển sang `CONFIRMED` và cộng tồn kho / tồn lô |
+| `POST` | `/api/dealer-returns/{id}/cancel` | `ORDER_CREATE`, `ORDER_CANCEL`, hoặc `WAREHOUSE_APPROVE` | Huỷ phiếu trả hàng đang ở trạng thái `PENDING` kèm lý do bắt buộc |
+| `GET` | `/api/dealer-returns/{id}` | Quyền xem/tạo phiếu trả hoặc kho | Xem chi tiết phiếu trả hàng |
+| `GET` | `/api/dealer-returns` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách phiếu trả hàng phân trang (`dealerId`, `invoiceId`, `warehouseId`, `status`, `keyword`, `startDate`, `endDate`, `page`, `size`) |
+

@@ -88,6 +88,7 @@
 
 ## Phần S8 đã có trên develop
 
+- S8-01: Chỉ backend → `/api/dealer-returns` → Chọn hoá đơn gốc/dòng hàng/lý do lập phiếu trả hàng đại lý, nhập lại đúng lô hoặc kho hàng lỗi, Quản lý kho xác nhận nhận hàng mới cộng tồn; chưa có màn hình/menu.
 - S8-03: Một phần: Kho hàng → Sổ cái kho → Chi tiết phiếu nhập đã xác nhận → Lập phiếu điều chỉnh tăng/giảm kèm lý do; chưa có luồng lập/duyệt hai người riêng.
 - S8-05: Một phần: Tổng quan → Cảnh báo tồn dưới mức tối thiểu, Công việc; chưa có dashboard đầy đủ KPI/biểu đồ doanh số theo backlog.
 - S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel (ba cột tồn); tên tệp hiện là `So-ton-kho.xlsx`, chưa kèm mã kho/ngày.
