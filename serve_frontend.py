@@ -26,6 +26,7 @@ ROUTES = {
     "/invoices": "invoices.html",
     "/cash-collections": "cash-collections.html",
     "/reports/dashboard": "operations-dashboard.html",
+    "/reports/debt-aging": "debt-aging.html",
     "/product-units": "product-units.html",
     "/warehouse/units": "warehouse/units.html",
     "/warehouse/delivery": "warehouse/delivery.html",

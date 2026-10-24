@@ -122,6 +122,17 @@ class FrontendRoutingTest(unittest.TestCase):
         self.assertEqual(308, status)
         self.assertEqual('/reports/dashboard', headers['Location'])
 
+    def test_s809_debt_aging_frontend_route_and_pending_backend(self):
+        status, _, body = self.get('/reports/debt-aging')
+        self.assertEqual(200, status)
+        html = body.decode('utf-8')
+        for text in ['Công nợ theo tuổi nợ', 'aging-pending', 'debt-aging-api.js', 'app-shell.js', 'app-navigation.css']:
+            self.assertIn(text, html)
+        self.assertEqual(200, self.get('/reports/debt-aging', method='HEAD')[0])
+        status, headers, _ = self.get('/debt-aging.html')
+        self.assertEqual(308, status)
+        self.assertEqual('/reports/debt-aging', headers['Location'])
+
     def test_s507_transfer_route(self):
         status, _, body = self.get('/warehouse/transfers')
         self.assertEqual(status, 200)

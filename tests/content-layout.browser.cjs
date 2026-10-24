@@ -13,7 +13,7 @@ const cases = [
   '/admin/users', '/admin/audit-logs', '/warehouses', '/warehouse/inventory', '/warehouse/transfers', '/warehouse/minimums',
   '/warehouse/units?tab=stocktake', '/warehouse/lots', '/warehouse/stock-card',
   '/warehouse/picking', '/warehouse/delivery', '/warehouse/order-shipments', '/warehouse/delivery-trips',
-  '/warehouse/dealer-returns', '/reports/dashboard',
+  '/warehouse/dealer-returns', '/reports/dashboard', '/reports/debt-aging',
 ];
 const user = { id: 1, username: 'admin', fullName: 'Quản trị viên', email: 'admin@example.invalid',
   phone: '0900000000', roles: ['ROLE_ADMIN'], permissions: [], warehouses: [], territories: [] };
@@ -107,7 +107,7 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
             .slice(0, 8).map(element => ({ tag: element.tagName, class: element.className, text: element.textContent.slice(0, 60) })));
           assert.fail(`Page overflow: ${JSON.stringify({ ...results.at(-1), overflowing })}`);
         }
-        assert.equal(dimensions.sidebarWidth, 260, 'Sidebar sizing must not change');
+        assert.equal(dimensions.sidebarWidth, 260, 'Sidebar sizing must not change: '+JSON.stringify(results.at(-1)));
         assert.equal(await page.locator('.main-area').count(), 1);
         if ([1920, 390].includes(width) && ['/dashboard?view=debt-limits', '/discount-policies', '/profile', '/orders', '/dealer-portal'].includes(route)) {
           await page.screenshot({ path: path.join(output, `${route.split('?')[0].replaceAll('/', '-')}-${width}.png`) });

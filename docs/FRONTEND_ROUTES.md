@@ -1,5 +1,15 @@
 # Chạy frontend và đường dẫn trang
 
+## S8-09 — Công nợ theo tuổi nợ (24/10/2026, chỉ frontend, chờ backend)
+
+- Vị trí **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Menu/guard theo **REPORT_FINANCE** trong ma trận DB; ADMIN luôn có quyền, không fallback từ ACCOUNTANT/FINANCE_VIEW_DEBT/DASHBOARD_VIEW; tài khoản chỉ đại lý không vào màn nội bộ.
+- **Chưa có backend S8-09 trên nhánh này.** Adapter `debt-aging-api.js` có `available: false`, không gọi URL phỏng đoán hoặc lấy số liệu dashboard/đại lý bị gắn cờ làm tuổi nợ. Màn hình báo chờ backend, chỉ số “—”, khóa tải báo cáo/bộ lọc dữ liệu/xuất Excel, không có dữ liệu giả trong ứng dụng.
+- Đã dựng bộ lọc ngày chốt/nhân viên/chưa phân công; tổng tiền/số đại lý/ngày quá hạn; bảng nhóm tuổi nợ hoặc nhân viên; ưu tiên theo rank/tiêu chí server, đồng hạng, mở dòng từ phần ưu tiên; phân trang nội bộ 20/50/100. Nhóm/ngưỡng từ adapter, không hardcode 30/60/90 hoặc tính tuổi nợ bằng đồng hồ trình duyệt.
+- Luồng Excel được kiểm thử qua adapter cách ly: bốn sheet, toàn bộ snapshot theo bộ lọc (không chỉ trang hiện tại), tiền giữ nguyên dạng text, không công thức/hyperlink từ tên. Xác minh quyền trước/sau dựng file; đổi bộ lọc/thu hồi quyền/rời trang xóa dữ liệu và hủy kết quả trễ. Không thêm browser storage nghiệp vụ.
+- Bố cục SaleStock chung, desktop/tablet/mobile; bảng cuộn trong khung. Tests dùng adapter riêng, không chứng minh đã nối backend. Đề xuất DTO/adapter và checklist bàn giao: [S8-09_FRONTEND_CONTRACT.md](S8-09_FRONTEND_CONTRACT.md). Cần backend xác nhận hợp đồng và nghiệm thu API 403/dữ liệu thật trước khi bật chức năng; không sửa file backend.
+- Kết quả kiểm chứng: **209 unit tests JS**, **13 test server/route**, **18 kịch bản Chrome S8-09** và **216 kiểm tra bố cục (36 trang × 6 kích thước)** qua. Đã xem ảnh desktop/mobile/chờ backend và đọc lại file Excel tải xuống; chưa nghiệm thu backend hoặc dữ liệu DB thật.
+- Kiểm thử: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/debt-aging.browser.cjs` (frontend mặc định cổng 5538 hoặc `NAV_TEST_URL`); `node tests/content-layout.browser.cjs`.
+
 ## S8-05 — Dashboard điều hành (24/10/2026, frontend nối backend hiện có)
 
 - **Báo cáo → Dashboard điều hành**, `/reports/dashboard`; lối tắt **Tổng quan → Công việc → Dashboard điều hành**. Giữ nguyên trang Tổng quan dùng chung, hồ sơ cá nhân và màn `/dashboard?view=debt-limits`; không yêu cầu DASHBOARD_VIEW để dùng các trang cũ này.
@@ -127,6 +137,7 @@ Backend vẫn chạy ở cổng 8080 theo cấu hình trong README.
 | Đăng nhập | `/login` |
 | Tổng quan | `/dashboard` |
 | Dashboard điều hành (S8-05) | `/reports/dashboard` — DASHBOARD_VIEW hoặc ADMIN; lối tắt từ Tổng quan |
+| Công nợ theo tuổi nợ (S8-09, frontend chờ backend) | `/reports/debt-aging` — REPORT_FINANCE hoặc ADMIN; chưa tải dữ liệu/xuất Excel thật |
 | Hồ sơ | `/profile` |
 | Sản phẩm | `/products` |
 | Nhóm hàng | `/product-groups` |

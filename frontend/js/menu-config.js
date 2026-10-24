@@ -332,6 +332,15 @@ const MenuConfig = (() => {
       permission: "DASHBOARD_VIEW",
     },
     {
+      id: "debt-aging",
+      section: "Báo cáo",
+      label: "Công nợ theo tuổi nợ",
+      icon: '<path d="M4 3h16v18H4zM8 7h8M8 11h8M8 15h3M15 15v3M18 13v5"/>',
+      href: "/reports/debt-aging",
+      roles: ALL_ROLES,
+      permission: "REPORT_FINANCE",
+    },
+    {
       id: "users",
       section: "Hệ thống",
       label: "Quản lý tài khoản",
