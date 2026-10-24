@@ -34,7 +34,7 @@ public class CreateInvoiceRequest {
     private LocalDateTime invoiceDate;
 
     /**
-     * Hạn thanh toán hóa đơn (tùy chọn; mặc định tính theo ngày phát hành + số ngày nợ tối đa của đại lý).
+     * Hạn thanh toán hóa đơn (S7-08). Nếu không truyền, hệ thống tự tính theo hạn nợ đại lý.
      */
     private LocalDate dueDate;
 

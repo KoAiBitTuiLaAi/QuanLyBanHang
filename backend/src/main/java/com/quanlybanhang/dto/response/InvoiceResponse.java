@@ -19,6 +19,7 @@ public class InvoiceResponse {
     private String invoiceCode;
     private LocalDateTime invoiceDate;
     private LocalDate dueDate;
+    private Boolean isPaid;
     private InvoiceStatus status;
     private String statusLabel;
 

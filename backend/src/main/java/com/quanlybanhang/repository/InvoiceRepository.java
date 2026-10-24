@@ -40,4 +40,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long>, JpaSpec
 
     @Query("SELECT COUNT(i) > 0 FROM Invoice i JOIN i.orders o WHERE o.id = :orderId AND i.status != com.quanlybanhang.model.InvoiceStatus.CANCELLED")
     boolean isOrderInvoiced(@Param("orderId") Long orderId);
+
+    /**
+     * Lấy tất cả hóa đơn chưa hủy và chưa thanh toán đủ kèm thông tin đại lý để phục vụ quét nhắc nợ (S7-08).
+     */
+    @Query("SELECT i FROM Invoice i JOIN FETCH i.dealer d WHERE i.status != com.quanlybanhang.model.InvoiceStatus.CANCELLED AND (i.isPaid = false OR i.isPaid IS NULL)")
+    List<Invoice> findActiveUnpaidInvoicesWithDealer();
+
+    List<Invoice> findByDealerIdAndStatusNot(Long dealerId, com.quanlybanhang.model.InvoiceStatus status);
 }

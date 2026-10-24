@@ -63,6 +63,9 @@ public enum Permission {
     INVOICE_CREATE("Phát hành hóa đơn"),
     INVOICE_ADJUST("Lập chứng từ điều chỉnh"),
 
+    // ── Thông báo (S7-08) ──
+    NOTIFICATION_VIEW("Xem thông báo"),
+
     // ── Báo cáo ──
     DASHBOARD_VIEW("Xem dashboard điều hành bán hàng và kho"),
     REPORT_SALES("Xem báo cáo bán hàng"),
