@@ -22,6 +22,7 @@ ROUTES = {
     "/order-approval": "order-approval.html",
     "/dealer-orders": "dealer-orders.html",
     "/dealer-portal": "dealer-portal.html",
+    "/dealer-invoices": "dealer-invoices.html",
     "/suppliers": "suppliers.html",
     "/invoices": "invoices.html",
     "/cash-collections": "cash-collections.html",

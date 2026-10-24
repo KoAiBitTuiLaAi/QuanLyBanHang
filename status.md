@@ -1,5 +1,26 @@
 # Trạng thái sprint 1–8
 
+## S7-07 — Đại lý xem công nợ của chính mình và danh sách hóa đơn (Frontend) (24/10/2026)
+
+Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ các tiêu chí nghiệp vụ trong ảnh yêu cầu:
+- Danh sách hoá đơn kèm số tiền, hạn thanh toán, trạng thái
+- Xem và tải lại hoá đơn đã phát hành (PDF, xem bản in HTML, chứng từ điều chỉnh)
+- Hiển thị tổng còn nợ và hạn mức còn lại (hạn mức nợ, số ngày nợ tối đa, hạn mức còn được lấy hàng thực tế availableOrderLimit)
+Theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Hiển thị tổng còn nợ và hạn mức còn lại** | Có (đã có từ trước) | Có | Có | Gọi API `GET /api/portal/debt/summary` (hoặc `/portal/debt`): hiển thị trực quan các thẻ chỉ số Tổng còn nợ (`currentDebt`), Hạn mức công nợ (`debtLimit`), Hạn mức còn lại (`remainingLimit`), Hạn mức còn được lấy hàng (`availableOrderLimit`), Số HĐ chưa thanh toán/quá hạn, số ngày nợ tối đa (`maxDebtDays`). Cảnh báo rõ ràng nếu bị chặn hoặc có nợ quá hạn. Yêu cầu quyền `FINANCE_VIEW_DEBT` (hoặc `ROLE_ADMIN`). |
+| **Danh sách hoá đơn kèm số tiền, hạn thanh toán, trạng thái** | Có (đã có từ trước) | Có | Có | Màn hình `Kinh doanh → Công nợ của tôi` (`/dealer-invoices`): Bảng danh sách hóa đơn phân trang, tìm kiếm từ khóa, lọc theo trạng thái thanh toán (`UNPAID`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`), trạng thái phát hành (`ISSUED`, `ADJUSTED`, `CANCELLED`), lọc ngày; hiển thị Số hóa đơn, Ngày lập, Hạn thanh toán (kèm tag quá hạn/ngày còn lại), Tổng tiền, Đã trả, Còn nợ, TT thanh toán và phát hành. Tfoot tính tổng trang. Yêu cầu quyền `INVOICE_VIEW` (hoặc `ROLE_ADMIN`). |
+| **Xem và tải lại hoá đơn đã phát hành** | Có (đã có từ trước) | Có | Có | Thao tác trên từng hóa đơn: nút **Xem** mở modal hiển thị đầy đủ thông tin bên mua, danh sách mặt hàng thực tế (`items`), tổng thanh toán, tiền đã trả, còn nợ và chứng từ điều chỉnh liên kết; nút **In** mở bản in HTML qua API `/api/portal/invoices/{id}/print-preview`; nút **PDF** tải file PDF qua API `/api/portal/invoices/{id}/pdf?download=true`; hỗ trợ tải PDF chứng từ điều chỉnh qua `/api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf`. Yêu cầu quyền `INVOICE_VIEW` (hoặc `ROLE_ADMIN`). |
+| **Xuất Excel danh sách hóa đơn & công nợ** | Không yêu cầu BE riêng | Có | Có | Tích hợp xuất file `.xlsx` (`CongNo_HoaDon_YYYY-MM-DD.xlsx`) từ danh sách hóa đơn đang lọc bằng thư viện `vendor/xlsx.full.min.js`. |
+| **Hỗ trợ Quản trị viên (ROLE_ADMIN)** | Có | Có | Có | Quản trị viên có thể chọn đại lý cần xem công nợ và hóa đơn thông qua bộ chọn đại lý (`DealerPortalContext`), tự động gắn query param `dealerId`. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Bắt buộc quyền `INVOICE_VIEW` để xem danh sách/chi tiết/PDF/in hóa đơn và `FINANCE_VIEW_DEBT` để xem tổng quan công nợ. Thu hồi quyền trên phiên hiện tại lập tức ẩn các vùng dữ liệu tương ứng, đóng modal và hiển thị thông báo truy cập bị từ chối; không dùng role-based fallback. Lắng nghe sự kiện `auth:permissions-changed`. `ROLE_ADMIN` luôn có toàn quyền truy cập. |
+
+Kiểm thử: **5/5 tests S7-07 qua 100%** trong `tests/dealer-invoices.test.cjs`, toàn bộ **219/219 tests Node** trong dự án qua, menu config và routing hoạt động chính xác. Đã cập nhật `docs/FUNCTION_MAP.md`.
+
+---
+
 ## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Frontend) — 24/10/2026
 
 Nhánh `feature/S7-02-ghi-nhan-thanh-toan(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 5 tiêu chí nghiệp vụ theo yêu cầu người dùng: **chỉ làm frontend**.

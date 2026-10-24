@@ -98,6 +98,15 @@ const MenuConfig = (() => {
       roles: ["ROLE_ADMIN", "ROLE_DEALER"],
     },
     {
+      id: "dealer-invoices",
+      section: "Kinh doanh",
+      label: "Công nợ của tôi",
+      icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+      href: "/dealer-invoices",
+      permission: "INVOICE_VIEW",
+      roles: ["ROLE_ADMIN", "ROLE_DEALER"],
+    },
+    {
       id: "price-lists",
       section: "Kinh doanh",
       label: "Bảng giá",
@@ -421,8 +430,8 @@ const MenuConfig = (() => {
     return menuItems.filter((item) => {
       if (isAdmin) return true;
       // Tài khoản chỉ là đại lý truy cập dữ liệu của chính mình qua cổng.
-      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal"].includes(item.id)) return false;
-      if (["dealer-orders", "dealer-portal", "audit-logs"].includes(item.id)
+      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal", "dealer-invoices"].includes(item.id)) return false;
+      if (["dealer-orders", "dealer-portal", "dealer-invoices", "audit-logs"].includes(item.id)
           && !item.roles.some((role) => roles.includes(role))) return false;
       if (item.requiredPermissions && !item.requiredPermissions.every(permission => permissions.includes(permission))) return false;
       if (item.permission) return permissions.includes(item.permission);
