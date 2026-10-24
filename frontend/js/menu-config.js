@@ -314,6 +314,15 @@ const MenuConfig = (() => {
       permissions: ["INVOICE_VIEW", "INVOICE_ADJUST"],
     },
     {
+      id: "debt-statement",
+      section: "Tài chính",
+      label: "Sổ chi tiết công nợ",
+      icon: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10M6 14h6"/>',
+      href: "/finance/debt-statement",
+      roles: ALL_ROLES,
+      permission: "FINANCE_VIEW_DEBT",
+    },
+    {
       id: "cash-collections",
       section: "Tài chính",
       label: "Thu tiền theo tuyến",

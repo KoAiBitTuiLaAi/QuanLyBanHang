@@ -44,6 +44,7 @@ ROUTES = {
     "/admin/users": "admin/users.html",
     "/admin/audit-logs": "admin/audit-logs.html",
     "/finance/debt-adjustment": "finance/debt-adjustment.html",
+    "/finance/debt-statement": "finance/debt-statement.html",
     "/forgot-password": "forgot-password.html",
     "/reset-password": "reset-password.html",
     "/error": "error.html",
