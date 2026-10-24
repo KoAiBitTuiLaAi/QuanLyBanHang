@@ -26,6 +26,8 @@ import java.util.*;
 @RequiredArgsConstructor
 public class DealerServiceImpl implements DealerService {
 
+    private final ReturnOrderRepository returnOrderRepository;
+    private final DebtPaymentRepository debtPaymentRepository;
     private final DealerRepository dealerRepository;
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
@@ -849,6 +851,20 @@ public class DealerServiceImpl implements DealerService {
             currentDebt = BigDecimal.ZERO;
         }
         BigDecimal debtLimit = dealer.getDebtLimit() != null ? dealer.getDebtLimit() : BigDecimal.ZERO;
+        BigDecimal totalPaid = BigDecimal.ZERO;
+        Map<Long, BigDecimal> returnCredits = new HashMap<>();
+        if (debtPaymentRepository != null) {
+            BigDecimal paid = debtPaymentRepository.sumAmountByDealerId(dealer.getId());
+            if (paid != null) { totalPaid = paid; currentDebt = currentDebt.subtract(paid); }
+        }
+        if (returnOrderRepository != null) {
+            var credits = returnOrderRepository.creditsByOrder(dealer.getId(), OrderStatus.debtBearingStatuses());
+            credits.forEach(row -> returnCredits.put(row.getOrderId(), row.getAmount()));
+            BigDecimal returned = credits
+                    .stream().map(ReturnOrderRepository.OrderCredit::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            currentDebt = currentDebt.subtract(returned);
+        }
+        currentDebt = currentDebt.max(BigDecimal.ZERO);
         BigDecimal remainingDebtLimit = debtLimit.subtract(currentDebt);
         int maxDebtDays = dealer.getMaxDebtDays() != null ? dealer.getMaxDebtDays() : 0;
 
@@ -857,7 +873,15 @@ public class DealerServiceImpl implements DealerService {
         if (maxDebtDays > 0) {
             List<Order> recordedOrders = orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(dealer.getId(), OrderStatus.debtBearingStatuses());
             LocalDate today = LocalDate.now();
+            BigDecimal unallocatedPayment = totalPaid;
             for (Order o : recordedOrders) {
+                BigDecimal amount = (o.getTotalAmount() == null ? BigDecimal.ZERO : o.getTotalAmount())
+                        .subtract(returnCredits.getOrDefault(o.getId(), BigDecimal.ZERO)).max(BigDecimal.ZERO);
+                if (unallocatedPayment.compareTo(amount) >= 0) {
+                    unallocatedPayment = unallocatedPayment.subtract(amount);
+                    continue;
+                }
+                unallocatedPayment = BigDecimal.ZERO;
                 LocalDateTime recTime = o.getRecordedAt() != null ? o.getRecordedAt() : o.getCreatedAt();
                 if (recTime != null) {
                     long days = java.time.temporal.ChronoUnit.DAYS.between(recTime.toLocalDate(), today);

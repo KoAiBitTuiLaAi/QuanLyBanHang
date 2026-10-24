@@ -36,6 +36,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class DealerDebtServiceImpl implements DealerDebtService {
 
+    private final com.quanlybanhang.repository.ReturnOrderRepository returnOrderRepository;
     private final DealerRepository dealerRepository;
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
@@ -103,6 +104,13 @@ public class DealerDebtServiceImpl implements DealerDebtService {
             }
         }
 
+        java.util.Map<Long, BigDecimal> returnCredits = new java.util.HashMap<>();
+        if (returnOrderRepository != null) {
+            returnOrderRepository.creditsByOrder(dealer.getId(), OrderStatus.debtBearingStatuses())
+                    .forEach(row -> returnCredits.put(row.getOrderId(), row.getAmount()));
+        }
+        BigDecimal totalReturns = returnCredits.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+
         List<Order> recordedOrders = orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(dealer.getId(), OrderStatus.debtBearingStatuses());
         if (recordedOrders == null) {
             recordedOrders = Collections.emptyList();
@@ -156,8 +164,8 @@ public class DealerDebtServiceImpl implements DealerDebtService {
             grossDebt = totalOrderDebt;
         }
 
-        // Công nợ thực tế hiện tại = Tổng công nợ gốc - Tổng tiền đã thu
-        BigDecimal currentDebt = grossDebt.subtract(totalPaid).max(BigDecimal.ZERO);
+        // Giữ giảm trừ trả hàng S8-02 cùng cách tính nợ hóa đơn/đơn chưa xuất của develop.
+        BigDecimal currentDebt = grossDebt.subtract(totalPaid).subtract(totalReturns).max(BigDecimal.ZERO);
         BigDecimal remainingLimit = debtLimit.subtract(currentDebt);
 
         LocalDate today = LocalDate.now();
@@ -228,7 +236,8 @@ public class DealerDebtServiceImpl implements DealerDebtService {
         } else if (maxDebtDays > 0) {
             BigDecimal unallocatedPayment = totalPaid;
             for (Order order : recordedOrders) {
-                BigDecimal orderAmt = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+                BigDecimal orderAmt = (order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO)
+                        .subtract(returnCredits.getOrDefault(order.getId(), BigDecimal.ZERO)).max(BigDecimal.ZERO);
                 if (unallocatedPayment.compareTo(orderAmt) >= 0) {
                     // Đơn này đã được thanh toán hết (FIFO)
                     unallocatedPayment = unallocatedPayment.subtract(orderAmt);

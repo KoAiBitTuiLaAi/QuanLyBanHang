@@ -3562,6 +3562,102 @@ Response:
 }
 ```
 
+## S8-02 — Chứng từ điều chỉnh giảm công nợ khi trả hàng
+
+Base path: `/api/invoices/returns`. Yêu cầu Bearer JWT; dữ liệu lưu trong database.
+
+### Phân quyền
+
+- `INVOICE_ADJUST`: lập phiếu trả hàng, xác nhận để sinh chứng từ giảm công nợ, hủy phiếu nháp.
+- `INVOICE_VIEW`: xem danh sách, chi tiết và phiếu trả theo hóa đơn.
+- `ROLE_ADMIN`: luôn có quyền API. Không có fallback cho ACCOUNTANT hoặc vai trò khác.
+- Quyền được đọc qua ma trận DB hiện có, có hiệu lực ở request tiếp theo kể cả JWT cũ. Người chỉ có ADJUST không tự động được VIEW, và ngược lại. Khi thử thu hồi phải bảo đảm không có vai trò thứ hai cấp cùng quyền.
+
+### API
+
+| Method | Path tương đối | Quyền | Kết quả |
+|---|---|---|---|
+| POST | base path | INVOICE_ADJUST | 201, tạo phiếu DRAFT, chưa giảm công nợ |
+| POST | `/{id}/confirm` | INVOICE_ADJUST | 200, xác nhận trả và tạo InvoiceAdjustment(DECREASE) trong cùng transaction |
+| POST | `/{id}/cancel` | INVOICE_ADJUST | 200, chỉ hủy phiếu DRAFT |
+| GET | base path | INVOICE_VIEW | Page, lọc `dealerId`, `invoiceId`, `status`; `page=0`, `size=20` (giới hạn 1–100) |
+| GET | `/{id}` | INVOICE_VIEW | Chi tiết kèm chứng từ điều chỉnh nếu đã xác nhận |
+| GET | `/by-invoice/{invoiceId}` | INVOICE_VIEW | Danh sách phiếu trả liên kết hóa đơn gốc |
+
+POST tạo phiếu:
+
+```json
+{
+  "invoiceId": 12,
+  "returnReason": "Đại lý trả lại hàng",
+  "returnDate": "2026-10-23T08:00:00",
+  "note": "Đã kiểm tra hàng trả",
+  "items": [{"invoiceItemId": 41, "returnQuantity": 2.0000, "note": "Hàng trả của hóa đơn gốc"}]
+}
+```
+
+- `invoiceId` và `invoiceItemId`: bắt buộc, dương. Dòng hàng phải thuộc hóa đơn gốc và có liên kết đơn hàng gốc.
+- `returnReason`: bắt buộc, không chỉ khoảng trắng, tối đa 500 ký tự.
+- `returnDate`: tùy chọn (mặc định thời điểm lập), không ở tương lai. `note`: tối đa 500 ký tự.
+- `items`: 1–500 dòng; không nhận phần tử null hoặc dòng hóa đơn trùng lặp. Note của dòng tối đa 255 ký tự.
+- `returnQuantity`: > 0, tối đa 11 chữ số nguyên và 4 chữ số thập phân. Tổng trả đã CONFIRMED cộng số lượng lần này không được vượt lượng xuất hóa đơn. Kiểm tra lại lúc confirm vì nhiều phiếu DRAFT có thể cùng tồn tại.
+- Không nhận đơn giá/thành tiền hay trạng thái từ client. Không cho trả trên hóa đơn CANCELLED.
+
+POST hủy phiếu nháp:
+
+```json
+{"cancelReason":"Nhập nhầm số lượng"}
+```
+
+Lý do hủy bắt buộc, tối đa 500 ký tự. Không có API sửa/xóa phiếu hoặc hủy khoản trả đã xác nhận.
+
+### Trạng thái, liên kết và tiền giảm trừ
+
+Response dùng envelope `ApiResponse` hiện có. Phiếu trả gồm `id`, `returnCode`, `invoiceId`, `invoiceCode`, `invoiceNumber`, thông tin đại lý, `status`/`statusLabel`, `returnReason`, `returnDate`, `totalReturnAmount`, người/thời điểm lập và xác nhận, `cancelReason`, `note`, `items`, `invoiceAdjustment`.
+
+Mỗi dòng trả có `invoiceItemId` để truy vết chính xác dòng hóa đơn gốc, snapshot sản phẩm/đơn vị, `invoiceUnitPrice`, `invoiceDiscountPerUnit`, `returnQuantity`, `returnAmount`. Khi xác nhận:
+
+1. Khóa hóa đơn và phiếu trả trong DB, kiểm tra còn DRAFT và còn số lượng được trả.
+2. Tính tiền từ **thành tiền sau chiết khấu của dòng hóa đơn gốc**, theo tỷ lệ số lượng trả. Không đọc giá hiện hành của sản phẩm hoặc bảng giá.
+3. Dùng chênh lệch tổng làm tròn lũy kế (2 chữ số thập phân): `round(originalLineTotal * cumulativeReturnedQty / invoicedQty, 2) - previouslyCreditedAmount`. Ví dụ dòng 3 đơn vị trị giá 100.00, trả 3 lần từng đơn vị: 33.33, 33.34, 33.33, tổng chính xác 100.00.
+4. Ghi `InvoiceAdjustment` loại `DECREASE`, số tiền âm, liên kết hóa đơn gốc. Phiếu trả liên kết duy nhất tới chứng từ đã sinh. Mã phiếu/chứng từ dùng UUID, không trùng do đếm sequence đồng thời.
+5. Chuyển phiếu thành CONFIRMED, lưu người/thời điểm; ghi audit RETURN_ORDER và INVOICE_ADJUSTMENT. Chỉ khoản CONFIRMED tác động công nợ.
+6. Tính lại cảnh báo công nợ trong cùng transaction. Nếu bước này lỗi, rollback cả phiếu xác nhận và chứng từ, không nuốt lỗi.
+
+**Hóa đơn gốc giữ nguyên toàn bộ cột**, gồm trạng thái, tổng tiền, adjustedTotalAmount, thông tin khách hàng và các dòng hàng. Chứng từ là bản ghi mới; có thể tra cứu qua response phiếu trả hoặc API hiện có `GET /api/invoices/{id}/adjustments`. Không dùng việc sửa `Invoice.adjustedTotalAmount` để tính giảm nợ S8-02.
+
+### Công nợ và hạn mức
+
+`currentDebt = max(0, tổng đơn thuộc trạng thái ghi nợ - tổng thanh toán - tổng tiền trả hàng đã xác nhận)`.
+
+`remainingLimit = debtLimit - currentDebt`.
+
+Khoản trả được gắn đúng đơn nguồn qua `ReturnOrderItem.invoiceItem.order`. Khi xét nợ quá hạn, giảm số dư của đúng đơn trả hàng trước rồi mới phân bổ thanh toán theo FIFO; không dùng khoản trả một đơn để xóa nhầm nợ quá hạn của đơn khác. Hồ sơ đại lý, API công nợ, kiểm tra hạn mức khi tạo đơn và đánh giá cảnh báo sử dụng số dư mới ngay sau commit. Không tạo phiếu thu giả, không thay đổi tiền đã thanh toán. Số dư tiền trả vượt nợ hiện tại không tự tạo phiếu hoàn tiền.
+
+S8-02 là luồng tài chính trả hàng; không tạo phiếu nhập kho hoặc cập nhật tồn kho vật lý.
+
+### Mã lỗi
+
+- 400: dữ liệu không hợp lệ, dòng không thuộc hóa đơn, trả vượt, hóa đơn đã hủy, trạng thái lọc sai.
+- 401: chưa xác thực; 403: không có quyền theo ma trận.
+- 404: không có hóa đơn hoặc phiếu trả.
+- 409: xác nhận/hủy phiếu không còn DRAFT. Xác nhận lại không sinh chứng từ thứ hai.
+
+### Lưu trữ, frontend và kiểm thử
+
+Hibernate `ddl-auto=update` hiện có tạo `return_orders`, `return_order_items`, khóa ngoại tới invoice/item/dealer/adjustment, version và unique adjustment link. Branch này chưa chạy migration hay kiểm thử trên MySQL thật; bộ tích hợp dùng H2 MySQL mode. Nếu môi trường đã có dữ liệu từ bản S8-02 viết dở, cần đối chiếu/backfill liên kết invoice_item_id trước khi áp ràng buộc NOT NULL.
+
+Chỉ làm backend: frontend nghiệp vụ S8-02 chưa có trang/nút gọi các API này. Màn hình ma trận quyền hiện có tải động danh mục từ backend và đã có INVOICE_VIEW/INVOICE_ADJUST; chưa thể nghiệm thu ẩn/hiện thao tác trả hàng cho đến khi frontend được triển khai.
+
+Lệnh kiểm thử liên quan:
+
+```text
+mvn -q "-Dtest=ReturnOrderIntegrationTest,InvoiceServiceTest,InvoiceIntegrationTest,InvoiceControllerTest,InvoiceSecurityTest,DealerDebtServiceTest,DealerServiceTest,DebtRiskIntegrationTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
+```
+
+`ReturnOrderIntegrationTest` gồm 9 ca: giá lịch sử + hóa đơn bất biến, bảo toàn số lẻ, trả vượt nhiều phiếu, validation/hủy/tra cứu, cấp/thu hồi quyền trên JWT cũ và ADMIN, rollback lỗi công nợ, xác nhận đồng thời, tiền đã thanh toán và giới hạn số dư, phân bổ trả về đúng đơn nguồn.
+Kết quả lần chạy cuối S8-02: **112 tests passed, 0 failures, 0 errors, 0 skipped** trong 11 bộ kiểm thử nêu trên.
+
 ## S8-05 — Dashboard điều hành bán hàng và kho
 
 ### API và quyền
@@ -4132,7 +4228,6 @@ Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và
 | `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
 | `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
 | `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
-
 ---
 
 ## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend — 24/10/2026)
@@ -4185,4 +4280,3 @@ Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và
 | `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
 | `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
 | `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
-

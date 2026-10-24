@@ -1,5 +1,16 @@
 # Trạng thái sprint 1–8
 
+## Đồng bộ develop → feature/S8-02/lap-chung-tu-dieu-chinh (24/10/2026)
+
+Chỉ đồng bộ `origin/develop` tại `c09694f`, xử lý 5 file xung đột; không phát triển thêm hoặc sửa lỗi ngoài phạm vi. Giữ cả tài liệu/status của hai phía, hai phương thức khóa hóa đơn đang có caller riêng, handler tham số của develop và handler ResponseStatus của S8-02. Phần công nợ giữ cách tổng hợp hóa đơn/đơn chưa xuất của develop cùng khoản giảm trừ trả hàng S8-02; chưa nghiệm thu tích hợp tài chính sau đồng bộ do lỗi build bên dưới. Bổ sung dòng S8-02 vào FUNCTION_MAP theo quy định vừa nhận từ develop.
+
+| Hạng mục kiểm tra sau đồng bộ | Kết quả |
+|---|---|
+| Frontend JS / server routes | 209/209 unit tests JS và 13/13 tests server/route qua |
+| Backend ReturnOrderIntegrationTest, DealerDebtServiceTest, DealerSelfDebtPortalIntegrationTest, RolePermissionConfigTest | **Chưa chạy được test**: bước compile dừng ở InventoryTurnoverExcelExportService (S8-07), gọi getter getPhysicalQuantity/getReservedQuantity/getAvailableQuantity/getSlowMovingValue không có trong DTO |
+| Nguồn lỗi build S8-07 | Service xuất Excel và ba DTO tương ứng giống hệt origin/develop; không phát sinh từ 5 file giải quyết xung đột. Giữ nguyên, không sửa trong lượt chỉ đồng bộ |
+| Phạm vi DB | Không chạy backend nghiệp vụ, không reset DB/seed hoặc tạo/sửa/hủy chứng từ |
+
 ## S8-09 — Công nợ quá hạn theo tuổi nợ (24/10/2026, chỉ frontend)
 
 Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Nhánh `feature/S8-09-frontend-xem_bao_cao_cong_no_qua_han_theo_tuoi_no`. Đã đọc AGENTS.md và hai SKILLS; giữ shell/content frame SaleStock. Không sửa bất kỳ file backend/schema/quyền mặc định; chưa commit/push/merge.
@@ -909,6 +920,29 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 4. Nối preview chiết khấu cho cổng/đặt lại, UI sales xác nhận đơn cổng; nghiệm thu MySQL/SMTP/360px theo AC.
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
+
+## S8-02 — Lập chứng từ điều chỉnh giảm công nợ khi trả hàng (2026-10-23)
+
+Branch: `feature/S8-02/lap-chung-tu-dieu-chinh`. Repository: `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang` (repo GitHub Desktop). Tiếp tục từ 11 file backend viết dở chưa commit; chỉ làm backend.
+
+| Tiêu chí trong yêu cầu | Backend | Frontend | Kết nối/phân quyền và bằng chứng |
+|---|---|---|---|
+| Chứng từ sinh từ phiếu trả đã xác nhận, giữ liên kết hóa đơn gốc | Hoàn thành: tạo DRAFT, xác nhận sinh InvoiceAdjustment(DECREASE), liên kết duy nhất phiếu → chứng từ → hóa đơn; từng dòng lưu invoiceItemId gốc | Chưa triển khai theo yêu cầu chỉ backend | POST `/api/invoices/returns`, `/{id}/confirm`; xác nhận trùng trả 409; DB lock chặn hai phiếu cùng trả vượt số lượng |
+| Giảm trừ theo giá đã bán trên hóa đơn gốc | Hoàn thành: dùng tổng tiền dòng gốc sau chiết khấu, tính tỷ lệ lượng trả, làm tròn lũy kế bảo toàn số lẻ | Chưa triển khai | Test thay giá sản phẩm hiện hành sang 9999 vẫn giảm đúng 33.33; trả 3 lần bảo toàn tổng 100.00 |
+| Công nợ và hạn mức khả dụng cập nhật ngay | Hoàn thành: trừ khoản trả CONFIRMED khỏi công nợ ở DealerDebtService và hồ sơ đại lý; giảm nợ đúng đơn nguồn trước phân bổ thanh toán FIFO; đánh giá lại cảnh báo cùng transaction | Chưa triển khai | Kiểm thử nợ 100 → 66.67, hạn mức còn 133.33; trả hết gỡ nợ quá hạn; rollback nếu đánh giá công nợ lỗi |
+| Hóa đơn gốc giữ nguyên, không sửa | Hoàn thành: không gọi setters/save trên hóa đơn khi confirm trả hàng, chỉ ghi chứng từ riêng | Chưa triển khai | Test so sánh toàn bộ hàng DB của `invoices` và `invoice_items` trước/sau xác nhận, khớp hoàn toàn; tra chứng từ qua API hóa đơn hiện có |
+| Phân quyền từ ma trận DB | Hoàn thành: INVOICE_ADJUST cho lập/xác nhận/hủy, INVOICE_VIEW cho tra cứu; ADMIN luôn có quyền API; không fallback vai trò | Ma trận quản trị hiện có tải catalog động; chưa có trang/menu/nút nghiệp vụ S8-02 | Test non-admin chỉ một vai trò, cấp/thu hồi quyền trên cùng JWT, request tiếp theo trả 403; VIEW và ADJUST tách riêng |
+| Tài liệu và kiểm thử | Hoàn thành: cập nhật `backend/API_DOCUMENTATION.md` | Không sửa frontend | 112/112 tests của 11 bộ liên quan qua, 0 failure/error/skip; gồm 9 ca tích hợp S8-02 |
+
+Luồng tài chính này không tự nhập kho vật lý hoặc tạo phiếu hoàn tiền. Chỉ phiếu đã CONFIRMED ảnh hưởng công nợ; DRAFT/CANCELLED không ảnh hưởng. Kiểm thử trên H2 MySQL mode, chưa chạy MySQL thật. Nếu có dữ liệu từ bản viết dở, cần backfill liên kết dòng hóa đơn trước khi áp NOT NULL. Frontend chưa nối API S8-02 nên chưa nghiệm thu ẩn/hiện hành động trên giao diện.
+
+Đã sửa một assertion audit tiền trong `DealerDebtServiceTest` vốn cố định dấu phẩy thành cách kiểm theo locale đang chạy; dữ liệu tiền và nghiệp vụ vẫn được kiểm tra đúng.
+
+Lệnh kiểm thử:
+
+```text
+mvn -q "-Dtest=ReturnOrderIntegrationTest,InvoiceServiceTest,InvoiceIntegrationTest,InvoiceControllerTest,InvoiceSecurityTest,DealerDebtServiceTest,DealerServiceTest,DebtRiskIntegrationTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
+```
 
 ## S8-05 — Dashboard điều hành bán hàng và kho (cập nhật frontend 2026-10-24)
 

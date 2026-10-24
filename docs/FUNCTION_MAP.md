@@ -90,6 +90,7 @@
 ## Sprint 8 — Trả hàng và báo cáo
 
 - S8-01: Kho hàng → Trả hàng đại lý → Lập phiếu từ hóa đơn gốc, chọn dòng/số lượng/lý do/lô và kho nhận, xem chi tiết, xác nhận nhập lại kho hoặc hủy phiếu chờ.
+- S8-02: Chỉ backend → `/api/invoices/returns` → Lập/xem phiếu trả hàng theo hóa đơn, xác nhận sinh chứng từ giảm công nợ, hủy phiếu nháp; chưa có giao diện gọi API này.
 - S8-03: Một phần: Kho hàng → Sổ cái kho → Chi tiết phiếu nhập đã xác nhận → Lập phiếu điều chỉnh tăng/giảm kèm lý do; chưa có luồng lập/duyệt hai người riêng.
 - S8-04: Chỉ backend → `/api/sales-targets` (đặt/sửa/khóa chỉ tiêu tháng theo nhân viên và khu vực, sửa kỳ đã khóa kèm lý do và nhật ký), `/api/sales-targets/my-progress` (nhân viên xem tiến độ thực tế giữa tháng), `/api/sales-targets/summary` (tổng hợp tiến độ); tự động khóa chỉ tiêu đã qua kỳ.
 - S8-05: Báo cáo → Dashboard điều hành → Sáu chỉ số, doanh số theo ngày/khu vực, đại lý quá hạn và phân trang; lối tắt ở Tổng quan → Công việc.
