@@ -3684,6 +3684,93 @@ Response:
 }
 ```
 
+## S8-08 — Xuất báo cáo tồn kho ra Excel
+
+### Endpoint
+
+`GET /api/warehouse/stock-ledger/export`
+
+Yêu cầu Bearer JWT và `WAREHOUSE_VIEW` từ ma trận quyền DB, cùng quyền của sổ tồn hiện có. `ROLE_ADMIN` luôn có quyền. `REPORT_INVENTORY`, `WAREHOUSE_MANAGE` hoặc vai trò kho không thay thế quyền xem bị thiếu. Thu hồi WAREHOUSE_VIEW làm request tiếp theo với JWT cũ trả 403.
+
+| Tham số | Kiểu | Ý nghĩa |
+|---|---|---|
+| `warehouseId` | Long dương, tùy chọn | Kho đang được lọc; nếu bỏ trống, xuất tất cả kho trong phạm vi tài khoản |
+| `categoryId` | Long dương, tùy chọn | Nhóm hàng đang lọc |
+| `keyword` | String tối đa 150 ký tự | Tìm mã/tên SKU, không phân biệt hoa thường; `%`, `_`, `!` được tìm như ký tự thông thường |
+| `stockStatus` | Enum tùy chọn | `IN_STOCK`, `OUT_OF_STOCK`, `FULLY_RESERVED` |
+| `belowMinimum` | Boolean, mặc định false | Chỉ lấy dòng dưới mức tối thiểu nếu true |
+
+Ví dụ:
+
+```text
+GET /api/warehouse/stock-ledger/export?warehouseId=1&categoryId=3&stockStatus=IN_STOCK&belowMinimum=true
+Authorization: Bearer <access-token>
+```
+
+Frontend phải gửi **cùng bộ lọc đã áp dụng cho bảng**, không lấy giá trị chưa được người dùng áp dụng. Backend không lưu trạng thái lọc trên trình duyệt và không đoán bộ lọc từ request trước. Không phân trang dữ liệu xuất: `page`, `size` của bảng không giới hạn file; xuất toàn bộ dòng khớp bộ lọc, cùng thứ tự mã kho/mã SKU/ID SKU.
+
+### Response tải tệp
+
+- 200, body là tệp **XLSX thực**, không có envelope JSON.
+- Content-Type: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+- Content-Disposition: attachment với filename UTF-8; CORS expose Content-Disposition để frontend đọc được tên file.
+- Cache-Control: no-store.
+- Một sheet `Sổ tồn kho`, dòng đầu là tiêu đề, cố định dòng tiêu đề và có AutoFilter.
+
+Mẫu giữ nguyên 12 cột đang dùng trong `frontend/js/stock-ledger.js`, theo đúng thứ tự:
+
+| STT | Cột | Kiểu ô |
+|---|---|---|
+| 1 | Mã SKU | Text |
+| 2 | Sản phẩm | Text |
+| 3 | Nhóm hàng | Text |
+| 4 | Mã kho | Text |
+| 5 | Kho | Text |
+| 6 | Đơn vị | Text |
+| 7 | Tồn thực tế | Number, tối đa 4 chữ số thập phân |
+| 8 | Đang giữ chỗ | Number, tối đa 4 chữ số thập phân |
+| 9 | Tồn khả dụng | Number, tối đa 4 chữ số thập phân |
+| 10 | Trạng thái tồn | Text |
+| 11 | Mức tối thiểu | Number, hoặc ô trống nếu chưa cấu hình |
+| 12 | Cảnh báo tối thiểu | Text |
+
+**Ba cột tồn được giữ nguyên riêng biệt**, cùng đơn vị cơ sở và cùng giá trị với API sổ tồn. Tồn khả dụng = max(0, tồn thực tế - đang giữ chỗ); không gộp cột, không trừ giữ chỗ hai lần và không cộng hàng đang chuyển vào. Không xuất giá vốn, giá bán hay dữ liệu tài chính. Các chuỗi bắt đầu bằng `=`, `+`, `-`, `@` được ghi là ô text, không phải công thức Excel. Mã SKU có số 0 đầu vẫn là text.
+
+### Tên tệp
+
+Ngày xuất dùng clock Việt Nam (`Asia/Ho_Chi_Minh`, có thể cấu hình `app.stock-ledger.export.zone`).
+
+- Một kho: `So-ton-kho_KHO-A_2026-10-23.xlsx`.
+- Nhiều kho: `So-ton-kho_KHO-A-KHO-B_2026-10-23.xlsx`.
+- Nếu chuỗi mã kho quá dài, dùng mã kho đầu và số kho còn lại: `So-ton-kho_KHO-A-VA-9-KHO_2026-10-23.xlsx`. Mã kho của từng dòng vẫn có đầy đủ trong sheet.
+- Không được phân công kho nào: tệp chỉ có tiêu đề, tên `So-ton-kho_KHONG-CO-KHO_2026-10-23.xlsx`.
+- Ký tự điều khiển và ký tự không an toàn trong mã kho được thay bằng `_`; không cho chèn đường dẫn hoặc header.
+
+### Bộ lọc, phạm vi và độ đầy đủ
+
+UI và export dùng chung `StockLedgerService.prepareQuery` để kiểm tra dữ liệu, escape keyword và tính phạm vi kho theo quyền DB. Tài khoản có phân công kho chỉ xuất được các kho đó; nhân sự kho không có phân công không được tự xem tất cả. Truyền warehouseId ngoài phạm vi trả 403. ADMIN có thể xuất mọi kho. Phạm vi kho và các dòng không có bản ghi tồn được xử lý đúng như bảng sổ tồn hiện tại.
+
+Truy vấn xuất dùng lại SELECT_ROWS, FROM_FILTERS và BELOW_MINIMUM của StockLedgerRepository; đọc Slice 1.000 dòng/lô, không COUNT mỗi lô. SXSSF chỉ giữ cửa sổ 100 dòng trong bộ nhớ, dùng tệp tạm có nén và dọn trong cả nhánh thành công/lỗi. Output XLSX được hoàn tất rồi mới trả về để không trả một phần file khi lỗi. Read-only REPEATABLE_READ giữ cùng snapshot DB qua các lô trên MySQL.
+
+Giới hạn mặc định **100.000 dòng** (`app.stock-ledger.export.max-rows`, cấu hình từ 1 đến 1.048.575 dòng). Vượt giới hạn trả 400 yêu cầu thu hẹp bộ lọc; **không âm thầm cắt bớt dữ liệu**. Kết quả lọc rỗng vẫn là workbook hợp lệ có đủ tiêu đề.
+
+### Lỗi
+
+- 400: mã kho/nhóm âm hoặc 0, keyword quá dài, trạng thái/boolean/mã không đúng định dạng, hoặc vượt giới hạn dòng.
+- 401: chưa xác thực.
+- 403: thiếu WAREHOUSE_VIEW hoặc kho ngoài phạm vi.
+- 500: lỗi hệ thống khi tạo tệp; không trả dữ liệu nội bộ hay một tệp XLSX bị cắt dở.
+
+### Trạng thái kết nối và kiểm thử
+
+Chỉ triển khai backend. Nút xuất frontend hiện có vẫn tạo file phía client với tên cũ `So-ton-kho.xlsx`; **chưa đổi frontend sang endpoint mới** theo yêu cầu chỉ backend. Nút hiện đã dùng WAREHOUSE_VIEW và phản ứng với sự kiện thu hồi quyền; API mới kiểm tra lại quyền ở server. Cần nối nút với endpoint mới để người dùng giao diện nhận tên tệp mã kho/ngày do backend cung cấp.
+
+29/29 kiểm thử qua, 0 failure/error/skip: StockLedgerExcelIntegrationTest (6), StockLedgerServiceTest (5), StockLedgerControllerTest (3), PermissionRevocationTest (1), RolePermissionConfigTest (14). Đã mở lại XLSX bằng Apache POI để kiểm tra tiêu đề/kiểu ô/số liệu, đối chiếu bộ lọc với API bảng, kiểm thử ký tự wildcard và formula text, xuất đủ 1.002 dòng qua hai lô, từ chối vượt giới hạn mà không rò tệp tạm, tên tệp theo mốc ngày Việt Nam, quyền/địa bàn kho và thu hồi trên JWT cũ. DB kiểm thử H2 MySQL mode; chưa chạy MySQL thật hoặc nghiệm thu trực tiếp bằng ứng dụng Microsoft Excel.
+
+```text
+mvn -q clean "-Dtest=StockLedgerExcelIntegrationTest,StockLedgerServiceTest,StockLedgerControllerTest,PermissionRevocationTest,RolePermissionConfigTest" test
+```
+
 ## S8-02 — Chứng từ điều chỉnh giảm công nợ khi trả hàng
 
 Base path: `/api/invoices/returns`. Yêu cầu Bearer JWT; dữ liệu lưu trong database.

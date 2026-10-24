@@ -1109,6 +1109,25 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
 
+## S8-08 — Xuất báo cáo tồn kho ra tệp Excel (2026-10-23)
+
+Branch `feature/S8-08/xuat-bao-cao-ton-kho-ra-tep-excel` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend, không commit/push.
+
+| Yêu cầu | Backend | Frontend | Kết nối/phân quyền và bằng chứng |
+|---|---|---|---|
+| Xuất theo bộ lọc đang áp dụng | Hoàn thành: API GET `/api/warehouse/stock-ledger/export`, nhận warehouseId/categoryId/keyword/stockStatus/belowMinimum; dùng chung chuẩn hóa và truy vấn của bảng | Nút cũ vẫn xuất phía client, chưa nối endpoint mới | Kiểm thử workbook khớp API bảng với toàn bộ bộ lọc; ký tự `%`, `_` được tìm literal; xuất tất cả kết quả, không chỉ trang hiện tại |
+| Giữ nguyên ba cột tồn | Hoàn thành: Tồn thực tế, Đang giữ chỗ, Tồn khả dụng là ba cột số riêng biệt; giữ mẫu 12 cột hiện có | Không sửa mẫu frontend | XLSX được mở lại bằng POI; kiểm số thập phân 12.3456 / 2.1111 / 10.2345, kiểu Number và header |
+| Tên tệp chứa mã kho và ngày xuất | Hoàn thành: `So-ton-kho_KHO-A_2026-10-23.xlsx`, nhiều kho có các mã hoặc mã đầu kèm số kho; ngày Việt Nam | Chưa nhận tên mới do chưa nối API | Test header Content-Disposition và clock; CORS expose header để FE có thể dùng tên tệp backend |
+| Quyền từ ma trận DB và phạm vi kho | Hoàn thành: WAREHOUSE_VIEW hoặc ADMIN, không fallback từ vai trò/quyền kho khác; áp phân công kho hiện có | Nút cũ đã dùng WAREHOUSE_VIEW và xử lý sự kiện thu hồi; chưa nối API mới | Test cùng JWT: cấp quyền cho phép, thu hồi trả 403; kho ngoài phạm vi trả 403; ADMIN toàn quyền |
+| Xuất đủ dữ liệu và quản lý tài nguyên | Hoàn thành: Slice 1.000 dòng/lô, SXSSF cửa sổ 100; tệp tạm được dọn cả khi lỗi; mặc định tối đa 100.000 dòng, vượt thì trả 400, không cắt thiếu | Chưa nối luồng tải backend | Test đủ 1.002 dòng qua hai lô và không rò tệp tạm khi vượt giới hạn |
+| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 29/29 tests qua, không failure/error/skip | Không sửa file frontend | Gồm 6 ca tích hợp XLSX/JWT/DB và hồi quy sổ tồn/phân quyền; H2 MySQL mode, chưa kiểm MySQL/Microsoft Excel thật |
+
+Không thêm quyền mới, không thay đổi ma trận đã lưu hay dữ liệu tồn. Chưa nghiệm thu end-to-end nút xuất với tên mới cho đến khi frontend gọi API tải XLSX thay cho trình tạo file client hiện tại.
+
+Lệnh kiểm thử: `mvn -q clean "-Dtest=StockLedgerExcelIntegrationTest,StockLedgerServiceTest,StockLedgerControllerTest,PermissionRevocationTest,RolePermissionConfigTest" test`.
+
+---
+
 ## S8-02 — Lập chứng từ điều chỉnh giảm công nợ khi trả hàng (2026-10-23)
 
 Branch: `feature/S8-02/lap-chung-tu-dieu-chinh`. Repository: `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang` (repo GitHub Desktop). Tiếp tục từ 11 file backend viết dở chưa commit; chỉ làm backend.
