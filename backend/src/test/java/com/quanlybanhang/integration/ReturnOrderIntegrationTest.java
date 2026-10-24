@@ -193,4 +193,53 @@ class ReturnOrderIntegrationTest {
   var info=debt.getDealerDebtInfo(dealer.getId());
   assertThat(info.getCurrentDebt()).isEqualByComparingTo("50"); assertThat(info.getOverdueAmount()).isEqualByComparingTo("50");
  }
+ @Test void sourceLookupsWorkWithAdjustOnlyAndRevokeOnSameJwt() throws Exception {
+  matrix.updateRolePermissions(ERole.ROLE_ACCOUNTANT,Set.of(Permission.INVOICE_ADJUST));
+  call(get(base+"/options"),token,null,200);
+  var list=call(get(base+"/eligible-invoices").param("keyword",invoice.getInvoiceCode()),token,null,200);
+  assertThat(list.path("content").get(0).path("invoiceId").asLong()).isEqualTo(invoice.getId());
+  var source=call(get(base+"/eligible-invoices/"+invoice.getId()),token,null,200);
+  assertThat(source.path("items").get(0).path("remainingQuantity").decimalValue()).isEqualByComparingTo("3");
+  call(get(base),token,null,403);
+  var confirmed=confirm(draft("1"),200);
+  assertThat(confirmed.path("currentDebtAfter").decimalValue()).isEqualByComparingTo("66.67");
+  assertThat(confirmed.path("remainingLimitAfter").decimalValue()).isEqualByComparingTo("133.33");
+  source=call(get(base+"/eligible-invoices/"+invoice.getId()),token,null,200);
+  assertThat(source.path("items").get(0).path("remainingQuantity").decimalValue()).isEqualByComparingTo("2");
+  matrix.updateRolePermissions(ERole.ROLE_ACCOUNTANT,Set.of(Permission.INVOICE_VIEW));
+  call(get(base+"/eligible-invoices"),token,null,403);
+  call(get(base+"/eligible-invoices/"+invoice.getId()),token,null,403);
+  call(get(base),token,null,200);
+  call(get(base+"/eligible-invoices"),adminToken,null,200);
+ }
+ @Test void invoiceAndDealerBalancesIncludeReturnCreditOnceAndOriginalFieldsRemainUnchanged() throws Exception {
+  var original=jdbc.queryForMap("select * from invoices where id=?",invoice.getId());
+  confirm(draft("1"),200);
+  var info=debt.getDealerDebtInfo(dealer.getId());
+  assertThat(info.getCurrentDebt()).isEqualByComparingTo("66.67");
+  assertThat(info.getTotalInvoicedAmount()).isEqualByComparingTo("66.67");
+  assertThat(info.getOverdueAmount()).isEqualByComparingTo("66.67");
+  var detail=call(get("/api/invoices/"+invoice.getId()),adminToken,null,200);
+  assertThat(detail.path("remainingAmount").decimalValue()).isEqualByComparingTo("66.67");
+  assertThat(detail.path("adjustedTotalAmount").decimalValue()).isEqualByComparingTo("100");
+  assertThat(dealerService.getDealerById(dealer.getId()).getCurrentDebt()).isEqualByComparingTo("66.67");
+  assertThat(jdbc.queryForMap("select * from invoices where id=?",invoice.getId())).isEqualTo(original);
+ }
+ @Test void manualInvoiceAdjustmentAndFinancialReturnAreBothCountedWithoutDoubleDeduction() throws Exception {
+  call(post("/api/invoices/"+invoice.getId()+"/adjustments"),token,
+    Map.of("adjustmentType","DECREASE","adjustmentReason","Hỗ trợ riêng","adjustmentAmount","30"),200);
+  var original=jdbc.queryForMap("select * from invoices where id=?",invoice.getId());
+  confirm(draft("1"),200);
+  assertThat(debt.getDealerDebtInfo(dealer.getId()).getCurrentDebt()).isEqualByComparingTo("36.67");
+  assertThat(debt.getDealerDebtInfo(dealer.getId()).getOverdueAmount()).isEqualByComparingTo("36.67");
+  assertThat(dealerService.getDealerById(dealer.getId()).getCurrentDebt()).isEqualByComparingTo("36.67");
+  assertThat(call(get("/api/invoices/"+invoice.getId()),adminToken,null,200).path("remainingAmount").decimalValue()).isEqualByComparingTo("36.67");
+  assertThat(jdbc.queryForMap("select * from invoices where id=?",invoice.getId())).isEqualTo(original);
+ }
+ @Test void invalidPagingAndIncompleteOriginalLineAreBadRequestsNotServerErrors() throws Exception {
+  call(get(base).param("page","-1"),token,null,400);
+  call(get(base+"/eligible-invoices").param("size","101"),token,null,400);
+  jdbc.update("update invoice_items set invoiced_quantity=0 where id=?",lineId);
+  call(post(base),token,body("1"),400);
+ }
 }

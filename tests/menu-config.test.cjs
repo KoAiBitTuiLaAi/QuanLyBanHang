@@ -8,6 +8,17 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S8-02 financial returns allow VIEW or ADJUST, no extra dealer or finance grant and no accountant fallback',()=>{
+ for(const role of ['ROLE_VIEWER','ROLE_ACCOUNTANT','ROLE_SALES']){
+  assert.ok(!ids({roles:[role],permissions:[]}).includes('debt-adjustment'));
+  assert.ok(!ids({roles:[role],permissions:['FINANCE_VIEW_DEBT','FINANCE_MANAGE']}).includes('debt-adjustment'));
+  for(const permission of ['INVOICE_VIEW','INVOICE_ADJUST'])assert.ok(ids({roles:[role],permissions:[permission]}).includes('debt-adjustment'));
+ }
+ assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('debt-adjustment'));
+ assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['INVOICE_ADJUST','INVOICE_VIEW']}).includes('debt-adjustment'));
+ assert.equal(menu.getPageForLocation(new URL('http://test/finance/debt-adjustment')).id,'debt-adjustment');
+});
+
 test('S8-09 aging report uses only REPORT_FINANCE matrix, no accountant fallback',()=>{
   for(const role of ['ROLE_VIEWER','ROLE_ACCOUNTANT','ROLE_SALES_MANAGER']){
     assert.ok(!ids({roles:[role],permissions:[]}).includes('debt-aging'));

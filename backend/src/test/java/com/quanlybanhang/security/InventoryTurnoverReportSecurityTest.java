@@ -4,7 +4,7 @@ import com.quanlybanhang.config.SecurityConfig;
 import com.quanlybanhang.controller.InventoryTurnoverReportController;
 import com.quanlybanhang.dto.response.*;
 import com.quanlybanhang.exception.GlobalExceptionHandler;
-import com.quanlybanhang.repository.RolePermissionConfigRepository;
+import com.quanlybanhang.config.RolePermissionConfig;
 import com.quanlybanhang.repository.UserRepository;
 import com.quanlybanhang.service.InventoryTurnoverExcelExportService;
 import com.quanlybanhang.service.InventoryTurnoverReportService;
@@ -61,7 +61,7 @@ class InventoryTurnoverReportSecurityTest {
     private UserRepository userRepository;
 
     @MockBean
-    private RolePermissionConfigRepository rolePermissionConfigRepository;
+    private RolePermissionConfig rolePermissionConfig;
 
     @BeforeEach
     void setUp() {

@@ -180,6 +180,14 @@ thiếu ngữ cảnh. DEALER không có bộ chọn, chỉ sử dụng hồ sơ 
 trong ma trận: theo dõi cần `ORDER_VIEW`, đặt hàng cần cả `ORDER_CREATE`, `ORDER_VIEW`,
 `PRODUCT_VIEW`; nút đặt lại cần thêm `ORDER_CREATE` và `PRODUCT_VIEW`.
 
+## S8-02 — Điều chỉnh công nợ khi trả hàng (24/10/2026)
+
+- **Tài chính → Điều chỉnh công nợ**, `/finance/debt-adjustment`. Lịch sử/chi tiết cần `INVOICE_VIEW`; chọn hóa đơn nguồn, lưu nháp, xác nhận và hủy nháp cần `INVOICE_ADJUST`. ADMIN luôn được phép; không fallback theo vai trò. Người chỉ có ADJUST xử lý được phiếu vừa tạo, nhưng xem lại lịch sử cần VIEW.
+- Dùng API tài chính `/api/invoices/returns`, không dựng phiếu từ danh mục/hóa đơn và không gọi luồng nhập kho S8-01. Chọn hóa đơn → nhập số thực trả/lý do → lưu nháp → đối chiếu tiền do server tính → xác nhận sinh chứng từ DECREASE liên kết hóa đơn gốc. Phiếu xác nhận không sửa/hủy. Không có PDF giả hoặc tự nhập kho.
+- Đơn giá/chiết khấu lịch sử và số còn trả lấy từ API nguồn; số lượng khởi tạo trống, tiền dùng chuỗi thập phân chính xác. Công nợ/hạn mức sau xác nhận lấy từ response server, không tự tính số dư trong trình duyệt. Không lưu dữ liệu nghiệp vụ vào localStorage/sessionStorage.
+- Thu hồi quyền xóa form/chi tiết và loại bỏ phản hồi cũ. Chống gửi kép; lỗi 400 giữ dữ liệu; 409 tải chi tiết mới; lỗi mạng/5xx hoặc response ghi không hợp lệ khóa gửi lại, yêu cầu đối chiếu lịch sử bằng quyền VIEW.
+- Kiểm tra: `node --test tests/*.test.cjs`, `node tests/financial-returns.browser.cjs` (mặc định cổng 5539), `node tests/content-layout.browser.cjs` và `node tests/navigation.browser.cjs` (`NAV_TEST_URL`). Chrome dùng trang/script thật với HTTP fixtures, không ghi dữ liệu nghiệp vụ thật.
+
 ## Breadcrumb và mục sidebar hiện tại
 
 Các trang nghiệp vụ dùng chung `app-navigation.js` và `app-navigation.css`.

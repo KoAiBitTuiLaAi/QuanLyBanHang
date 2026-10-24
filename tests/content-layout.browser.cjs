@@ -13,7 +13,7 @@ const cases = [
   '/admin/users', '/admin/audit-logs', '/warehouses', '/warehouse/inventory', '/warehouse/transfers', '/warehouse/minimums',
   '/warehouse/units?tab=stocktake', '/warehouse/lots', '/warehouse/stock-card',
   '/warehouse/picking', '/warehouse/delivery', '/warehouse/order-shipments', '/warehouse/delivery-trips',
-  '/warehouse/dealer-returns', '/reports/dashboard', '/reports/debt-aging',
+  '/warehouse/dealer-returns', '/reports/dashboard', '/reports/debt-aging', '/finance/debt-adjustment',
 ];
 const user = { id: 1, username: 'admin', fullName: 'Quản trị viên', email: 'admin@example.invalid',
   phone: '0900000000', roles: ['ROLE_ADMIN'], permissions: [], warehouses: [], territories: [] };
@@ -39,6 +39,7 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       const endpoint = new URL(route.request().url()).pathname.replace('/api', '');
       let data = [];
       if (endpoint === '/auth/permissions') data = { roles: user.roles, permissions: user.permissions };
+      else if (endpoint === '/invoices/returns') data = {content:[],totalPages:0,totalElements:0};
       else if (endpoint === '/reports/dashboard') data = {date:'2026-10-24',month:'2026-10',generatedAt:'2026-10-24T08:00:00+07:00',timezone:'Asia/Ho_Chi_Minh',metrics:{todaySales:5000000,monthSales:125000000,pendingApprovalOrders:6,pendingExportOrders:8,overdueDebt:12000000,belowMinimumSkus:3},dailySales:Array.from({length:31},(_,i)=>({date:'2026-10-'+String(i+1).padStart(2,'0'),sales:i<24?(i+1)*200000:0})),territorySales:[{territoryId:1,territoryName:'Hà Nội',sales:125000000}],overdueDealers:[],totalOverdueDealers:0};
       else if (endpoint === '/invoices') data = {content:[],totalPages:0,totalElements:0};
       else if (endpoint === '/finance/cash-collections') data = {content:[],totalPages:0,totalElements:0};
@@ -81,7 +82,8 @@ const dealers = ['Minh Phát', 'Tân Bình', 'Hà Nội', 'Khách lẻ', 'Hoàng
       await page.setViewportSize({ width, height: 900 });
       for (const route of cases) {
         await page.goto(base + route);
-        await page.waitForFunction(() => document.querySelector('#sidebar-nav [data-page]') && !document.querySelector('#sidebar-nav').inert);
+        await page.waitForFunction(() => document.querySelector('#sidebar-nav [data-page]') && !document.querySelector('#sidebar-nav').inert)
+          .catch(error => { throw new Error(`Sidebar not ready at ${width}px ${route}: ${error.message}`); });
         if (route.includes('view=debt-limits')) await page.locator('#debt-limits-view').waitFor({ state: 'visible' });
         if (route === '/reports/dashboard') await page.locator('#ops-performance').filter({hasText:'giây'}).waitFor();
         const dimensions = await page.evaluate(() => {

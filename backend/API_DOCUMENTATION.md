@@ -3570,6 +3570,7 @@ Base path: `/api/invoices/returns`. Yêu cầu Bearer JWT; dữ liệu lưu tron
 
 - `INVOICE_ADJUST`: lập phiếu trả hàng, xác nhận để sinh chứng từ giảm công nợ, hủy phiếu nháp.
 - `INVOICE_VIEW`: xem danh sách, chi tiết và phiếu trả theo hóa đơn.
+- Tra cứu hóa đơn nguồn cho người lập chỉ cần `INVOICE_ADJUST`, không cần quyền khách hàng, công nợ hoặc VIEW. Lookup không cấp quyền đọc toàn bộ lịch sử phiếu trả.
 - `ROLE_ADMIN`: luôn có quyền API. Không có fallback cho ACCOUNTANT hoặc vai trò khác.
 - Quyền được đọc qua ma trận DB hiện có, có hiệu lực ở request tiếp theo kể cả JWT cũ. Người chỉ có ADJUST không tự động được VIEW, và ngược lại. Khi thử thu hồi phải bảo đảm không có vai trò thứ hai cấp cùng quyền.
 
@@ -3583,6 +3584,11 @@ Base path: `/api/invoices/returns`. Yêu cầu Bearer JWT; dữ liệu lưu tron
 | GET | base path | INVOICE_VIEW | Page, lọc `dealerId`, `invoiceId`, `status`; `page=0`, `size=20` (giới hạn 1–100) |
 | GET | `/{id}` | INVOICE_VIEW | Chi tiết kèm chứng từ điều chỉnh nếu đã xác nhận |
 | GET | `/by-invoice/{invoiceId}` | INVOICE_VIEW | Danh sách phiếu trả liên kết hóa đơn gốc |
+| GET | `/options` | INVOICE_VIEW hoặc INVOICE_ADJUST | Danh sách mã/nhãn trạng thái phiếu trả |
+| GET | `/eligible-invoices` | INVOICE_ADJUST | Page hóa đơn ISSUED/ADJUSTED, tìm `keyword` theo mã/số hóa đơn hoặc mã/tên đại lý; tối đa 100 ký tự |
+| GET | `/eligible-invoices/{invoiceId}` | INVOICE_ADJUST | Dòng hóa đơn gốc, số đã trả CONFIRMED và số còn được trả |
+
+Các API Page nhận `page >= 0`, `size` từ 1 đến 100; giá trị ngoài khoảng trả 400, không âm thầm cắt giới hạn. Lookup dòng trả `invoiceItemId`, snapshot sản phẩm/đơn vị, `invoicedQuantity`, `confirmedReturnQuantity`, `remainingQuantity`, `invoiceUnitPrice`, `originalDiscountAmount`, `originalLineTotal`, `previouslyCreditedAmount`. Chỉ các dòng liên kết đơn gốc, có lượng xuất hóa đơn dương được đưa vào nguồn; kiểm tra lại điều kiện lúc tạo/xác nhận. Hóa đơn hết số được trả có thể vẫn xuất hiện trong lookup nhưng không thể lập thêm lượng trả.
 
 POST tạo phiếu:
 
@@ -3615,6 +3621,8 @@ Lý do hủy bắt buộc, tối đa 500 ký tự. Không có API sửa/xóa phi
 
 Response dùng envelope `ApiResponse` hiện có. Phiếu trả gồm `id`, `returnCode`, `invoiceId`, `invoiceCode`, `invoiceNumber`, thông tin đại lý, `status`/`statusLabel`, `returnReason`, `returnDate`, `totalReturnAmount`, người/thời điểm lập và xác nhận, `cancelReason`, `note`, `items`, `invoiceAdjustment`.
 
+Response xác nhận thành công còn có `currentDebtAfter`, `remainingLimitAfter`: số dư được server tính trong chính giao dịch đó. Hai trường này không lưu như số dư lịch sử và không có trong các lần GET sau; không suy diễn thành số dư hiện tại khi xem phiếu cũ.
+
 Mỗi dòng trả có `invoiceItemId` để truy vết chính xác dòng hóa đơn gốc, snapshot sản phẩm/đơn vị, `invoiceUnitPrice`, `invoiceDiscountPerUnit`, `returnQuantity`, `returnAmount`. Khi xác nhận:
 
 1. Khóa hóa đơn và phiếu trả trong DB, kiểm tra còn DRAFT và còn số lượng được trả.
@@ -3628,11 +3636,13 @@ Mỗi dòng trả có `invoiceItemId` để truy vết chính xác dòng hóa đ
 
 ### Công nợ và hạn mức
 
-`currentDebt = max(0, tổng đơn thuộc trạng thái ghi nợ - tổng thanh toán - tổng tiền trả hàng đã xác nhận)`.
+Với từng hóa đơn: `netInvoice = max(0, adjustedTotalAmount (hoặc totalAmount nếu null) - khoản trả CONFIRMED của chính hóa đơn)`.
+
+`currentDebt = max(0, tổng netInvoice + tổng nợ đơn chưa xuất hóa đơn sau giảm trừ đúng đơn - tổng thanh toán)`.
 
 `remainingLimit = debtLimit - currentDebt`.
 
-Khoản trả được gắn đúng đơn nguồn qua `ReturnOrderItem.invoiceItem.order`. Khi xét nợ quá hạn, giảm số dư của đúng đơn trả hàng trước rồi mới phân bổ thanh toán theo FIFO; không dùng khoản trả một đơn để xóa nhầm nợ quá hạn của đơn khác. Hồ sơ đại lý, API công nợ, kiểm tra hạn mức khi tạo đơn và đánh giá cảnh báo sử dụng số dư mới ngay sau commit. Không tạo phiếu thu giả, không thay đổi tiền đã thanh toán. Số dư tiền trả vượt nợ hiện tại không tự tạo phiếu hoàn tiền.
+Khoản trả gắn đúng hóa đơn và đơn nguồn qua `ReturnOrderItem.invoiceItem.order`. Giảm số dư đúng hóa đơn/đơn trước, sau đó phân bổ quỹ thanh toán theo FIFO hiện có; không trừ tiền trả lần hai ở tổng công nợ. Tổng nợ, nợ quá hạn, còn nợ từng hóa đơn và hồ sơ đại lý cùng dùng số dư đã giảm trừ. Quỹ thanh toán vẫn là quỹ chung của đại lý theo thiết kế cũ, không được đánh dấu là đã phân bổ cố định cho một hóa đơn. Không tạo phiếu thu giả, không thay đổi tiền đã thanh toán. Số dư vượt nợ hiện tại không tự tạo phiếu hoàn tiền hoặc số dư nợ âm.
 
 S8-02 là luồng tài chính trả hàng; không tạo phiếu nhập kho hoặc cập nhật tồn kho vật lý.
 
@@ -3647,7 +3657,7 @@ S8-02 là luồng tài chính trả hàng; không tạo phiếu nhập kho hoặ
 
 Hibernate `ddl-auto=update` hiện có tạo `return_orders`, `return_order_items`, khóa ngoại tới invoice/item/dealer/adjustment, version và unique adjustment link. Branch này chưa chạy migration hay kiểm thử trên MySQL thật; bộ tích hợp dùng H2 MySQL mode. Nếu môi trường đã có dữ liệu từ bản S8-02 viết dở, cần đối chiếu/backfill liên kết invoice_item_id trước khi áp ràng buộc NOT NULL.
 
-Chỉ làm backend: frontend nghiệp vụ S8-02 chưa có trang/nút gọi các API này. Màn hình ma trận quyền hiện có tải động danh mục từ backend và đã có INVOICE_VIEW/INVOICE_ADJUST; chưa thể nghiệm thu ẩn/hiện thao tác trả hàng cho đến khi frontend được triển khai.
+Frontend đã nối ở **Tài chính → Điều chỉnh công nợ**, `/finance/debt-adjustment`: tra cứu nguồn, lưu nháp, xem chi tiết, xác nhận và hủy nháp. Không dùng API điều chỉnh hóa đơn thủ công để giả lập phiếu trả; không gọi nhập kho vật lý. Kiểm thử Chrome dùng HTTP fixtures; kiểm thử backend dùng H2 cách ly, chưa nghiệm thu ghi chứng từ trên MySQL thật.
 
 Lệnh kiểm thử liên quan:
 
@@ -3655,8 +3665,9 @@ Lệnh kiểm thử liên quan:
 mvn -q "-Dtest=ReturnOrderIntegrationTest,InvoiceServiceTest,InvoiceIntegrationTest,InvoiceControllerTest,InvoiceSecurityTest,DealerDebtServiceTest,DealerServiceTest,DebtRiskIntegrationTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
 ```
 
-`ReturnOrderIntegrationTest` gồm 9 ca: giá lịch sử + hóa đơn bất biến, bảo toàn số lẻ, trả vượt nhiều phiếu, validation/hủy/tra cứu, cấp/thu hồi quyền trên JWT cũ và ADMIN, rollback lỗi công nợ, xác nhận đồng thời, tiền đã thanh toán và giới hạn số dư, phân bổ trả về đúng đơn nguồn.
-Kết quả lần chạy cuối S8-02: **112 tests passed, 0 failures, 0 errors, 0 skipped** trong 11 bộ kiểm thử nêu trên.
+`ReturnOrderIntegrationTest` gồm 13 ca: giữ 9 ca giá lịch sử/hóa đơn bất biến, làm tròn, trả vượt, validation/hủy, quyền cùng JWT/ADMIN, rollback, đồng thời, thanh toán và đúng đơn nguồn; bổ sung lookup ADJUST-only, đối chiếu số dư giữa API công nợ/hóa đơn/hồ sơ đại lý, điều chỉnh thủ công kết hợp trả hàng không trừ kép, phân trang và dòng gốc thiếu dữ liệu trả 400.
+
+Kết quả và phạm vi kiểm tra cập nhật tại `status.md`; không coi báo cáo kiểm thử cũ trước đồng bộ là nghiệm thu bản tích hợp mới.
 
 ## S8-05 — Dashboard điều hành bán hàng và kho
 

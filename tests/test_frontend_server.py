@@ -68,7 +68,7 @@ class FrontendRoutingTest(unittest.TestCase):
             "/profile": "Hồ sơ cá nhân",
             "/login": "Đăng nhập",
             "/forgot-password": "Lấy lại quyền truy cập",
-            "/finance/debt-adjustment": "Chứng từ điều chỉnh công nợ",
+            "/finance/debt-adjustment": "Điều chỉnh công nợ",
             "/reset-password?token=test-token": "Đặt mật khẩu mới",
         }
         for path, title in pages.items():

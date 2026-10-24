@@ -74,7 +74,7 @@ class InventoryTurnoverReportIntegrationTest {
     private RoleRepository roleRepository;
 
     @Autowired
-    private RolePermissionConfigRepository rolePermissionConfigRepository;
+    private RolePermissionConfig rolePermissionConfig;
 
     @Autowired
     private WarehouseRepository warehouseRepository;
@@ -128,9 +128,9 @@ class InventoryTurnoverReportIntegrationTest {
         User warehouseManager = createUser("wh_mgr_s807", "wh_mgr_s807@test.local", Set.of(warehouseManagerRole), Set.of());
         User warehouseStaff = createUser("wh_staff_s807", "wh_staff_s807@test.local", Set.of(warehouseStaffRole), Set.of());
 
-        adminToken = jwtUtils.generateTokenFromUsername(admin.getUsername());
-        warehouseManagerToken = jwtUtils.generateTokenFromUsername(warehouseManager.getUsername());
-        warehouseStaffToken = jwtUtils.generateTokenFromUsername(warehouseStaff.getUsername());
+        adminToken = jwtUtils.generateAccessToken(admin.getUsername(), admin.getTokenVersion());
+        warehouseManagerToken = jwtUtils.generateAccessToken(warehouseManager.getUsername(), warehouseManager.getTokenVersion());
+        warehouseStaffToken = jwtUtils.generateAccessToken(warehouseStaff.getUsername(), warehouseStaff.getTokenVersion());
 
         warehouseHanoi = warehouseRepository.save(Warehouse.builder()
                 .code("KHO-HN-S807")
@@ -162,9 +162,9 @@ class InventoryTurnoverReportIntegrationTest {
 
         // 1. SKU luân chuyển nhanh: đơn giá vốn 12,000 VND
         skuFast = productRepository.save(Product.builder()
-                .productCode("SKU-FAST-807")
+                .code("SKU-FAST-807")
                 .name("Nước khoáng thiên nhiên 500ml")
-                .baseUnit("Chai")
+                .unit("Chai")
                 .costPrice(new BigDecimal("12000"))
                 .price(new BigDecimal("18000"))
                 .category(categoryBeverage)
@@ -173,9 +173,9 @@ class InventoryTurnoverReportIntegrationTest {
 
         // 2. SKU chậm luân chuyển (có xuất nhưng rất ít, DIO > 60 ngày): đơn giá vốn 50,000 VND
         skuSlow = productRepository.save(Product.builder()
-                .productCode("SKU-SLOW-807")
+                .code("SKU-SLOW-807")
                 .name("Nước ép lựu nhập khẩu 1L")
-                .baseUnit("Hộp")
+                .unit("Hộp")
                 .costPrice(new BigDecimal("50000"))
                 .price(new BigDecimal("75000"))
                 .category(categoryBeverage)
@@ -184,9 +184,9 @@ class InventoryTurnoverReportIntegrationTest {
 
         // 3. SKU tồn đọng không xuất (Dead stock, xuất = 0 trong kỳ): đơn giá vốn 200,000 VND
         skuDeadStock = productRepository.save(Product.builder()
-                .productCode("SKU-DEAD-807")
+                .code("SKU-DEAD-807")
                 .name("Hộp quà bánh quy bơ Đan Mạch")
-                .baseUnit("Hộp")
+                .unit("Hộp")
                 .costPrice(new BigDecimal("200000"))
                 .price(new BigDecimal("290000"))
                 .category(categoryConfectionery)
@@ -224,7 +224,7 @@ class InventoryTurnoverReportIntegrationTest {
         // - skuSlow: xuất 20 hộp  => tồn đầu = 210, tồn cuối = 190, tồn BQ = 200 => DIO = (200*30)/20 = 300 ngày (>= 60 ngày => SLOW_MOVING)
         WarehouseVoucher exportVoucher = WarehouseVoucher.builder()
                 .voucherCode("PX-S807-001")
-                .voucherType(WarehouseVoucherType.EXPORT)
+                .type(WarehouseVoucherType.EXPORT)
                 .status("CONFIRMED")
                 .warehouse(warehouseHanoi)
                 .voucherDate(LocalDateTime.of(2026, 3, 18, 14, 30))
@@ -234,7 +234,7 @@ class InventoryTurnoverReportIntegrationTest {
         WarehouseVoucherItem itemFast = WarehouseVoucherItem.builder()
                 .voucher(exportVoucher)
                 .product(skuFast)
-                .unitName("Chai")
+                .unit("Chai")
                 .quantity(new BigDecimal("300"))
                 .conversionFactor(BigDecimal.ONE)
                 .baseQuantity(new BigDecimal("300"))
@@ -243,7 +243,7 @@ class InventoryTurnoverReportIntegrationTest {
         WarehouseVoucherItem itemSlow = WarehouseVoucherItem.builder()
                 .voucher(exportVoucher)
                 .product(skuSlow)
-                .unitName("Hộp")
+                .unit("Hộp")
                 .quantity(new BigDecimal("20"))
                 .conversionFactor(BigDecimal.ONE)
                 .baseQuantity(new BigDecimal("20"))
@@ -392,7 +392,7 @@ class InventoryTurnoverReportIntegrationTest {
                 Set.of(warehouseManagerRole),
                 Set.of(warehouseHanoi)
         );
-        String hanoiManagerToken = jwtUtils.generateTokenFromUsername(hanoiOnlyManager.getUsername());
+        String hanoiManagerToken = jwtUtils.generateAccessToken(hanoiOnlyManager.getUsername(), hanoiOnlyManager.getTokenVersion());
 
         // Khi không truyền warehouseId, hệ thống tự động giới hạn trong Kho Hà Nội
         mockMvc.perform(get("/api/reports/inventory-turnover")
@@ -419,10 +419,7 @@ class InventoryTurnoverReportIntegrationTest {
     }
 
     private void saveRolePermissions(ERole roleEnum, Set<Permission> permissions) {
-        RolePermissionConfig config = rolePermissionConfigRepository.findByRoleName(roleEnum)
-                .orElseGet(() -> RolePermissionConfig.builder().roleName(roleEnum).build());
-        config.setPermissions(EnumSet.copyOf(permissions));
-        rolePermissionConfigRepository.saveAndFlush(config);
+        rolePermissionConfig.updateRolePermissions(roleEnum, permissions);
     }
 
     private User createUser(String username, String email, Set<Role> roles, Set<Warehouse> warehouses) {

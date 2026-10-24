@@ -113,9 +113,9 @@ class InventoryTurnoverReportServiceTest {
 
         fastProduct = Product.builder()
                 .id(101L)
-                .productCode("SKU-FAST-01")
+                .code("SKU-FAST-01")
                 .name("Nước tăng lực lon 330ml")
-                .baseUnit("Lon")
+                .unit("Lon")
                 .costPrice(new BigDecimal("10000"))
                 .price(new BigDecimal("15000"))
                 .category(catBeverage)
@@ -124,9 +124,9 @@ class InventoryTurnoverReportServiceTest {
 
         slowProduct = Product.builder()
                 .id(102L)
-                .productCode("SKU-SLOW-02")
+                .code("SKU-SLOW-02")
                 .name("Trà thảo mộc cao cấp")
-                .baseUnit("Chai")
+                .unit("Chai")
                 .costPrice(new BigDecimal("25000"))
                 .price(new BigDecimal("35000"))
                 .category(catBeverage)
@@ -135,9 +135,9 @@ class InventoryTurnoverReportServiceTest {
 
         deadProduct = Product.builder()
                 .id(103L)
-                .productCode("SKU-DEAD-03")
+                .code("SKU-DEAD-03")
                 .name("Bánh quy hộp thiếc")
-                .baseUnit("Hộp")
+                .unit("Hộp")
                 .costPrice(new BigDecimal("100000"))
                 .price(new BigDecimal("140000"))
                 .category(catFood)
@@ -145,7 +145,7 @@ class InventoryTurnoverReportServiceTest {
                 .build();
 
         lenient().when(userRepository.findByUsername("warehouse_mgr")).thenReturn(Optional.empty());
-        lenient().when(warehouseRepository.findAllByOrderByNameAsc())
+        lenient().when(warehouseRepository.findAllByOrderByCodeAsc())
                 .thenReturn(List.of(warehouseNorth, warehouseSouth));
         lenient().when(categoryRepository.findAllByOrderByLevelAscNameAsc())
                 .thenReturn(List.of(catBeverage, catFood));
@@ -204,7 +204,7 @@ class InventoryTurnoverReportServiceTest {
         WarehouseVoucher exportVoucher = WarehouseVoucher.builder()
                 .id(500L)
                 .voucherCode("PX-2026-001")
-                .voucherType(WarehouseVoucherType.EXPORT)
+                .type(WarehouseVoucherType.EXPORT)
                 .status("CONFIRMED")
                 .warehouse(warehouseNorth)
                 .voucherDate(LocalDateTime.of(2026, 3, 15, 10, 0))
@@ -214,7 +214,7 @@ class InventoryTurnoverReportServiceTest {
                 .id(501L)
                 .voucher(exportVoucher)
                 .product(fastProduct)
-                .unitName("Lon")
+                .unit("Lon")
                 .quantity(new BigDecimal("300"))
                 .conversionFactor(BigDecimal.ONE)
                 .baseQuantity(new BigDecimal("300"))
@@ -224,7 +224,7 @@ class InventoryTurnoverReportServiceTest {
                 .id(502L)
                 .voucher(exportVoucher)
                 .product(slowProduct)
-                .unitName("Chai")
+                .unit("Chai")
                 .quantity(new BigDecimal("20"))
                 .conversionFactor(BigDecimal.ONE)
                 .baseQuantity(new BigDecimal("20"))
@@ -255,7 +255,7 @@ class InventoryTurnoverReportServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(northVal.getInventoryValue()).isEqualByComparingTo("5500000.00");
-        assertThat(northVal.getSlowMovingValue()).isEqualByComparingTo("4500000.00");
+        assertThat(northVal.getSlowMovingInventoryValue()).isEqualByComparingTo("4500000.00");
         assertThat(northVal.getSlowMovingSkuCount()).isEqualTo(1);
 
         WarehouseInventoryValuationResponse southVal = byWarehouse.stream()
@@ -263,7 +263,7 @@ class InventoryTurnoverReportServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(southVal.getInventoryValue()).isEqualByComparingTo("5000000.00");
-        assertThat(southVal.getSlowMovingValue()).isEqualByComparingTo("5000000.00");
+        assertThat(southVal.getSlowMovingInventoryValue()).isEqualByComparingTo("5000000.00");
         assertThat(southVal.getSlowMovingSkuCount()).isEqualTo(1);
 
         // Kiểm tra giá trị tồn theo nhóm hàng
@@ -274,14 +274,14 @@ class InventoryTurnoverReportServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(bevVal.getInventoryValue()).isEqualByComparingTo("5500000.00");
-        assertThat(bevVal.getSlowMovingValue()).isEqualByComparingTo("4500000.00");
+        assertThat(bevVal.getSlowMovingInventoryValue()).isEqualByComparingTo("4500000.00");
 
         CategoryInventoryValuationResponse foodVal = byCategory.stream()
                 .filter(c -> c.getCategoryCode().equals("NHOM-THUC-PHAM"))
                 .findFirst()
                 .orElseThrow();
         assertThat(foodVal.getInventoryValue()).isEqualByComparingTo("5000000.00");
-        assertThat(foodVal.getSlowMovingValue()).isEqualByComparingTo("5000000.00");
+        assertThat(foodVal.getSlowMovingInventoryValue()).isEqualByComparingTo("5000000.00");
 
         // Kiểm tra chi tiết từng SKU
         SkuInventoryTurnoverResponse fastSku = report.getSkuItems().stream()

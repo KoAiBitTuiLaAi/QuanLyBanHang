@@ -19,6 +19,11 @@ public interface ReturnOrderRepository extends JpaRepository<ReturnOrder, Long>,
     @Query("select coalesce(sum(i.returnAmount),0) from ReturnOrderItem i where i.invoiceItem.id = :itemId and i.returnOrder.status = com.quanlybanhang.model.ReturnOrderStatus.CONFIRMED")
     BigDecimal confirmedAmount(@Param("itemId") Long itemId);
     interface OrderCredit { Long getOrderId(); BigDecimal getAmount(); }
+    interface InvoiceCredit { Long getInvoiceId(); BigDecimal getAmount(); }
+    @Query("select r.invoice.id as invoiceId, sum(r.totalReturnAmount) as amount from ReturnOrder r where r.dealer.id = :dealerId and r.status = com.quanlybanhang.model.ReturnOrderStatus.CONFIRMED group by r.invoice.id")
+    List<InvoiceCredit> creditsByInvoice(@Param("dealerId") Long dealerId);
+    @Query("select coalesce(sum(r.totalReturnAmount),0) from ReturnOrder r where r.invoice.id = :invoiceId and r.status = com.quanlybanhang.model.ReturnOrderStatus.CONFIRMED")
+    BigDecimal confirmedInvoiceCredit(@Param("invoiceId") Long invoiceId);
     @Query("""
         select i.invoiceItem.order.id as orderId, sum(i.returnAmount) as amount
         from ReturnOrderItem i
