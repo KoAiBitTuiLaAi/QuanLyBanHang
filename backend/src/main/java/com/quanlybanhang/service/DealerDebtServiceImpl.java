@@ -11,9 +11,11 @@ import com.quanlybanhang.model.*;
 import com.quanlybanhang.repository.DealerRepository;
 import com.quanlybanhang.repository.DebtPaymentRepository;
 import com.quanlybanhang.repository.DebtRiskConfigRepository;
+import com.quanlybanhang.repository.InvoiceRepository;
 import com.quanlybanhang.repository.OrderRepository;
 import com.quanlybanhang.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -28,8 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -43,13 +44,27 @@ public class DealerDebtServiceImpl implements DealerDebtService {
     private final DebtRiskConfigRepository debtRiskConfigRepository;
     private final AuditLogService auditLogService;
 
+    @Autowired(required = false)
+    private InvoiceRepository invoiceRepository;
+
+    @Autowired(required = false)
+    private InvoiceService invoiceService;
+
+    public void setInvoiceRepository(InvoiceRepository invoiceRepository) {
+        this.invoiceRepository = invoiceRepository;
+    }
+
+    public void setInvoiceService(InvoiceService invoiceService) {
+        this.invoiceService = invoiceService;
+    }
+
     @Override
     @Transactional(readOnly = true)
     public DealerDebtResponse getDealerDebtInfo(Long dealerId) {
         Dealer dealer = dealerRepository.findById(dealerId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + dealerId));
 
-        // S4-10: Đại lý chỉ nhìn thấy công nợ của chính mình
+        // S4-10 / S7-07: Đại lý chỉ nhìn thấy công nợ của chính mình
         if (isDealerUser()) {
             User currentUser = getCurrentUser();
             if (currentUser != null && (currentUser.getDealer() == null || !currentUser.getDealer().getId().equals(dealerId))) {
@@ -89,26 +104,136 @@ public class DealerDebtServiceImpl implements DealerDebtService {
             }
         }
 
-        // Công nợ thực tế hiện tại = Tổng đơn ghi sổ - Tổng tiền đã thu
         java.util.Map<Long, BigDecimal> returnCredits = new java.util.HashMap<>();
         if (returnOrderRepository != null) {
             returnOrderRepository.creditsByOrder(dealer.getId(), OrderStatus.debtBearingStatuses())
                     .forEach(row -> returnCredits.put(row.getOrderId(), row.getAmount()));
         }
         BigDecimal totalReturns = returnCredits.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal currentDebt = totalOrderDebt.subtract(totalPaid).subtract(totalReturns).max(BigDecimal.ZERO);
-        BigDecimal remainingLimit = debtLimit.subtract(currentDebt);
 
         List<Order> recordedOrders = orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(dealer.getId(), OrderStatus.debtBearingStatuses());
-        LocalDate today = LocalDate.now();
+        if (recordedOrders == null) {
+            recordedOrders = Collections.emptyList();
+        }
 
+        // S7-07: Tích hợp danh sách hóa đơn đã phát hành và chứng từ điều chỉnh
+        List<Invoice> dealerInvoices = (invoiceRepository != null && dealer.getId() != null)
+                ? invoiceRepository.findByDealerIdOrderByInvoiceDateAscIdAsc(dealer.getId())
+                : Collections.emptyList();
+        if (dealerInvoices == null) {
+            dealerInvoices = Collections.emptyList();
+        }
+
+        BigDecimal totalInvoicedAmount = BigDecimal.ZERO;
+        Set<Long> invoicedOrderIds = new HashSet<>();
+        for (Invoice inv : dealerInvoices) {
+            if (inv.getStatus() != InvoiceStatus.CANCELLED) {
+                BigDecimal effAmt = inv.getAdjustedTotalAmount() != null ? inv.getAdjustedTotalAmount() : inv.getTotalAmount();
+                if (effAmt != null && effAmt.compareTo(BigDecimal.ZERO) > 0) {
+                    totalInvoicedAmount = totalInvoicedAmount.add(effAmt);
+                }
+                if (inv.getOrders() != null) {
+                    for (Order o : inv.getOrders()) {
+                        if (o != null && o.getId() != null) {
+                            invoicedOrderIds.add(o.getId());
+                        }
+                    }
+                }
+            }
+        }
+
+        BigDecimal uninvoicedOrderDebt;
+        BigDecimal grossDebt;
+        if (!dealerInvoices.isEmpty()) {
+            if (!recordedOrders.isEmpty()) {
+                uninvoicedOrderDebt = BigDecimal.ZERO;
+                for (Order o : recordedOrders) {
+                    if (o.getId() == null || !invoicedOrderIds.contains(o.getId())) {
+                        BigDecimal amt = o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO;
+                        uninvoicedOrderDebt = uninvoicedOrderDebt.add(amt);
+                    }
+                }
+            } else if (invoicedOrderIds.isEmpty() && totalOrderDebt.compareTo(BigDecimal.ZERO) > 0) {
+                uninvoicedOrderDebt = totalOrderDebt;
+            } else {
+                uninvoicedOrderDebt = BigDecimal.ZERO;
+            }
+            grossDebt = totalInvoicedAmount.add(uninvoicedOrderDebt);
+        } else {
+            uninvoicedOrderDebt = totalOrderDebt;
+            grossDebt = totalOrderDebt;
+        }
+
+        // Giữ giảm trừ trả hàng S8-02 cùng cách tính nợ hóa đơn/đơn chưa xuất của develop.
+        BigDecimal currentDebt = grossDebt.subtract(totalPaid).subtract(totalReturns).max(BigDecimal.ZERO);
+        BigDecimal remainingLimit = debtLimit.subtract(currentDebt);
+
+        LocalDate today = LocalDate.now();
         boolean hasOverdueDebt = false;
         int maxOverdueDays = 0;
         BigDecimal overdueAmount = BigDecimal.ZERO;
         String oldestOrderCode = null;
         LocalDate oldestOrderDate = null;
 
-        if (maxDebtDays > 0) {
+        // Phân bổ FIFO cho danh sách hóa đơn của đại lý (S7-07)
+        List<InvoiceResponse> invoiceResponses = buildInvoiceResponsesWithFifo(dealerInvoices, totalPaid, maxDebtDays);
+
+        if (!dealerInvoices.isEmpty()) {
+            // 1. Kiểm tra quá hạn trên các hóa đơn đã phát hành (theo dueDate của từng hóa đơn)
+            BigDecimal allocatedToInvoices = BigDecimal.ZERO;
+            for (InvoiceResponse invResp : invoiceResponses) {
+                if (invResp.getPaidAmount() != null) {
+                    allocatedToInvoices = allocatedToInvoices.add(invResp.getPaidAmount());
+                }
+                if (Boolean.TRUE.equals(invResp.getIsOverdue())
+                        && invResp.getRemainingAmount() != null
+                        && invResp.getRemainingAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    hasOverdueDebt = true;
+                    overdueAmount = overdueAmount.add(invResp.getRemainingAmount());
+                    int invOverdueDays = invResp.getOverdueDays() != null ? invResp.getOverdueDays() : 0;
+                    if (invOverdueDays > maxOverdueDays) {
+                        maxOverdueDays = invOverdueDays;
+                        oldestOrderCode = invResp.getInvoiceCode();
+                        oldestOrderDate = invResp.getInvoiceDate() != null
+                                ? invResp.getInvoiceDate().toLocalDate()
+                                : invResp.getDueDate();
+                    }
+                }
+            }
+
+            // 2. Kiểm tra quá hạn trên các đơn hàng ghi sổ chưa xuất hóa đơn (nếu có)
+            if (maxDebtDays > 0) {
+                BigDecimal remainingPaymentForOrders = totalPaid.subtract(allocatedToInvoices).max(BigDecimal.ZERO);
+                for (Order order : recordedOrders) {
+                    if (order.getId() != null && invoicedOrderIds.contains(order.getId())) {
+                        continue; // Đã tính trên hóa đơn
+                    }
+                    BigDecimal orderAmt = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+                    if (remainingPaymentForOrders.compareTo(orderAmt) >= 0) {
+                        remainingPaymentForOrders = remainingPaymentForOrders.subtract(orderAmt);
+                        continue;
+                    }
+                    BigDecimal unpaidOrderAmt = orderAmt.subtract(remainingPaymentForOrders);
+                    remainingPaymentForOrders = BigDecimal.ZERO;
+
+                    LocalDateTime recordTime = order.getRecordedAt() != null ? order.getRecordedAt() : order.getCreatedAt();
+                    if (recordTime != null) {
+                        LocalDate orderDate = recordTime.toLocalDate();
+                        long days = ChronoUnit.DAYS.between(orderDate, today);
+                        if (days > maxDebtDays) {
+                            hasOverdueDebt = true;
+                            int overdueDiff = (int) (days - maxDebtDays);
+                            if (overdueDiff > maxOverdueDays) {
+                                maxOverdueDays = overdueDiff;
+                                oldestOrderCode = order.getOrderCode();
+                                oldestOrderDate = orderDate;
+                            }
+                            overdueAmount = overdueAmount.add(unpaidOrderAmt);
+                        }
+                    }
+                }
+            }
+        } else if (maxDebtDays > 0) {
             BigDecimal unallocatedPayment = totalPaid;
             for (Order order : recordedOrders) {
                 BigDecimal orderAmt = (order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO)
@@ -158,6 +283,29 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                     dealer.getName(), dealer.getCode(), maxOverdueDays, maxDebtDays);
         }
 
+        BigDecimal availableOrderLimit = isBlocked ? BigDecimal.ZERO : remainingLimit.max(BigDecimal.ZERO);
+
+        int totalInvoiceCount = (int) invoiceResponses.stream()
+                .filter(i -> i.getStatus() != InvoiceStatus.CANCELLED)
+                .count();
+        int unpaidInvoiceCount = (int) invoiceResponses.stream()
+                .filter(i -> i.getRemainingAmount() != null && i.getRemainingAmount().compareTo(BigDecimal.ZERO) > 0)
+                .count();
+        int overdueInvoiceCount = (int) invoiceResponses.stream()
+                .filter(i -> Boolean.TRUE.equals(i.getIsOverdue()))
+                .count();
+        int paidInvoiceCount = (int) invoiceResponses.stream()
+                .filter(i -> "PAID".equals(i.getPaymentStatus()))
+                .count();
+
+        List<DebtPaymentResponse> paymentResponses = Collections.emptyList();
+        if (debtPaymentRepository != null && dealer.getId() != null) {
+            List<DebtPayment> rawPayments = debtPaymentRepository.findByDealerIdOrderByPaymentDateDescCreatedAtDesc(dealer.getId());
+            if (rawPayments != null) {
+                paymentResponses = rawPayments.stream().map(this::toPaymentResponse).toList();
+            }
+        }
+
         return DealerDebtResponse.builder()
                 .dealerId(dealer.getId())
                 .dealerCode(dealer.getCode())
@@ -165,6 +313,15 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 .currentDebt(currentDebt)
                 .debtLimit(debtLimit)
                 .remainingLimit(remainingLimit)
+                .availableOrderLimit(availableOrderLimit)
+                .totalInvoicedAmount(totalInvoicedAmount)
+                .uninvoicedOrderDebt(uninvoicedOrderDebt)
+                .totalInvoiceCount(totalInvoiceCount)
+                .unpaidInvoiceCount(unpaidInvoiceCount)
+                .overdueInvoiceCount(overdueInvoiceCount)
+                .paidInvoiceCount(paidInvoiceCount)
+                .invoices(invoiceResponses)
+                .payments(paymentResponses)
                 .maxDebtDays(maxDebtDays)
                 .hasOverdueDebt(hasOverdueDebt)
                 .overdueAmount(overdueAmount)
@@ -181,6 +338,111 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 .lastDebtEvaluatedAt(dealer.getLastDebtEvaluatedAt())
                 .effectiveAction(effectiveAction)
                 .build();
+    }
+
+    private List<InvoiceResponse> buildInvoiceResponsesWithFifo(List<Invoice> ascInvoices, BigDecimal totalPaid, int defaultMaxDebtDays) {
+        if (ascInvoices == null || ascInvoices.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (invoiceService != null && ascInvoices.get(0).getDealer() != null && ascInvoices.get(0).getDealer().getId() != null) {
+            List<InvoiceResponse> fromService = invoiceService.getDealerInvoiceList(ascInvoices.get(0).getDealer().getId());
+            if (fromService != null && !fromService.isEmpty()) {
+                return fromService;
+            }
+        }
+
+        BigDecimal remainingPool = totalPaid != null && totalPaid.compareTo(BigDecimal.ZERO) > 0 ? totalPaid : BigDecimal.ZERO;
+        LocalDate today = LocalDate.now();
+        List<InvoiceResponse> builtAsc = new ArrayList<>();
+
+        for (Invoice inv : ascInvoices) {
+            BigDecimal effectiveAmount = inv.getStatus() == InvoiceStatus.CANCELLED
+                    ? BigDecimal.ZERO
+                    : (inv.getAdjustedTotalAmount() != null ? inv.getAdjustedTotalAmount() : inv.getTotalAmount());
+            if (effectiveAmount == null || effectiveAmount.compareTo(BigDecimal.ZERO) < 0) {
+                effectiveAmount = BigDecimal.ZERO;
+            }
+
+            BigDecimal paidAmount = BigDecimal.ZERO;
+            if (inv.getStatus() != InvoiceStatus.CANCELLED && effectiveAmount.compareTo(BigDecimal.ZERO) > 0 && remainingPool.compareTo(BigDecimal.ZERO) > 0) {
+                paidAmount = remainingPool.min(effectiveAmount);
+                remainingPool = remainingPool.subtract(paidAmount).max(BigDecimal.ZERO);
+            }
+            BigDecimal remainingAmount = effectiveAmount.subtract(paidAmount).max(BigDecimal.ZERO);
+
+            LocalDate dueDate = inv.getDueDate();
+            if (dueDate == null) {
+                LocalDate baseDate = inv.getInvoiceDate() != null
+                        ? inv.getInvoiceDate().toLocalDate()
+                        : (inv.getCreatedAt() != null ? inv.getCreatedAt().toLocalDate() : today);
+                dueDate = baseDate.plusDays(Math.max(0, defaultMaxDebtDays));
+            }
+
+            String paymentStatus;
+            String paymentStatusLabel;
+            boolean isOverdue = false;
+            int overdueDays = 0;
+            int daysUntilDue = 0;
+
+            if (inv.getStatus() == InvoiceStatus.CANCELLED) {
+                paymentStatus = "CANCELLED";
+                paymentStatusLabel = "Đã hủy";
+            } else if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                paymentStatus = "PAID";
+                paymentStatusLabel = "Đã thanh toán";
+            } else if (dueDate != null && today.isAfter(dueDate)) {
+                isOverdue = true;
+                overdueDays = (int) ChronoUnit.DAYS.between(dueDate, today);
+                paymentStatus = "OVERDUE";
+                paymentStatusLabel = "Quá hạn thanh toán";
+            } else {
+                if (dueDate != null && !today.isAfter(dueDate)) {
+                    daysUntilDue = (int) ChronoUnit.DAYS.between(today, dueDate);
+                }
+                if (paidAmount.compareTo(BigDecimal.ZERO) > 0) {
+                    paymentStatus = "PARTIALLY_PAID";
+                    paymentStatusLabel = "Thanh toán một phần";
+                } else {
+                    paymentStatus = "UNPAID";
+                    paymentStatusLabel = "Chưa thanh toán";
+                }
+            }
+
+            builtAsc.add(InvoiceResponse.builder()
+                    .id(inv.getId())
+                    .invoiceNumber(inv.getInvoiceNumber())
+                    .invoiceCode(inv.getInvoiceCode())
+                    .invoiceDate(inv.getInvoiceDate())
+                    .dueDate(dueDate)
+                    .status(inv.getStatus())
+                    .statusLabel(inv.getStatus() != null ? inv.getStatus().getDisplayName() : null)
+                    .dealerId(inv.getDealer() != null ? inv.getDealer().getId() : null)
+                    .dealerCode(inv.getDealerCode())
+                    .dealerName(inv.getDealerName())
+                    .dealerTaxCode(inv.getDealerTaxCode())
+                    .dealerAddress(inv.getDealerAddress())
+                    .dealerPhone(inv.getDealerPhone())
+                    .subtotalAmount(inv.getSubtotalAmount())
+                    .discountAmount(inv.getDiscountAmount())
+                    .totalAmount(inv.getTotalAmount())
+                    .adjustedTotalAmount(inv.getAdjustedTotalAmount())
+                    .paidAmount(paidAmount)
+                    .remainingAmount(remainingAmount)
+                    .paymentStatus(paymentStatus)
+                    .paymentStatusLabel(paymentStatusLabel)
+                    .isOverdue(isOverdue)
+                    .overdueDays(overdueDays)
+                    .daysUntilDue(daysUntilDue)
+                    .note(inv.getNote())
+                    .createdBy(inv.getCreatedBy())
+                    .createdAt(inv.getCreatedAt())
+                    .build());
+        }
+
+        builtAsc.sort(Comparator
+                .comparing(InvoiceResponse::getInvoiceDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(InvoiceResponse::getId, Comparator.nullsLast(Comparator.reverseOrder())));
+        return builtAsc;
     }
 
     @Override
@@ -806,8 +1068,10 @@ public class DealerDebtServiceImpl implements DealerDebtService {
     }
 
     private String formatMoney(BigDecimal amount) {
-        if (amount == null) return "0 đ";
-        DecimalFormat df = new DecimalFormat("#,### đ");
-        return df.format(amount);
+        if (amount == null) {
+            return "0 ₫";
+        }
+        DecimalFormat df = new DecimalFormat("#,###");
+        return df.format(amount) + " ₫";
     }
 }

@@ -27,6 +27,9 @@ public class WarehouseVoucherItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "shipment_order_item_id")
+    private Long shipmentOrderItemId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "voucher_id", nullable = false)
     @JsonIgnore

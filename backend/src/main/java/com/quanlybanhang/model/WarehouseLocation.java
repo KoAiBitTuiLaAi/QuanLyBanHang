@@ -50,6 +50,9 @@ public class WarehouseLocation {
     @Column(length = 500)
     private String description;
 
+    /** Optional walking sequence within its parent zone; natural codes are the fallback. */
+    private Integer pickingSequence;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thu tiền theo tuyến | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/cash-collections.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content collections-page">
+  <header class="cc-heading"><div><h1>Thu tiền theo tuyến</h1><p>Ghi thu tại cửa hàng, giữ biên lai và đối chiếu tiền đã nộp về công ty.</p></div><div class="cc-actions"><button id="cc-reload" type="button" class="btn btn--secondary">Tải lại</button><button id="cc-new" type="button" class="btn btn--primary" hidden>Ghi khoản thu</button></div></header>
+  <p id="cc-error" class="cc-error" role="alert" hidden></p><p id="cc-success" class="cc-success" role="status" hidden></p>
+  <section id="cc-workspace" hidden>
+    <section id="cc-create" class="cc-panel" hidden aria-labelledby="cc-create-title">
+      <header class="cc-heading"><div><h2 id="cc-create-title" tabindex="-1">Ghi khoản thu tại cửa hàng</h2><p>Khoản thu được lưu ở trạng thái Chờ nộp. Chỉ kế toán có quyền xác nhận nhận tiền.</p></div><button id="cc-create-close" type="button" class="btn btn--secondary">Đóng</button></header>
+      <p id="cc-create-error" class="cc-error" role="alert" hidden></p>
+      <form id="cc-dealer-search" class="cc-form"><label>Tìm cửa hàng phụ trách<input id="cc-dealer-keyword" type="search" maxlength="150" placeholder="Tên hoặc mã cửa hàng"></label><button id="cc-dealer-find" class="btn btn--secondary" type="submit">Tìm cửa hàng</button></form>
+      <form id="cc-create-form">
+        <div class="cc-form">
+          <label class="cc-wide">Cửa hàng<select id="cc-dealer" required><option value="">Chọn cửa hàng</option></select></label>
+          <div class="cc-actions cc-wide"><button id="cc-dealer-prev" class="btn btn--secondary" type="button">Cửa hàng trước</button><span id="cc-dealer-page" role="status"></span><button id="cc-dealer-next" class="btn btn--secondary" type="button">Cửa hàng sau</button></div>
+          <label>Số tiền thu (VND)<input id="cc-amount" inputmode="decimal" type="text" required maxlength="20" placeholder="Ví dụ: 250000 hoặc 250000,50" aria-describedby="cc-money-help"><small id="cc-money-help">Không nhập dấu phân cách hàng nghìn; tối đa 2 số thập phân.</small></label>
+          <label>Ngày thu<input id="cc-date" type="date" required></label>
+          <label class="cc-wide">Ghi chú<textarea id="cc-note" maxlength="500" rows="2" placeholder="Nội dung thu tại cửa hàng (tối đa 500 ký tự)"></textarea></label>
+          <label class="cc-wide">Ảnh biên lai bắt buộc<input id="cc-receipt-file" type="file" accept="image/jpeg,image/png" required aria-describedby="cc-receipt-help"><small id="cc-receipt-help">Ảnh JPEG/PNG, tối đa 5 MiB và 20 megapixel. Ảnh được gửi lên hệ thống cùng khoản thu.</small></label>
+        </div>
+        <figure id="cc-receipt-preview" hidden><img id="cc-preview-image" alt="Ảnh biên lai đã chọn"><figcaption id="cc-preview-name"></figcaption></figure>
+        <label class="cc-check"><input id="cc-create-check" type="checkbox" required>Tôi đã kiểm tra cửa hàng, ngày thu, số tiền và biên lai. Khoản thu đã ghi không sửa hoặc xóa.</label>
+        <button id="cc-save" class="btn btn--primary" type="submit" disabled>Lưu khoản thu — Chờ nộp</button>
+      </form>
+    </section>
+    <section class="cc-panel" aria-labelledby="cc-list-title">
+      <form id="cc-filter" class="cc-form" role="search">
+        <label>Từ ngày thu<input id="cc-from" type="date" required></label><label>Đến ngày thu<input id="cc-to" type="date" required></label>
+        <label id="cc-employee-label" hidden>Mã nhân viên (tùy chọn)<input id="cc-employee" type="text" inputmode="numeric" pattern="[1-9][0-9]*" placeholder="Để trống xem tất cả"><small>Mã nhân viên hiển thị trong bảng; không nhập tên.</small></label>
+        <button id="cc-filter-save" class="btn btn--secondary" type="submit">Áp dụng bộ lọc</button>
+      </form>
+      <p id="cc-scope" class="cc-muted"></p>
+      <header class="cc-heading"><h2 id="cc-list-title">Khoản thu đã ghi</h2><span id="cc-count" role="status"></span></header>
+      <div class="cc-scroll" role="region" aria-label="Danh sách khoản thu" tabindex="0"><table><thead><tr><th>Mã / Ngày thu</th><th>Cửa hàng / Tuyến</th><th>Nhân viên</th><th>Số tiền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody id="cc-list"></tbody></table></div>
+      <footer class="cc-actions cc-pagination"><button id="cc-prev" type="button" class="btn btn--secondary">Trước</button><span id="cc-page" role="status"></span><button id="cc-next" type="button" class="btn btn--secondary">Sau</button></footer>
+    </section>
+    <section id="cc-detail" class="cc-panel" hidden aria-labelledby="cc-detail-title">
+      <header class="cc-heading"><h2 id="cc-detail-title" tabindex="-1">Chi tiết khoản thu</h2><button id="cc-detail-close" class="btn btn--secondary" type="button">Đóng chi tiết</button></header>
+      <p id="cc-detail-error" class="cc-error" role="alert" hidden></p><div id="cc-detail-body"></div>
+      <div class="cc-actions"><button id="cc-receipt-load" class="btn btn--secondary" type="button" disabled>Xem ảnh biên lai</button></div>
+      <figure id="cc-receipt-view" hidden><img id="cc-receipt-image" alt="Biên lai gốc của khoản thu"><figcaption>Biên lai được tải qua API có xác thực, không có đường dẫn công khai.</figcaption></figure>
+      <form id="cc-confirm-form" hidden><p class="cc-notice">Chỉ xác nhận khi đã nhận đủ số tiền dưới đây. Không thể tự xác nhận khoản thu do mình ghi.</p><label class="cc-check"><input id="cc-confirm-check" type="checkbox" required>Tôi đã nhận đủ <strong id="cc-confirm-amount"></strong> và đối chiếu biên lai.</label><button id="cc-confirm" type="submit" class="btn btn--primary">Xác nhận đã nhận tiền</button></form>
+      <p id="cc-self-note" class="cc-muted" hidden>Đây là khoản thu do bạn ghi. Cần người khác có quyền xác nhận nhận tiền.</p>
+    </section>
+    <section id="cc-reconciliation" class="cc-panel" hidden aria-labelledby="cc-report-title">
+      <header class="cc-heading"><div><h2 id="cc-report-title">Đối chiếu theo nhân viên và ngày thu</h2><p>Tiền đã nhận được nhóm theo ngày thu gốc, không phải ngày kế toán nhận tiền. Không tự đối trừ công nợ.</p></div></header>
+      <p id="cc-report-error" class="cc-error" role="alert" hidden></p>
+      <dl id="cc-totals" class="cc-totals"><div><dt>Đã thu</dt><dd id="cc-total-collected">—</dd></div><div><dt>Đã nhận về công ty</dt><dd id="cc-total-received">—</dd></div><div><dt>Còn chờ nộp</dt><dd id="cc-total-pending">—</dd></div></dl>
+      <div class="cc-scroll" role="region" aria-label="Bảng đối chiếu tiền thu" tabindex="0"><table><thead><tr><th>Ngày thu</th><th>Nhân viên</th><th>Số khoản</th><th>Đã thu</th><th>Đã nhận</th><th>Chờ nộp</th></tr></thead><tbody id="cc-report"></tbody></table></div>
+    </section>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/cash-collection-utils.js"></script><script src="/js/cash-collections.js"></script>
+</body></html>

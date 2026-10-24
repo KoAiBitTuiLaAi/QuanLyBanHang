@@ -4,12 +4,13 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Entity Hóa đơn bán hàng (S7-01).
+ * Entity Hóa đơn bán hàng (S7-01, S7-07).
  *
  * Tiêu chí nghiệp vụ:
  * 1. Hoá đơn sinh từ số lượng thực giao, không phải số lượng đặt.
@@ -17,6 +18,7 @@ import java.util.List;
  * 3. Gộp nhiều phiếu giao của cùng đại lý trong kỳ thành một hoá đơn được.
  * 4. Hoá đơn đã phát hành không sửa và không xoá, chỉ lập chứng từ điều chỉnh.
  * 5. In hoặc xuất PDF được.
+ * 6. Lưu hạn thanh toán (dueDate) phục vụ theo dõi công nợ đại lý (S7-07).
  */
 @Entity
 @Table(name = "invoices", uniqueConstraints = {
@@ -51,6 +53,13 @@ public class Invoice {
      */
     @Column(name = "invoice_date", nullable = false)
     private LocalDateTime invoiceDate;
+
+    /**
+     * Hạn thanh toán của hóa đơn (S7-07).
+     * Mặc định tính theo ngày phát hành + số ngày nợ tối đa của đại lý (maxDebtDays).
+     */
+    @Column(name = "due_date")
+    private LocalDate dueDate;
 
     /**
      * Đại lý nhận hóa đơn.
@@ -178,6 +187,11 @@ public class Invoice {
         if (this.invoiceDate == null) {
             this.invoiceDate = LocalDateTime.now();
         }
+        if (this.dueDate == null && this.invoiceDate != null) {
+            int maxDays = (this.dealer != null && this.dealer.getMaxDebtDays() != null && this.dealer.getMaxDebtDays() > 0)
+                    ? this.dealer.getMaxDebtDays() : 0;
+            this.dueDate = this.invoiceDate.toLocalDate().plusDays(maxDays);
+        }
         if (this.status == null) {
             this.status = InvoiceStatus.ISSUED;
         }
@@ -186,4 +200,3 @@ public class Invoice {
         }
     }
 }
-

@@ -46,6 +46,7 @@
   }).format(new Date());
 
   const workDescriptions = {
+    "operations-dashboard": "Xem doanh số, đơn chờ xử lý, công nợ quá hạn và tồn tối thiểu toàn công ty.",
     "order-approval": "Xem xét và phê duyệt đơn hàng vượt hạn mức hoặc bán dưới giá sàn.",
     orders: "Theo dõi danh sách đơn hàng, doanh số và tiến độ giao hàng.",
     "debt-limits": "Tra cứu và khai báo hạn mức tiền, số ngày nợ tối đa của đại lý.",
@@ -61,7 +62,7 @@
     warehouse: "Xem số lượng tồn và quy đổi theo đơn vị đóng gói.",
     profile: "Cập nhật họ tên, số điện thoại và ảnh đại diện.",
   };
-  const workOrder = ["orders", "order-approval", "users", "audit-logs", "debt-limits", "price-lists", "discount-policies", "products", "product-groups",
+  const workOrder = ["operations-dashboard", "orders", "order-approval", "users", "audit-logs", "debt-limits", "price-lists", "discount-policies", "products", "product-groups",
     "import-export", "warehouse", "product-units", "suppliers", "profile"];
   function renderWork() {
   const availableWork = MenuConfig.getMenuForUser(Auth.getUser());

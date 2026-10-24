@@ -56,7 +56,7 @@
     const rows = state.locations.filter(l => (!type || l.locationType === type)
       && (!active || String(l.active) === active)
       && [l.code, l.name, l.description].some(v => String(v ?? '').toLocaleLowerCase('vi').includes(keyword)));
-    $('wh-location-rows').innerHTML = rows.map(l => `<tr><td><strong>${esc(l.name)}</strong><span class="wh-muted">${esc(l.code)}</span></td>
+    $('wh-location-rows').innerHTML = rows.map(l => `<tr><td><strong>${esc(l.name)}</strong><span class="wh-muted">${esc(l.code)}</span><span class="wh-muted">Thứ tự soạn: ${l.pickingSequence == null ? 'Theo mã khu/kệ' : esc(l.pickingSequence)}</span></td>
       <td>${esc(l.locationTypeDisplayName || types[l.locationType] || l.locationType)}</td>
       <td>${esc(l.parentLocationName || 'Không có')}</td><td>${esc(l.description || '—')}</td>
       <td>${badge(l.active, 'Đang dùng', 'Tạm ngừng')}</td><td>${canManage() ? action('edit-location', l.id, 'Sửa vị trí') : 'Chỉ xem'}</td></tr>`).join('')
@@ -204,6 +204,7 @@
     openDialog(id ? 'Sửa vị trí lưu' : 'Thêm vị trí lưu',
       field('Mã vị trí', 'wh-edit-code', `<input id="wh-edit-code" value="${esc(l.code)}" maxlength="50" aria-describedby="wh-code-help" placeholder="${id ? 'Để trống để giữ mã cũ' : 'Để trống để tự sinh mã'}"><small id="wh-code-help">${id ? 'Để trống sẽ giữ nguyên mã hiện tại. Nhập mã riêng nếu muốn đổi.' : 'Để trống thì hệ thống tự sinh. Có mã trên nhãn khu/kệ thì nhập mã đó.'}</small>`)
       + field('Tên vị trí *', 'wh-edit-name', input('wh-edit-name', l.name, 120, true))
+      + field('Thứ tự đường đi khi soạn', 'wh-edit-picking-sequence', `<input id="wh-edit-picking-sequence" type="number" min="0" max="1000000" step="1" value="${esc(l.pickingSequence ?? '')}" placeholder="Để trống: theo mã khu/kệ"><small>Số nhỏ đi trước trong cùng khu; áp dụng cho lượt soạn tạo mới.</small>`)
       + field('Loại vị trí *', 'wh-edit-type', `<select id="wh-edit-type">${availableTypes.map(([key, label]) => `<option value="${key}"${key === l.locationType ? ' selected' : ''}>${label}</option>`).join('')}</select>`)
       + field('Khu vực cha', 'wh-edit-parent', `<select id="wh-edit-parent"><option value="0">Không có khu vực cha</option>${parents.map(p => `<option value="${p.id}"${p.id === l.parentLocationId ? ' selected' : ''}>${esc(p.code)} — ${esc(p.name)}</option>`).join('')}</select>`)
       + field('Mô tả', 'wh-edit-description', `<textarea id="wh-edit-description" rows="3" maxlength="500">${esc(l.description)}</textarea>`, true)
@@ -242,6 +243,7 @@
     } else if (edit.kind === 'location') {
       url = edit.id ? `/warehouse-locations/${edit.id}` : `/warehouses/${edit.warehouseId}/locations`;
       body = { code: value('wh-edit-code'), name: value('wh-edit-name'), locationType: value('wh-edit-type'),
+        pickingSequence: value('wh-edit-picking-sequence') === '' ? null : Number(value('wh-edit-picking-sequence')),
         parentLocationId: Number(value('wh-edit-parent')), description: value('wh-edit-description'), active: value('wh-edit-active') === 'true' };
     } else {
       url = `/warehouses/dealer-assignments/${edit.id}`;
