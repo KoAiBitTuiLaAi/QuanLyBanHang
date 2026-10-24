@@ -147,13 +147,13 @@ public class InventoryTurnoverExcelExportService {
                 createTextCell(row, 2, wh.getWarehouseName(), styles.textStyle);
                 createIntCell(row, 3, wh.getInStockSkuCount(), styles.integerStyle);
                 createIntCell(row, 4, wh.getSlowMovingSkuCount(), styles.integerStyle);
-                createDecimalCell(row, 5, wh.getPhysicalQuantity(), styles.decimalStyle);
-                createDecimalCell(row, 6, wh.getReservedQuantity(), styles.decimalStyle);
-                createDecimalCell(row, 7, wh.getAvailableQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 5, wh.getTotalPhysicalQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 6, wh.getTotalReservedQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 7, wh.getTotalAvailableQuantity(), styles.decimalStyle);
                 createDecimalCell(row, 8, wh.getOutboundQuantityInPeriod(), styles.decimalStyle);
                 createDecimalCell(row, 9, wh.getInventoryValue(), styles.currencyStyle);
                 createDecimalCell(row, 10, wh.getValueSharePercent(), styles.decimalStyle);
-                createDecimalCell(row, 11, wh.getSlowMovingValue(), styles.currencyStyle);
+                createDecimalCell(row, 11, wh.getSlowMovingInventoryValue(), styles.currencyStyle);
                 createDecimalCell(row, 12, wh.getAverageDaysInInventory(), styles.decimalStyle);
             }
         }
@@ -215,11 +215,11 @@ public class InventoryTurnoverExcelExportService {
                 createTextCell(row, 4, wc.getCategoryName(), styles.textStyle);
                 createIntCell(row, 5, wc.getInStockSkuCount(), styles.integerStyle);
                 createIntCell(row, 6, wc.getSlowMovingSkuCount(), styles.integerStyle);
-                createDecimalCell(row, 7, wc.getPhysicalQuantity(), styles.decimalStyle);
-                createDecimalCell(row, 8, wc.getAvailableQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 7, wc.getTotalPhysicalQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 8, wc.getTotalAvailableQuantity(), styles.decimalStyle);
                 createDecimalCell(row, 9, wc.getOutboundQuantityInPeriod(), styles.decimalStyle);
                 createDecimalCell(row, 10, wc.getInventoryValue(), styles.currencyStyle);
-                createDecimalCell(row, 11, wc.getSlowMovingValue(), styles.currencyStyle);
+                createDecimalCell(row, 11, wc.getSlowMovingInventoryValue(), styles.currencyStyle);
             }
         }
 
@@ -271,13 +271,13 @@ public class InventoryTurnoverExcelExportService {
                 createTextCell(row, 2, cat.getCategoryName(), styles.textStyle);
                 createIntCell(row, 3, cat.getInStockSkuCount(), styles.integerStyle);
                 createIntCell(row, 4, cat.getSlowMovingSkuCount(), styles.integerStyle);
-                createDecimalCell(row, 5, cat.getPhysicalQuantity(), styles.decimalStyle);
-                createDecimalCell(row, 6, cat.getReservedQuantity(), styles.decimalStyle);
-                createDecimalCell(row, 7, cat.getAvailableQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 5, cat.getTotalPhysicalQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 6, cat.getTotalReservedQuantity(), styles.decimalStyle);
+                createDecimalCell(row, 7, cat.getTotalAvailableQuantity(), styles.decimalStyle);
                 createDecimalCell(row, 8, cat.getOutboundQuantityInPeriod(), styles.decimalStyle);
                 createDecimalCell(row, 9, cat.getInventoryValue(), styles.currencyStyle);
                 createDecimalCell(row, 10, cat.getValueSharePercent(), styles.decimalStyle);
-                createDecimalCell(row, 11, cat.getSlowMovingValue(), styles.currencyStyle);
+                createDecimalCell(row, 11, cat.getSlowMovingInventoryValue(), styles.currencyStyle);
                 createDecimalCell(row, 12, cat.getAverageDaysInInventory(), styles.decimalStyle);
             }
         }

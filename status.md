@@ -1,5 +1,39 @@
 # Trạng thái sprint 1–8
 
+## S8-02 — Sửa tích hợp frontend/backend sau đồng bộ develop (24/10/2026)
+
+Đã đọc AGENTS.md và toàn bộ hai SKILLS. Đồng bộ `origin/develop` tại `67c5f57` vào nhánh frontend bằng commit `2267fc9`; giữ các story/menu/tài liệu khác khi giải quyết xung đột. Những sửa lỗi dưới đây đang ở working tree, chưa commit/push và không gộp nhánh này vào develop. Phối hợp Antigravity **Opus 4.6 Thinking** để rà rủi ro/kiểm thử, Codex kiểm chứng và chốt thay đổi.
+
+| Hạng mục | Backend | Frontend | Kết nối/kiểm chứng |
+|---|---|---|---|
+| Phiếu thực và chứng từ liên kết hóa đơn gốc | DRAFT → CONFIRMED sinh InvoiceAdjustment(DECREASE); nháp mới hủy được | Tài chính → Điều chỉnh công nợ: chọn hóa đơn, nhập lượng thực trả/lý do, lưu nháp, xem tiền rồi xác nhận | Gọi `/api/invoices/returns`, không tạo phiếu trả giả từ hóa đơn, không dùng API điều chỉnh hóa đơn thủ công thay thế |
+| Giá đã bán, chiết khấu và làm tròn | Lấy thành tiền sau chiết khấu của dòng gốc; làm tròn lũy kế, khóa DB và kiểm tra lại lượng còn trả | Nhập lượng trống mặc định; chuỗi thập phân/BigInt giữ chính xác, hiển thị giá lịch sử, không tự định giá | 13 ca tích hợp ReturnOrder gồm bảo toàn số lẻ, trả vượt/đồng thời, rollback và validation |
+| Công nợ, quá hạn và hạn mức | Giảm đúng hóa đơn/đơn nguồn trước FIFO thanh toán; sửa trừ kép/thiếu giảm trừ giữa các API; response confirm có số dư server | Hiển thị số dư từ giao dịch xác nhận, không tự tính hạn mức hoặc dựng số dư lịch sử | Đối chiếu API công nợ, hóa đơn và hồ sơ đại lý; kiểm tra kết hợp điều chỉnh thủ công, thanh toán và nhiều đơn |
+| Hóa đơn gốc bất biến | Không sửa bất kỳ cột hóa đơn, kể cả adjustedTotalAmount, khi xác nhận trả | Phiếu xác nhận chỉ đọc, hiện mã chứng từ và liên kết hóa đơn; không PDF giả | So sánh nguyên dòng DB của hóa đơn trước/sau; xác nhận lại 409, không sinh giảm nợ trùng |
+| Ma trận quyền DB hai phía | VIEW đọc lịch sử; ADJUST chọn nguồn/lập/xác nhận/hủy; ADMIN luôn cho phép | Menu nhận VIEW hoặc ADJUST; nút theo đúng quyền, không đòi quyền catalog/khách hàng/công nợ ngoài luồng | Non-admin một vai trò, cấp/thu hồi cùng JWT; xóa form/chi tiết và bỏ phản hồi trễ khi quyền thay đổi |
+| An toàn thao tác và bố cục | Transaction bao cả đánh giá công nợ; lỗi rollback toàn bộ | Chống gửi kép; 400 giữ form, 409 đọc lại chi tiết; kết quả ghi chưa rõ khóa gửi lại để đối chiếu; shell/gutters dùng chung, bảng cuộn nội bộ | 16 ca Chrome HTTP fixture, 222 kiểm tra bố cục (37 trang × 6 cỡ màn hình), điều hướng click/back/forward/reload/mobile qua |
+| Tài liệu | API_DOCUMENTATION mô tả lookup và số dư/công thức mới | FUNCTION_MAP và FRONTEND_ROUTES cập nhật đúng vị trí | Không tự nhập kho S8-01, không thêm nghiệp vụ hoàn tiền hoặc lưu dữ liệu nghiệp vụ trên trình duyệt |
+
+Kiểm thử đã qua: **214/214 Node**, **13/13 Python routes**, **111 ca backend** trong ReturnOrderIntegrationTest, DealerDebtServiceTest, InvoiceServiceTest, DealerServiceTest, RolePermissionConfigTest, PermissionRevocationTest, InvoiceSecurityTest, InvoiceControllerTest, InvoiceIntegrationTest và DealerSelfDebtPortalIntegrationTest (cộng các lượt chạy tập trung, 0 failure/error/skip ở báo cáo cuối từng bộ). Chrome: **16/16 luồng S8-02**, **222/222 lượt bố cục**, điều hướng chung qua. Chrome chạy code trang thật với API fixture; backend dùng H2 cách ly, chưa kiểm chứng giao dịch trên MySQL thật; không thay đổi dữ liệu nghiệp vụ thật.
+
+Phần phụ thuộc từ develop: sửa tên getter DTO trong InventoryTurnoverExcelExportService và tên API/model cũ trong ba bộ test S8-07 vì chúng chặn bước compile toàn bộ backend/test. Chỉ sửa tương thích biên dịch, không phát triển lại thuật toán S8-07; không tuyên bố đã nghiệm thu cả S8-07. Bộ portal cũ được cách ly H2, bổ sung nhóm hàng/đơn vị quy đổi cho fixture, đọc đúng accessToken ở root JSON đăng nhập và parse JSON bytes để không đọc sai UTF-8. Nhật ký kiểm tra ở `E:/DevTemp/UserTemp/s802-final-check.log` (96 ca qua, portal lỗi trước khi sửa fixture) và `s802-portal-final.log` (3 portal qua); hai bộ InvoiceController/InvoiceIntegration có 12 ca qua ở báo cáo Surefire riêng. Đã dừng server kiểm thử riêng cổng 5539 sau xác minh.
+
+## S8-02 — Lập chứng từ điều chỉnh giảm trừ công nợ khi trả hàng (Frontend) — 23/10/2026
+
+**Lưu vết bản prototype cũ, không phải nghiệm thu hiện tại.** Các khẳng định “đã nối đúng”, số lượng trả dựng sẵn, công thức chưa trừ chiết khấu, cập nhật adjustedTotalAmount và yêu cầu quyền công nợ trong bảng cũ bên dưới đã bị thay thế bởi bản sửa 24/10 ở trên.
+
+Nhánh `FE-S-802`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 4 tiêu chí nghiệp vụ trong ảnh yêu cầu; giữ nguyên app-shell và bố cục chia sẻ `app-navigation.css`. Theo yêu cầu người dùng: "chỉ làm frontend".
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Chứng từ điều chỉnh sinh từ phiếu trả hàng đã xác nhận, giữ liên kết tới hoá đơn gốc | Có | Có | Có | Menu Tài chính → Điều chỉnh công nợ (`/finance/debt-adjustment`). Bảng phiếu trả hàng đã xác nhận giữ liên kết đối chiếu hoá đơn gốc `HD-xxxx` và mã phiếu trả `TH-xxxx-01`. |
+| Giảm trừ đúng theo giá đã bán trên hoá đơn gốc, không phải giá hiện hành | Có | Có | Có | Dòng hàng điều chỉnh khóa theo đúng `unitPrice` của hoá đơn gốc; thành tiền giảm trừ = `SL trả * Đơn giá HĐ gốc`, tuyệt đối không lấy giá niêm yết hiện hành của danh mục/bảng giá. |
+| Công nợ và hạn mức khả dụng của đại lý được cập nhật ngay | Có | Có | Có | Khung tính toán hiển thị trực quan trước và sau điều chỉnh: Công nợ hiện tại, Giảm trừ, Công nợ sau điều chỉnh và Hạn mức khả dụng mới. Ngay sau khi lập chứng từ thành công, gọi API cập nhật công nợ đại lý (`/api/dealers/{id}/debt`) và kích hoạt đánh giá lại (`/api/finance/debt/{id}/evaluate`). |
+| Hoá đơn gốc vẫn giữ nguyên, không bị sửa | Có | Có | Có | Hoá đơn gốc được bảo toàn nguyên vẹn: các trường `items`, `totalAmount`, `subtotalAmount` không bị sửa/xoá (chặn PUT/DELETE 400 Bad Request); chỉ cập nhật `adjustedTotalAmount` và lưu vết chứng từ điều chỉnh liên kết. |
+| Ma trận phân quyền database-backed & Không fallback vai trò | Có | Có | Có | Bắt buộc quyền `INVOICE_VIEW` để xem danh sách/chi tiết chứng từ; `INVOICE_ADJUST` để lập chứng từ điều chỉnh; `FINANCE_VIEW_DEBT` để xem hạn mức công nợ. Thu hồi quyền trên phiên hiện tại lập tức ẩn/vô hiệu hoá nút thao tác, đóng modal và chặn request; không dùng role-based fallback. `ROLE_ADMIN` luôn toàn quyền. |
+
+---
+
 ## Đồng bộ develop → feature/S8-02/lap-chung-tu-dieu-chinh (24/10/2026)
 
 Chỉ đồng bộ `origin/develop` tại `c09694f`, xử lý 5 file xung đột; không phát triển thêm hoặc sửa lỗi ngoài phạm vi. Giữ cả tài liệu/status của hai phía, hai phương thức khóa hóa đơn đang có caller riêng, handler tham số của develop và handler ResponseStatus của S8-02. Phần công nợ giữ cách tổng hợp hóa đơn/đơn chưa xuất của develop cùng khoản giảm trừ trả hàng S8-02; chưa nghiệm thu tích hợp tài chính sau đồng bộ do lỗi build bên dưới. Bổ sung dòng S8-02 vào FUNCTION_MAP theo quy định vừa nhận từ develop.

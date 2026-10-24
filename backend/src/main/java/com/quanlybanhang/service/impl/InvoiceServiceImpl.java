@@ -10,6 +10,7 @@ import com.quanlybanhang.repository.*;
 import com.quanlybanhang.service.AuditLogService;
 import com.quanlybanhang.service.InvoiceSequenceService;
 import com.quanlybanhang.service.InvoiceService;
+import com.quanlybanhang.service.FinancialReturnCredits;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +51,9 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Autowired(required = false)
     private DebtPaymentRepository debtPaymentRepository;
+
+    @Autowired(required = false)
+    private ReturnOrderRepository returnOrderRepository;
 
     public void setDebtPaymentRepository(DebtPaymentRepository debtPaymentRepository) {
         this.debtPaymentRepository = debtPaymentRepository;
@@ -396,7 +400,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .thenComparing(Invoice::getId, Comparator.nullsLast(Comparator.reverseOrder())));
 
         return descInvoices.stream()
-                .map(inv -> allocated.getOrDefault(inv.getId(), buildBaseInvoiceResponse(inv, BigDecimal.ZERO)))
+                .map(inv -> allocated.containsKey(inv.getId()) ? allocated.get(inv.getId()) : buildBaseInvoiceResponse(inv, BigDecimal.ZERO))
                 .collect(Collectors.toList());
     }
 
@@ -716,16 +720,17 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private Map<Long, InvoiceResponse> allocateDealerInvoicesFifo(Long dealerId, List<Invoice> ascInvoices) {
         BigDecimal remainingPool = getTotalPaidByDealer(dealerId);
+        Map<Long, BigDecimal> credits = FinancialReturnCredits.byInvoice(returnOrderRepository, dealerId);
         Map<Long, InvoiceResponse> result = new LinkedHashMap<>();
 
         for (Invoice inv : ascInvoices) {
-            BigDecimal effectiveAmount = resolveEffectiveInvoiceAmount(inv);
+            BigDecimal effectiveAmount = FinancialReturnCredits.netInvoice(inv, credits);
             BigDecimal allocated = BigDecimal.ZERO;
             if (inv.getStatus() != InvoiceStatus.CANCELLED && effectiveAmount.compareTo(BigDecimal.ZERO) > 0 && remainingPool.compareTo(BigDecimal.ZERO) > 0) {
                 allocated = remainingPool.min(effectiveAmount);
                 remainingPool = remainingPool.subtract(allocated).max(BigDecimal.ZERO);
             }
-            InvoiceResponse resp = buildBaseInvoiceResponse(inv, allocated);
+            InvoiceResponse resp = buildBaseInvoiceResponse(inv, allocated, effectiveAmount);
             if (inv.getId() != null) {
                 result.put(inv.getId(), resp);
             }
@@ -745,8 +750,10 @@ public class InvoiceServiceImpl implements InvoiceService {
         if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
             return BigDecimal.ZERO;
         }
-        BigDecimal amt = invoice.getAdjustedTotalAmount() != null ? invoice.getAdjustedTotalAmount() : invoice.getTotalAmount();
-        return amt != null && amt.compareTo(BigDecimal.ZERO) > 0 ? amt : BigDecimal.ZERO;
+        BigDecimal credit = returnOrderRepository != null && invoice.getId() != null
+                ? returnOrderRepository.confirmedInvoiceCredit(invoice.getId()) : BigDecimal.ZERO;
+        return FinancialReturnCredits.netInvoice(invoice, credit == null || invoice.getId() == null
+                ? Collections.emptyMap() : Collections.singletonMap(invoice.getId(), credit));
     }
 
     private LocalDate resolveDueDate(Invoice invoice) {
@@ -763,6 +770,10 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     private InvoiceResponse buildBaseInvoiceResponse(Invoice invoice, BigDecimal allocatedPayment) {
+        return buildBaseInvoiceResponse(invoice, allocatedPayment, resolveEffectiveInvoiceAmount(invoice));
+    }
+
+    private InvoiceResponse buildBaseInvoiceResponse(Invoice invoice, BigDecimal allocatedPayment, BigDecimal effectiveAmount) {
         List<InvoiceItemResponse> itemResponses = (invoice.getItems() == null ? Collections.<InvoiceItem>emptyList() : invoice.getItems()).stream()
                 .map(it -> InvoiceItemResponse.builder()
                         .id(it.getId())
@@ -800,7 +811,6 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .collect(Collectors.toList());
 
         LocalDate dueDate = resolveDueDate(invoice);
-        BigDecimal effectiveAmount = resolveEffectiveInvoiceAmount(invoice);
         BigDecimal paidAmount = BigDecimal.ZERO;
         BigDecimal remainingAmount = BigDecimal.ZERO;
         String paymentStatus;

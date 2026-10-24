@@ -26,6 +26,42 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
     private final AuditLogService auditLogService;
     private final DealerDebtService dealerDebtService;
 
+    @Override
+    public Page<ReturnOrderLookupResponse.InvoiceOption> sourceInvoices(String keyword, Pageable pageable) {
+        String term = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
+        if (term.length() > 100) throw bad("Từ khóa tối đa 100 ký tự");
+        Specification<Invoice> spec = (root, query, cb) -> {
+            var usable = root.get("status").in(InvoiceStatus.ISSUED, InvoiceStatus.ADJUSTED);
+            if (term.isEmpty()) return usable;
+            String pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+            return cb.and(usable, cb.or(
+                    cb.like(cb.lower(root.get("invoiceCode")), pattern, '\\'),
+                    cb.like(cb.lower(root.get("invoiceNumber")), pattern, '\\'),
+                    cb.like(cb.lower(root.get("dealer").get("name")), pattern, '\\'),
+                    cb.like(cb.lower(root.get("dealer").get("code")), pattern, '\\')));
+        };
+        return invoiceRepository.findAll(spec, pageable).map(invoice -> new ReturnOrderLookupResponse.InvoiceOption(
+                invoice.getId(), invoice.getInvoiceCode(), invoice.getInvoiceNumber(), invoice.getDealer().getId(),
+                invoice.getDealer().getCode(), invoice.getDealer().getName(), invoice.getInvoiceDate(), invoice.getStatus()));
+    }
+
+    @Override
+    public ReturnOrderLookupResponse.Source sourceInvoice(Long invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId).orElseThrow(() -> missing("hóa đơn"));
+        checkInvoice(invoice);
+        List<ReturnOrderLookupResponse.Item> items = invoice.getItems().stream()
+                .filter(item -> item.getOrder() != null && item.getInvoicedQuantity() != null && item.getInvoicedQuantity().signum() > 0)
+                .map(item -> {
+                    BigDecimal returned = returnOrderRepository.confirmedQuantity(item.getId());
+                    return new ReturnOrderLookupResponse.Item(item.getId(), item.getProductCode(), item.getProductName(), item.getUnit(),
+                            item.getInvoicedQuantity(), returned, item.getInvoicedQuantity().subtract(returned).max(BigDecimal.ZERO),
+                            item.getUnitPrice(), item.getDiscountAmount() == null ? BigDecimal.ZERO : item.getDiscountAmount(),
+                            item.getTotalAmount(), returnOrderRepository.confirmedAmount(item.getId()));
+                }).toList();
+        return new ReturnOrderLookupResponse.Source(invoice.getId(), invoice.getInvoiceCode(), invoice.getInvoiceNumber(),
+                invoice.getDealer().getId(), invoice.getDealer().getCode(), invoice.getDealer().getName(), items);
+    }
+
     @Override @Transactional
     public ReturnOrderResponse create(CreateReturnOrderRequest request, String username) {
         Invoice invoice = lockInvoice(request.getInvoiceId());
@@ -45,9 +81,10 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
             ReturnOrderItem item = ReturnOrderItem.builder().invoiceItem(original).product(original.getProduct())
                     .productCode(original.getProductCode()).productName(original.getProductName()).unit(original.getUnit())
                     .returnQuantity(row.getReturnQuantity()).invoiceUnitPrice(original.getUnitPrice())
-                    .invoiceDiscountPerUnit(original.getDiscountAmount().divide(original.getInvoicedQuantity(), 6, RoundingMode.HALF_UP))
                     .note(row.getNote()).build();
             priceAndValidate(item);
+            item.setInvoiceDiscountPerUnit((original.getDiscountAmount() == null ? BigDecimal.ZERO : original.getDiscountAmount())
+                    .divide(original.getInvoicedQuantity(), 6, RoundingMode.HALF_UP));
             result.addItem(item);
             total = total.add(item.getReturnAmount());
         }
@@ -95,11 +132,17 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
         auditLogService.logAction("RETURN_ORDER", result.getReturnCode(), "CONFIRM", "DRAFT", "CONFIRMED", username);
         auditLogService.logAction("INVOICE_ADJUSTMENT", adjustment.getAdjustmentCode(), "CREATE", null,
                 total.negate().toPlainString(), username);
-        return mapToResponse(result);
+        var response = mapToResponse(result);
+        var debt = dealerDebtService.getDealerDebtInfo(result.getDealer());
+        response.setCurrentDebtAfter(debt.getCurrentDebt());
+        response.setRemainingLimitAfter(debt.getRemainingLimit());
+        return response;
     }
 
     private void priceAndValidate(ReturnOrderItem item) {
         InvoiceItem original = item.getInvoiceItem();
+        if (original.getInvoicedQuantity() == null || original.getInvoicedQuantity().signum() <= 0
+                || original.getTotalAmount() == null || original.getTotalAmount().signum() < 0) throw bad("Dòng hóa đơn gốc thiếu số lượng hoặc thành tiền hợp lệ");
         BigDecimal quantity = item.getReturnQuantity();
         if (quantity == null || quantity.signum() <= 0 || quantity.scale() > 4) throw bad("Số lượng trả phải dương, tối đa 4 chữ số thập phân");
         BigDecimal previousQuantity = returnOrderRepository.confirmedQuantity(original.getId());

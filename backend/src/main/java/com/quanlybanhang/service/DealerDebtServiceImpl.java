@@ -110,6 +110,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                     .forEach(row -> returnCredits.put(row.getOrderId(), row.getAmount()));
         }
         BigDecimal totalReturns = returnCredits.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        Map<Long, BigDecimal> invoiceCredits = FinancialReturnCredits.byInvoice(returnOrderRepository, dealer.getId());
 
         List<Order> recordedOrders = orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(dealer.getId(), OrderStatus.debtBearingStatuses());
         if (recordedOrders == null) {
@@ -128,7 +129,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
         Set<Long> invoicedOrderIds = new HashSet<>();
         for (Invoice inv : dealerInvoices) {
             if (inv.getStatus() != InvoiceStatus.CANCELLED) {
-                BigDecimal effAmt = inv.getAdjustedTotalAmount() != null ? inv.getAdjustedTotalAmount() : inv.getTotalAmount();
+                BigDecimal effAmt = FinancialReturnCredits.netInvoice(inv, invoiceCredits);
                 if (effAmt != null && effAmt.compareTo(BigDecimal.ZERO) > 0) {
                     totalInvoicedAmount = totalInvoicedAmount.add(effAmt);
                 }
@@ -149,23 +150,24 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 uninvoicedOrderDebt = BigDecimal.ZERO;
                 for (Order o : recordedOrders) {
                     if (o.getId() == null || !invoicedOrderIds.contains(o.getId())) {
-                        BigDecimal amt = o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO;
+                        BigDecimal amt = (o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
+                                .subtract(returnCredits.getOrDefault(o.getId(), BigDecimal.ZERO)).max(BigDecimal.ZERO);
                         uninvoicedOrderDebt = uninvoicedOrderDebt.add(amt);
                     }
                 }
             } else if (invoicedOrderIds.isEmpty() && totalOrderDebt.compareTo(BigDecimal.ZERO) > 0) {
-                uninvoicedOrderDebt = totalOrderDebt;
+                uninvoicedOrderDebt = totalOrderDebt.subtract(totalReturns).max(BigDecimal.ZERO);
             } else {
                 uninvoicedOrderDebt = BigDecimal.ZERO;
             }
             grossDebt = totalInvoicedAmount.add(uninvoicedOrderDebt);
         } else {
-            uninvoicedOrderDebt = totalOrderDebt;
-            grossDebt = totalOrderDebt;
+            uninvoicedOrderDebt = totalOrderDebt.subtract(totalReturns).max(BigDecimal.ZERO);
+            grossDebt = uninvoicedOrderDebt;
         }
 
-        // Giữ giảm trừ trả hàng S8-02 cùng cách tính nợ hóa đơn/đơn chưa xuất của develop.
-        BigDecimal currentDebt = grossDebt.subtract(totalPaid).subtract(totalReturns).max(BigDecimal.ZERO);
+        // Credits were applied to their exact invoice/uninvoiced order above; do not deduct twice.
+        BigDecimal currentDebt = grossDebt.subtract(totalPaid).max(BigDecimal.ZERO);
         BigDecimal remainingLimit = debtLimit.subtract(currentDebt);
 
         LocalDate today = LocalDate.now();
@@ -176,7 +178,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
         LocalDate oldestOrderDate = null;
 
         // Phân bổ FIFO cho danh sách hóa đơn của đại lý (S7-07)
-        List<InvoiceResponse> invoiceResponses = buildInvoiceResponsesWithFifo(dealerInvoices, totalPaid, maxDebtDays);
+        List<InvoiceResponse> invoiceResponses = buildInvoiceResponsesWithFifo(dealerInvoices, totalPaid, maxDebtDays, invoiceCredits);
 
         if (!dealerInvoices.isEmpty()) {
             // 1. Kiểm tra quá hạn trên các hóa đơn đã phát hành (theo dueDate của từng hóa đơn)
@@ -208,7 +210,8 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                     if (order.getId() != null && invoicedOrderIds.contains(order.getId())) {
                         continue; // Đã tính trên hóa đơn
                     }
-                    BigDecimal orderAmt = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+                    BigDecimal orderAmt = (order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO)
+                            .subtract(returnCredits.getOrDefault(order.getId(), BigDecimal.ZERO)).max(BigDecimal.ZERO);
                     if (remainingPaymentForOrders.compareTo(orderAmt) >= 0) {
                         remainingPaymentForOrders = remainingPaymentForOrders.subtract(orderAmt);
                         continue;
@@ -340,7 +343,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 .build();
     }
 
-    private List<InvoiceResponse> buildInvoiceResponsesWithFifo(List<Invoice> ascInvoices, BigDecimal totalPaid, int defaultMaxDebtDays) {
+    private List<InvoiceResponse> buildInvoiceResponsesWithFifo(List<Invoice> ascInvoices, BigDecimal totalPaid, int defaultMaxDebtDays, Map<Long, BigDecimal> invoiceCredits) {
         if (ascInvoices == null || ascInvoices.isEmpty()) {
             return Collections.emptyList();
         }
@@ -356,9 +359,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
         List<InvoiceResponse> builtAsc = new ArrayList<>();
 
         for (Invoice inv : ascInvoices) {
-            BigDecimal effectiveAmount = inv.getStatus() == InvoiceStatus.CANCELLED
-                    ? BigDecimal.ZERO
-                    : (inv.getAdjustedTotalAmount() != null ? inv.getAdjustedTotalAmount() : inv.getTotalAmount());
+            BigDecimal effectiveAmount = FinancialReturnCredits.netInvoice(inv, invoiceCredits);
             if (effectiveAmount == null || effectiveAmount.compareTo(BigDecimal.ZERO) < 0) {
                 effectiveAmount = BigDecimal.ZERO;
             }

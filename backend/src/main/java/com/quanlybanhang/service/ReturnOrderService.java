@@ -3,6 +3,7 @@ package com.quanlybanhang.service;
 import com.quanlybanhang.dto.request.CancelReturnOrderRequest;
 import com.quanlybanhang.dto.request.CreateReturnOrderRequest;
 import com.quanlybanhang.dto.response.ReturnOrderResponse;
+import com.quanlybanhang.dto.response.ReturnOrderLookupResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -18,6 +19,8 @@ import java.util.List;
  * 4. Hoa don goc khong bi sua.
  */
 public interface ReturnOrderService {
+    Page<ReturnOrderLookupResponse.InvoiceOption> sourceInvoices(String keyword, Pageable pageable);
+    ReturnOrderLookupResponse.Source sourceInvoice(Long invoiceId);
 
     /**
      * Tao phieu tra hang moi (trang thai DRAFT).

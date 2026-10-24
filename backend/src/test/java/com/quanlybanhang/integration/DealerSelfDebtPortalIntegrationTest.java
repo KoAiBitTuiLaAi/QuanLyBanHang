@@ -47,7 +47,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 5. Thực thi ma trận phân quyền database-backed (RolePermissionConfig): Thu hồi quyền FINANCE_VIEW_DEBT hoặc INVOICE_VIEW
  *    của ROLE_DEALER lập tức trả về 403 trên phiên JWT hiện hành; ROLE_ADMIN luôn có toàn quyền.
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:h2:mem:dealer_self_debt_portal;MODE=MySQL;DB_CLOSE_DELAY=-1",
+        "spring.datasource.driver-class-name=org.h2.Driver", "spring.datasource.username=sa", "spring.datasource.password=",
+        "spring.jpa.hibernate.ddl-auto=create-drop", "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
+        "spring.jpa.show-sql=false", "app.jwt.secret=dealer-self-debt-test-secret-at-least-32-characters",
+        "app.bootstrap.admin-password=PortalFixture2026!", "app.bootstrap.admin-email=portal-fixture@example.invalid",
+        "app.seed-demo-users=false", "app.seed-demo-data=false"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
@@ -74,6 +81,9 @@ class DealerSelfDebtPortalIntegrationTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
 
     @Autowired
     private OrderRepository orderRepository;
@@ -155,6 +165,7 @@ class DealerSelfDebtPortalIntegrationTest {
                 .build());
 
         productBia = productRepository.save(Product.builder()
+                .category(categoryRepository.save(Category.builder().code("S707-" + suffix).name("Đồ uống").build()))
                 .code("SP-S707-" + suffix)
                 .name("Bia Lon Cao Cấp 330ml")
                 .unit("thùng")
@@ -197,8 +208,14 @@ class DealerSelfDebtPortalIntegrationTest {
                 .product(productBia)
                 .unit("thùng")
                 .quantity(qty)
+                .conversionFactor(BigDecimal.ONE)
+                .baseUnit("thùng")
+                .baseQuantity(qty)
                 .deliveredQuantity(qty)
+                .deliveredBaseQuantity(qty)
                 .price(price)
+                .subtotalAmount(total)
+                .totalAmount(total)
                 .discountPercent(BigDecimal.ZERO)
                 .discountAmount(BigDecimal.ZERO)
                 .build();
@@ -217,8 +234,10 @@ class DealerSelfDebtPortalIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode root = objectMapper.readTree(res.getResponse().getContentAsString());
-        return root.path("data").path("token").asText();
+        JsonNode root = objectMapper.readTree(res.getResponse().getContentAsByteArray());
+        String token = root.path("accessToken").asText();
+        assertThat(token).isNotBlank();
+        return token;
     }
 
     @Test
@@ -292,7 +311,7 @@ class DealerSelfDebtPortalIntegrationTest {
                 .andExpect(jsonPath("$.data.content.length()").value(2))
                 .andReturn();
 
-        JsonNode content = objectMapper.readTree(invListRes.getResponse().getContentAsString())
+        JsonNode content = objectMapper.readTree(invListRes.getResponse().getContentAsByteArray())
                 .path("data").path("content");
         // Sắp xếp mới nhất trước: inv2 (đợt 2) ở vị trí 0, inv1 (đợt 1) ở vị trí 1
         JsonNode latestInv = content.get(0);

@@ -29,6 +29,9 @@ public class ReturnOrderResponse {
     private String returnReason;
     private LocalDateTime returnDate;
     private BigDecimal totalReturnAmount;
+    /** Only supplied by the confirm operation: authoritative balances after that transaction. */
+    private BigDecimal currentDebtAfter;
+    private BigDecimal remainingLimitAfter;
     /** Chung tu dieu chinh da sinh sau khi xac nhan. */
     private InvoiceAdjustmentResponse invoiceAdjustment;
     private String confirmedBy;

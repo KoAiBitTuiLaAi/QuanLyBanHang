@@ -36,6 +36,9 @@ public class DealerServiceImpl implements DealerService {
     private final WarehouseRepository warehouseRepository;
     private final AuditLogService auditLogService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DealerDebtService dealerDebtService;
+
     @Override
     @Transactional(readOnly = true)
     public Page<DealerResponse> getAllDealers(
@@ -893,6 +896,16 @@ public class DealerServiceImpl implements DealerService {
                         }
                     }
                 }
+            }
+        }
+
+        if (dealerDebtService != null) {
+            var liveDebt = dealerDebtService.getDealerDebtInfo(dealer);
+            if (liveDebt != null) {
+                currentDebt = liveDebt.getCurrentDebt();
+                remainingDebtLimit = liveDebt.getRemainingLimit();
+                hasOverdueDebt = liveDebt.getHasOverdueDebt();
+                maxOverdueDays = liveDebt.getMaxOverdueDays();
             }
         }
 
