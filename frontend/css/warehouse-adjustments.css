@@ -1,0 +1,54 @@
+/* Shared app-navigation.css owns the page shell, width and gutters. */
+.adj-heading, .adj-actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.adj-heading { margin-bottom:18px; }
+.adj-heading h1 { font-size:1.65rem; margin-bottom:8px; }
+.adj-heading h2 { font-size:1.1rem; }
+.adjustment-page h3 { font-size:1rem; margin-block:18px 12px; }
+.adj-heading p, .adj-muted { font-size:.86rem; line-height:1.65; color:var(--ink-600); overflow-wrap:anywhere; }
+.adj-panel { min-width:0; margin-top:22px; padding:22px; background:var(--white); border:1px solid var(--line); border-radius:var(--radius); }
+.adj-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:14px; align-items:end; margin-block:16px 20px; }
+.adj-form label { display:flex; flex-direction:column; gap:7px; min-width:0; font-size:.8rem; color:var(--ink-700); }
+.adj-form :is(input,select,textarea) { width:100%; min-width:0; min-height:44px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius-sm); font:inherit; background:var(--white); color:var(--ink-900); }
+.adj-form small { color:var(--ink-600); line-height:1.6; }
+.adj-wide { grid-column:1/-1; }
+.adj-actions { justify-content:flex-start; margin-block:14px; }
+.adj-pagination { justify-content:flex-end; }
+.adj-scroll { max-width:100%; overflow:auto; margin-block:14px; border:1px solid var(--line); border-radius:var(--radius-sm); }
+.adj-scroll table { min-width:780px; width:100%; border-collapse:collapse; text-align:left; }
+.adj-scroll :is(th,td) { padding:12px; font-size:.8rem; border-bottom:1px solid var(--line-light); vertical-align:top; }
+.adj-scroll th { color:var(--ink-600); background:var(--surface); font-weight:650; }
+.adj-scroll td { overflow-wrap:anywhere; }
+.adj-scroll small { display:block; margin-top:5px; color:var(--ink-600); }
+.adj-num { text-align:right; font-variant-numeric:tabular-nums; }
+.adj-error, .adj-success, .adj-notice, .adj-warning { padding:12px 14px; margin-block:12px; line-height:1.65; font-size:.85rem; border-radius:var(--radius-sm); overflow-wrap:anywhere; }
+.adj-error { background:var(--danger-soft); color:var(--danger); }
+.adj-success { background:var(--teal-soft); color:var(--teal-deep); }
+.adj-notice { color:var(--ink-700); background:var(--surface); border-left:3px solid var(--teal); }
+.adj-warning { background:var(--amber-soft); color:#805210; border-left:3px solid #d97706; }
+.adj-check { display:block; line-height:1.65; font-size:.86rem; margin-block:16px; }
+.adj-check input { width:18px; height:18px; vertical-align:middle; margin-right:8px; }
+.adj-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:14px; margin-block:18px; }
+.adj-facts div { min-width:0; }
+.adj-facts dt { font-size:.78rem; color:var(--ink-600); }
+.adj-facts dd { margin:6px 0 0; font-size:.9rem; font-weight:600; white-space:pre-wrap; overflow-wrap:anywhere; }
+.adj-badge { display:inline-block; padding:5px 9px; border-radius:var(--radius-sm); background:var(--surface); font-size:.78rem; font-weight:600; }
+.adj-badge--warning { background:var(--amber-soft); color:#805210; }
+.adj-badge--success { background:var(--teal-soft); color:var(--teal-deep); }
+.adj-badge--danger { background:var(--danger-soft); color:var(--danger); }
+.adj-badge--draft { background:var(--surface); color:var(--ink-600); }
+.adj-loss-highlight { font-size:1.15rem; font-weight:700; color:var(--danger); }
+.adj-reason-tag { display:inline-block; padding:3px 7px; border-radius:var(--radius-sm); font-size:.75rem; font-weight:600; background:var(--surface); color:var(--ink-800); }
+.adj-reason-tag--damaged { background:#fee2e2; color:#991b1b; }
+.adj-reason-tag--lost { background:#fef3c7; color:#92400e; }
+.adj-reason-tag--expired { background:#f3e8ff; color:#6b21a8; }
+.adjustment-page .btn { min-height:44px; }
+.adjustment-page :focus-visible { outline:2px solid var(--teal); outline-offset:3px; }
+.adj-approval-box { border:1px solid var(--line); border-radius:var(--radius-sm); padding:16px; margin-top:20px; background:var(--surface); }
+.adj-approval-box h3 { margin-top:0; }
+@media(max-width:560px) {
+  .adj-panel { padding:14px; }
+  .adj-heading h1 { font-size:1.4rem; }
+  .adj-actions .btn { flex:1 1 140px; }
+  .adj-pagination { justify-content:space-between; }
+}
+

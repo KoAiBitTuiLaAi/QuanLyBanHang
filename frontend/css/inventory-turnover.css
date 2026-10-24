@@ -1,0 +1,68 @@
+/* Shared app-navigation.css owns the page shell, width and gutters. */
+.it-heading, .it-actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.it-heading { margin-bottom:18px; }
+.it-heading h1 { font-size:1.65rem; margin-bottom:8px; }
+.it-heading h2 { font-size:1.1rem; }
+.turnover-page h3 { font-size:1rem; margin-block:18px 12px; }
+.it-heading p, .it-muted, .it-help { font-size:.86rem; line-height:1.65; color:var(--ink-600); overflow-wrap:anywhere; }
+.it-panel { min-width:0; margin-top:22px; padding:22px; background:var(--white); border:1px solid var(--line); border-radius:var(--radius); }
+.it-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:14px; align-items:end; margin-block:16px 20px; }
+.it-form label { display:flex; flex-direction:column; gap:7px; min-width:0; font-size:.8rem; color:var(--ink-700); }
+.it-form :is(input,select,textarea) { width:100%; min-width:0; min-height:44px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius-sm); font:inherit; background:var(--white); color:var(--ink-900); }
+.it-form small { color:var(--ink-600); line-height:1.6; }
+.it-wide { grid-column:1/-1; }
+.it-actions { justify-content:flex-start; margin-block:14px; }
+.it-pagination { justify-content:flex-end; }
+.it-scroll { max-width:100%; overflow:auto; margin-block:14px; border:1px solid var(--line); border-radius:var(--radius-sm); }
+.it-scroll table { min-width:880px; width:100%; border-collapse:collapse; text-align:left; }
+.it-scroll :is(th,td) { padding:12px; font-size:.8rem; border-bottom:1px solid var(--line-light); vertical-align:top; }
+.it-scroll th { color:var(--ink-600); background:var(--surface); font-weight:650; }
+.it-scroll td { overflow-wrap:anywhere; }
+.it-scroll small { display:block; margin-top:5px; color:var(--ink-600); }
+.it-num { text-align:right; font-variant-numeric:tabular-nums; }
+.it-error, .it-success, .it-notice, .it-warning { padding:12px 14px; margin-block:12px; line-height:1.65; font-size:.85rem; border-radius:var(--radius-sm); overflow-wrap:anywhere; }
+.it-error { background:var(--danger-soft); color:var(--danger); }
+.it-success { background:var(--teal-soft); color:var(--teal-deep); }
+.it-notice { color:var(--ink-700); background:var(--surface); border-left:3px solid var(--teal); }
+.it-warning { background:var(--amber-soft); color:#805210; border-left:3px solid #d97706; }
+.it-check { display:flex; align-items:center; gap:8px; line-height:1.5; font-size:.85rem; margin-top:8px; }
+.it-check input { width:18px; height:18px; }
+
+/* Metrics Summary Cards */
+.it-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:14px; margin-block:18px; }
+.it-metrics div { min-width:0; padding:16px; background:var(--white); border:1px solid var(--line); border-radius:var(--radius); }
+.it-metrics dt { font-size:.78rem; color:var(--ink-600); margin-bottom:6px; }
+.it-metrics dd { margin:0; font-size:1.25rem; font-weight:700; color:var(--ink-900); white-space:pre-wrap; overflow-wrap:anywhere; }
+.it-metric-highlight { color:var(--danger) !important; }
+.it-metric-sub { font-size:.78rem; font-weight:normal; color:var(--ink-600); margin-top:4px; display:block; }
+
+/* Tabs */
+.it-tabs { display:flex; gap:8px; border-bottom:1px solid var(--line); margin-bottom:16px; flex-wrap:wrap; }
+.it-tab-btn { padding:10px 18px; border:none; background:none; font:inherit; font-size:.88rem; font-weight:600; color:var(--ink-600); cursor:pointer; border-bottom:3px solid transparent; transition:color .15s, border-color .15s; }
+.it-tab-btn:hover { color:var(--ink-900); }
+.it-tab-btn.it-tab-btn--active { color:var(--teal-deep, #0f766e); border-bottom-color:var(--teal, #0d9488); }
+
+/* Badges */
+.it-badge { display:inline-block; padding:4px 8px; border-radius:var(--radius-sm); font-size:.75rem; font-weight:600; }
+.badge--success { background:var(--teal-soft); color:var(--teal-deep); }
+.badge--info { background:#e0f2fe; color:#0369a1; }
+.badge--warning { background:var(--amber-soft); color:#805210; }
+.badge--danger { background:var(--danger-soft); color:var(--danger); }
+.badge--neutral { background:var(--surface); color:var(--ink-600); }
+
+/* Slow-moving highlight card */
+.it-slow-highlight { border:1px solid #fed7aa; background:#fff7ed; padding:16px; border-radius:var(--radius-sm); margin-bottom:20px; }
+.it-slow-highlight h3 { margin-top:0; color:#9a3412; }
+
+.turnover-page .btn { min-height:44px; }
+.turnover-page :focus-visible { outline:2px solid var(--teal); outline-offset:3px; }
+
+@media(max-width:560px) {
+  .it-panel { padding:14px; }
+  .it-heading h1 { font-size:1.4rem; }
+  .it-actions .btn { flex:1 1 140px; }
+  .it-pagination { justify-content:space-between; }
+  .it-tabs { gap:4px; }
+  .it-tab-btn { padding:8px 12px; font-size:.8rem; }
+}
+
