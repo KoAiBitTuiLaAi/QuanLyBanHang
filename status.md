@@ -1,5 +1,22 @@
 # Trạng thái sprint 1–8
 
+## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Frontend) — 24/10/2026
+
+Nhánh `feature/S7-02-ghi-nhan-thanh-toan(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 5 tiêu chí nghiệp vụ theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Ghi số tiền, hình thức thu, ngày thu, người thu, ghi chú | Có | Có | Có | Màn hình `/finance/debt-payments`: Form lập phiếu thu tiền hỗ trợ đầy đủ các trường: số tiền (`amount`), hình thức thu (`paymentMethod`: Tiền mặt, Chuyển khoản, Khác), ngày thu (`paymentDate`), người thu (`recordedBy`), mã tham chiếu/UNC (`referenceCode`) và ghi chú (`note`). Mã phiếu thu `PT-YYYYMMDD-XXXX` do backend sinh tự động. Quyền yêu cầu: `FINANCE_MANAGE` hoặc `ROLE_ADMIN`. |
+| Chọn đối trừ vào hoá đơn cụ thể, hoặc tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO) | Có | Có | Có | Hỗ trợ 2 chế độ: (1) Tự động FIFO (`autoAllocate = true`): Có nút "Xem trước đối trừ FIFO" gọi `POST /api/finance/debt-payments/preview-allocation` hiển thị hoá đơn nào được cấn trừ bao nhiêu, nợ còn lại và trạng thái mới; (2) Chọn đối trừ cụ thể (`autoAllocate = false`): Tự động nạp hoá đơn còn nợ của đại lý từ `GET /api/finance/dealers/{dealerId}/unpaid-invoices`, cho phép nhập tiền cấn trừ từng hoá đơn, có nút điền nhanh "Trả hết", tự động kiểm tra tổng cấn trừ phải khớp số tiền thu và không vượt nợ từng hoá đơn. |
+| Cho phép thu một phần; hoá đơn chuyển sang Thanh toán một phần | Có | Có | Có | Khi thu một phần nợ của hoá đơn, trạng thái hiển thị rõ badge "Thanh toán một phần" (`PARTIALLY_PAID`). Khi đã thanh toán đủ, chuyển thành badge "Đã thanh toán" (`PAID`). Danh sách hoá đơn theo đại lý và chi tiết phiếu thu thể hiện trực quan các mức trạng thái này. |
+| Không cho thu vượt tổng công nợ còn lại | Có | Có | Có | Hệ thống tự động tính tổng nợ còn lại của đại lý và hiển thị banner cảnh báo. Validate trực tiếp ở client: nếu số tiền thu lớn hơn tổng công nợ còn lại của đại lý, hiển thị lỗi đỏ rõ ràng và ngăn không cho ghi nhận; ở chế độ thủ công, cấm đối trừ từng hoá đơn vượt quá số nợ còn lại của hoá đơn đó. |
+| Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh | Có | Có | Có | Tuyệt đối không có nút xoá phiếu thu trên giao diện (bảo toàn tính bất biến). Cung cấp form và modal "Lập bút toán điều chỉnh" (`POST /api/finance/debt-payments/{id}/adjust`): hỗ trợ cả `REVERSAL` (hoàn trả nợ toàn bộ) và `PARTIAL_REVERSAL` (điều chỉnh giảm một phần kèm số tiền giảm), bắt buộc nhập lý do điều chỉnh (tối đa 500 ký tự). Sinh mã `BTDC-YYYYMMDD-XXXX`. |
+| Tra cứu để biết chính xác đại lý còn nợ hoá đơn nào | Có | Có | Có | Tab "Hoá đơn nợ theo đại lý" kết nối API `GET /api/finance/dealers/{dealerId}/invoices`: chọn đại lý và bộ lọc trạng thái để xem chi tiết từng hoá đơn (tổng tiền, đã trả, còn nợ lại, số ngày quá hạn); có nút xem "Lịch sử đối trừ" gọi `GET /api/finance/orders/{orderId}/settlements`. |
+| Ma trận phân quyền động (Permission Matrix) & An toàn dữ liệu | Có | Có | Có | Kết nối chặt chẽ với ma trận phân quyền động trong DB. Quyền `FINANCE_VIEW_DEBT` để xem danh sách phiếu thu, xem chi tiết và tra cứu hoá đơn nợ. Quyền `FINANCE_MANAGE` để lập phiếu thu tiền mới và lập bút toán điều chỉnh. `ROLE_ADMIN` luôn có toàn quyền. Không role fallback. Lắng nghe sự kiện `auth:permissions-changed` cập nhật tức thì. Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: **9/9 tests S7-02 qua 100%** trong `tests/debt-payments.test.cjs`; toàn bộ **242/242 test frontend qua 100%**; **13/13 clean routes test qua 100%**. Đã cập nhật `serve_frontend.py`, `frontend/js/menu-config.js` và `docs/FUNCTION_MAP.md`.
+
+---
 ## S8-03 — Lập phiếu điều chỉnh tồn kho có phê duyệt (Frontend) — 24/10/2026
 
 Nhánh `feature/S8-03-chuc-nang-tao-phieu-dieu-chinh-ton-kho-co-phe-duyet(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 4 tiêu chí nghiệp vụ theo yêu cầu người dùng: **chỉ làm frontend**.

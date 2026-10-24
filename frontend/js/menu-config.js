@@ -314,6 +314,15 @@ const MenuConfig = (() => {
       permission: "FINANCE_VIEW_DEBT",
     },
     {
+      id: "debt-payments",
+      section: "Tài chính",
+      label: "Ghi nhận thanh toán",
+      icon: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
+      href: "/finance/debt-payments",
+      roles: ALL_ROLES,
+      permissions: ["FINANCE_VIEW_DEBT", "FINANCE_MANAGE"],
+    },
+    {
       id: "debt-adjustment",
       section: "Tài chính",
       label: "Điều chỉnh công nợ",
