@@ -45,6 +45,7 @@ ROUTES = {
     "/warehouse/dealer-returns": "warehouse/dealer-returns.html",
     "/warehouse/adjustments": "warehouse/adjustments.html",
     "/warehouses": "warehouses.html",
+    "/reports/sales": "reports/sales-report.html",
     "/admin/users": "admin/users.html",
     "/admin/audit-logs": "admin/audit-logs.html",
     "/finance/debt-adjustment": "finance/debt-adjustment.html",
