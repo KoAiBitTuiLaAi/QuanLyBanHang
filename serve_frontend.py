@@ -51,6 +51,7 @@ ROUTES = {
     "/finance/debt-reconciliation": "finance/debt-reconciliation.html",
     "/finance/debt-payments": "finance/debt-payments.html",
     "/finance/debt-statement": "finance/debt-statement.html",
+    "/sales-targets": "sales-targets.html",
     "/forgot-password": "forgot-password.html",
     "/reset-password": "reset-password.html",
     "/error": "error.html",
