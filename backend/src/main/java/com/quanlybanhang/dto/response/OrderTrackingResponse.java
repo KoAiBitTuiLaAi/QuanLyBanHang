@@ -41,6 +41,8 @@ public class OrderTrackingResponse {
 
     /** Tồn kho đã được giữ chỗ hay chưa */
     private Boolean inventoryReserved;
+    private LocalDateTime reservedAt;
+    private LocalDateTime reservationExpiresAt;
 
     /** Thông tin huỷ đơn nếu đơn bị huỷ */
     private String cancelReason;

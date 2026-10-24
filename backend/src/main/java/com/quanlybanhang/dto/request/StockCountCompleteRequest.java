@@ -2,6 +2,7 @@ package com.quanlybanhang.dto.request;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.List;
 public class StockCountCompleteRequest {
 
     @NotBlank(message = "Bắt buộc nhập lý do khi chốt kiểm kê")
+    @Size(max = 500)
     private String reason;
 
     /**

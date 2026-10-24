@@ -1,6 +1,8 @@
 package com.quanlybanhang.dto.request;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.util.List;
@@ -23,15 +25,18 @@ public class StockCountCreateRequest {
     /**
      * Tùy chọn: Mã phiếu kiểm kê. Để trống hệ thống sẽ tự sinh.
      */
+    @Size(max = 50)
     private String code;
 
     /**
      * Ghi chú phiếu kiểm kê.
      */
+    @Size(max = 500)
     private String note;
 
     /**
      * Tùy chọn: Nhập sẵn số lượng thực tế ban đầu nếu có.
      */
+    @Valid
     private List<StockCountItemUpdateRequest> items;
 }

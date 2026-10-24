@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thẻ kho sản phẩm | SaleStock</title><link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css"><link rel="stylesheet" href="/css/stock-ledger.css"><link rel="stylesheet" href="/css/stock-card.css"><link rel="stylesheet" href="/css/app-navigation.css"><script src="/js/app-transition.js"></script>
+</head><body>
+<div data-app-content><main class="content stock-page">
+  <header class="stock-heading"><div><h1>Thẻ kho sản phẩm</h1><p>Truy nguyên biến động tồn qua từng chứng từ nhập, xuất, chuyển và điều chỉnh.</p></div><button id="card-reload" class="btn btn--secondary" type="button">Tải lại</button></header>
+  <p class="stock-note">Tồn sau phát sinh là tồn vật lý trong phạm vi kho đang chọn, không phải tồn khả dụng. Số liệu và thứ tự phát sinh do máy chủ tính, không thay đổi khi chuyển trang hoặc lọc thời gian.</p>
+  <p id="card-error" class="stock-error" role="alert" hidden></p>
+  <section class="stock-panel" aria-labelledby="card-title">
+    <form id="card-filter" class="stock-filters" role="search">
+      <label class="stock-keyword">Sản phẩm / SKU<select id="card-product" required disabled><option value="">Chọn sản phẩm để xem thẻ kho</option></select></label>
+      <label>Kho<select id="card-warehouse" disabled><option value="">Tất cả kho trong phạm vi</option></select></label>
+      <label>Từ ngày<input id="card-from" type="date"></label><label>Đến ngày<input id="card-to" type="date"></label>
+      <div class="stock-actions"><button id="card-apply" type="submit" class="btn btn--primary" disabled>Xem thẻ kho</button><button id="card-reset" type="button" class="btn btn--secondary" disabled>Bỏ lọc kho / ngày</button></div>
+    </form>
+    <div class="stock-result-heading"><div><h2 id="card-title">Chọn một sản phẩm</h2><p id="card-unit" class="card-muted"></p></div><span id="card-count" role="status" aria-live="polite"></span></div>
+    <p id="card-opening" class="card-opening" hidden></p>
+    <div id="card-region" class="stock-table-scroll" tabindex="0" role="region" aria-label="Phát sinh thẻ kho theo thời gian, cuộn ngang để xem đủ cột" aria-busy="false">
+      <table class="stock-table card-table"><thead><tr><th>STT</th><th>Thời điểm</th><th>Phát sinh / Chứng từ gốc</th><th>Kho</th><th>Số lượng chứng từ</th><th class="stock-number">Biến động cơ sở</th><th class="stock-number">Tồn sau phát sinh</th><th>Ghi chú</th></tr></thead>
+      <tbody id="card-rows"><tr><td colspan="8" class="stock-empty">Chọn sản phẩm và nhấn Xem thẻ kho.</td></tr></tbody></table>
+    </div>
+    <footer class="stock-pagination"><label>Số dòng<select id="card-size" disabled></select></label><span id="card-page"></span><div class="stock-actions"><button id="card-prev" type="button" class="btn btn--secondary" disabled>Trước</button><button id="card-next" type="button" class="btn btn--secondary" disabled>Sau</button></div></footer>
+  </section>
+  <p class="card-footnote">Chọn mã chứng từ để mở bản xem chỉ đọc các phát sinh của SKU trên chứng từ gốc, trong phạm vi kho được cấp. Tồn đầu lịch sử đối chiếu từ tồn vật lý hiện tại; dữ liệu nhập ban đầu hoặc chỉnh ngoài hệ thống không có chứng từ để truy nguyên. Phiếu điều chỉnh cũ chưa lưu chênh lệch có dấu cần đối soát riêng.</p>
+</main></div>
+<dialog id="card-source-dialog" class="card-dialog" aria-labelledby="card-source-title">
+  <header class="stock-heading"><h2 id="card-source-title">Chứng từ gốc</h2><button id="card-source-close" class="btn btn--secondary" type="button">Đóng</button></header>
+  <p class="card-footnote">Bản xem chỉ đọc — chỉ các phát sinh của sản phẩm đã chọn, không kèm dữ liệu giá bán/khách hàng.</p>
+  <p id="card-source-error" class="stock-error" role="alert" hidden></p><div id="card-source-content" aria-live="polite"></div>
+</dialog>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/stock-card.js"></script>
+</body></html>

@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({DemoDataSeeder.class, OrderServiceImpl.class, WarehouseServiceImpl.class, WarehouseTransferService.class,
+@Import({DemoDataSeeder.class, OrderServiceImpl.class, OrderShipmentService.class, WarehouseServiceImpl.class, WarehouseTransferService.class,
         UnitConversionServiceImpl.class, VolumeDiscountPolicyServiceImpl.class,
         DealerDebtServiceImpl.class,
         AuditLogServiceImpl.class, DemoDataSeederTest.EncoderConfig.class})
@@ -189,6 +189,7 @@ class DemoDataSeederTest {
     }
 
     @Test
+    @org.springframework.security.test.context.support.WithMockUser(username = "admin", roles = "ADMIN")
     void rerunPreservesEditedAccountsCatalogPricingOrdersAndStock() {
         seeder.seed(true, true, "first-password");
         User sales = users.findByUsername("sales.demo").orElseThrow();

@@ -24,7 +24,7 @@ import java.util.*;
  * - Tạo phiếu kiểm kê theo kho hoặc theo nhóm hàng, hệ thống chốt số tồn sổ tại thời điểm tạo.
  * - Nhập số đếm thực tế, hệ thống tính chênh lệch từng dòng.
  * - Chốt kiểm kê điều chỉnh tồn về số thực đếm và bắt buộc nhập lý do.
- * - Chỉ Quản lý kho (quyền WAREHOUSE_ADJUST hoặc ROLE_ADMIN) được chốt phiếu kiểm kê.
+ * - Chốt phiếu yêu cầu quyền WAREHOUSE_ADJUST hoặc ROLE_ADMIN, không yêu cầu vai trò kho.
  * - Kiểm tra phạm vi kho được phân công của người dùng theo ma trận phân quyền.
  */
 @Service
@@ -33,13 +33,25 @@ import java.util.*;
 public class StockCountService {
 
     private final WarehouseStockCountRepository stockCounts;
-    private final WarehouseStockCountItemRepository stockCountItems;
     private final WarehouseRepository warehouses;
     private final WarehouseInventoryRepository inventories;
     private final ProductRepository products;
     private final CategoryRepository categories;
     private final UserRepository users;
     private final AuditLogService audit;
+
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    private WarehouseStockCount lockedCount(Long id) {
+        WarehouseStockCount count = stockCounts.findByIdForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu kiểm kê #" + id));
+        // A joined locking query can hydrate children before it waits for the header lock.
+        // Refresh after acquiring the lock so completion sees the last committed counts.
+        // CascadeType.ALL on items includes REFRESH. Pure Mockito unit tests have no EntityManager.
+        if (entityManager != null) entityManager.refresh(count, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        return count;
+    }
 
     private record Scope(boolean global, boolean canAdjust, Set<Long> ids) {
         boolean contains(Long id) {
@@ -65,7 +77,7 @@ public class StockCountService {
         boolean canView = admin || canAdjust || grants.contains("WAREHOUSE_VIEW");
 
         if (requireAdjust && !canAdjust) {
-            throw new AccessDeniedException("Chỉ Quản lý kho mới được chốt phiếu kiểm kê");
+            throw new AccessDeniedException("Bạn cần quyền WAREHOUSE_ADJUST để chốt phiếu kiểm kê");
         }
         if (!requireAdjust && !canView) {
             throw new AccessDeniedException("Bạn không có quyền xem hoặc thực hiện kiểm kê kho");
@@ -134,7 +146,7 @@ public class StockCountService {
         }
         access.require(request.getWarehouseId());
 
-        Warehouse warehouse = warehouses.findById(request.getWarehouseId())
+        Warehouse warehouse = warehouses.findByIdForUpdate(request.getWarehouseId())
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy kho kiểm kê"));
         if (!Boolean.TRUE.equals(warehouse.getActive())) {
             throw new IllegalArgumentException("Kho '" + warehouse.getName() + "' đã ngừng hoạt động");
@@ -148,7 +160,8 @@ public class StockCountService {
 
         String code = request.getCode() != null ? request.getCode().trim() : "";
         if (code.isBlank()) {
-            code = "PKK-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
+            code = "PKK-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
+                    + "-" + UUID.randomUUID().toString().substring(0, 8);
         } else {
             if (stockCounts.existsByCode(code)) {
                 throw new IllegalArgumentException("Mã phiếu kiểm kê '" + code + "' đã tồn tại");
@@ -179,20 +192,10 @@ public class StockCountService {
                 .items(new ArrayList<>())
                 .build();
 
-        // Tạo map nếu request có sẵn số đếm thực tế ban đầu
-        Map<Long, StockCountItemUpdateRequest> initialCountMap = new HashMap<>();
-        if (request.getItems() != null) {
-            for (StockCountItemUpdateRequest itemReq : request.getItems()) {
-                if (itemReq != null && itemReq.getProductId() != null) {
-                    initialCountMap.put(itemReq.getProductId(), itemReq);
-                }
-            }
-        }
-
         // Chốt số tồn sổ sách tại thời điểm tạo phiếu cho từng sản phẩm
-        for (Product product : productsToCount) {
+        for (Product product : productsToCount.stream().sorted(Comparator.comparing(Product::getId)).toList()) {
             WarehouseInventory inv = inventories
-                    .findByWarehouseIdAndProductId(warehouse.getId(), product.getId())
+                    .findByWarehouseIdAndProductIdForUpdate(warehouse.getId(), product.getId())
                     .orElse(null);
 
             BigDecimal bookQty = (inv != null && inv.getBaseQuantity() != null)
@@ -201,22 +204,16 @@ public class StockCountService {
 
             WarehouseStockCountItem item = WarehouseStockCountItem.builder()
                     .product(product)
-                    .baseUnit(product.getUnit())
+                    .baseUnit(inv != null ? inv.getBaseUnit() : product.getUnit())
                     .bookQuantity(bookQty)
+                    .snapshotCaptured(true)
+                    .snapshotInventoryId(inv != null ? inv.getId() : null)
+                    .snapshotInventoryVersion(inv != null ? inv.getVersion() : null)
                     .build();
-
-            StockCountItemUpdateRequest initial = initialCountMap.get(product.getId());
-            if (initial != null && initial.getActualQuantity() != null) {
-                if (initial.getActualQuantity().compareTo(BigDecimal.ZERO) < 0) {
-                    throw new IllegalArgumentException("Số lượng đếm thực tế của sản phẩm '" + product.getName() + "' không được âm");
-                }
-                item.setActualQuantity(initial.getActualQuantity());
-                item.calculateDifference();
-                item.setNote(initial.getNote());
-            }
 
             sc.addItem(item);
         }
+        applyCounts(sc, request.getItems());
 
         WarehouseStockCount saved = stockCounts.save(sc);
         audit.logAction("STOCK_COUNT", saved.getCode(), "CREATE", null, saved.getStatus().name(),
@@ -228,8 +225,7 @@ public class StockCountService {
     @Transactional
     public StockCountResponse updateItems(Long id, StockCountUpdateItemsRequest request, String username) {
         Scope access = scope(false);
-        WarehouseStockCount sc = stockCounts.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu kiểm kê #" + id));
+        WarehouseStockCount sc = lockedCount(id);
         access.require(sc.getWarehouse().getId());
 
         if (sc.getStatus() != StockCountStatus.DRAFT) {
@@ -240,31 +236,7 @@ public class StockCountService {
             throw new IllegalArgumentException("Danh sách sản phẩm kiểm đếm không được để trống");
         }
 
-        Map<Long, WarehouseStockCountItem> itemMap = new HashMap<>();
-        for (WarehouseStockCountItem item : sc.getItems()) {
-            itemMap.put(item.getProduct().getId(), item);
-        }
-
-        for (StockCountItemUpdateRequest itemReq : request.getItems()) {
-            if (itemReq == null || itemReq.getProductId() == null) continue;
-            WarehouseStockCountItem item = itemMap.get(itemReq.getProductId());
-            if (item == null) {
-                throw new IllegalArgumentException("Sản phẩm ID " + itemReq.getProductId() + " không thuộc phiếu kiểm kê này");
-            }
-            if (itemReq.getActualQuantity() == null) {
-                item.setActualQuantity(null);
-                item.setDifferenceQuantity(null);
-            } else {
-                if (itemReq.getActualQuantity().compareTo(BigDecimal.ZERO) < 0) {
-                    throw new IllegalArgumentException("Số lượng đếm thực tế không được âm cho sản phẩm '" + item.getProduct().getName() + "'");
-                }
-                item.setActualQuantity(itemReq.getActualQuantity());
-                item.calculateDifference();
-            }
-            if (itemReq.getNote() != null) {
-                item.setNote(itemReq.getNote());
-            }
-        }
+        applyCounts(sc, request.getItems());
 
         if (request.getNote() != null) {
             sc.setNote(request.getNote());
@@ -276,13 +248,12 @@ public class StockCountService {
 
     /**
      * Chốt kiểm kê điều chỉnh tồn về số thực đếm và bắt buộc nhập lý do.
-     * CHỈ Quản lý kho (có quyền WAREHOUSE_ADJUST hoặc ROLE_ADMIN) được phép thực hiện!
+     * Yêu cầu quyền WAREHOUSE_ADJUST hoặc ROLE_ADMIN; không giới hạn tên vai trò.
      */
     @Transactional
     public StockCountResponse complete(Long id, StockCountCompleteRequest request, String username) {
         Scope access = scope(true); // Enforce WAREHOUSE_ADJUST or ADMIN
-        WarehouseStockCount sc = stockCounts.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu kiểm kê #" + id));
+        WarehouseStockCount sc = lockedCount(id);
         access.require(sc.getWarehouse().getId());
 
         if (sc.getStatus() != StockCountStatus.DRAFT) {
@@ -295,47 +266,57 @@ public class StockCountService {
         String reason = request.getReason().trim();
 
         // Nếu request gửi kèm số đếm thực tế để cập nhật và chốt luôn
-        if (request.getItems() != null && !request.getItems().isEmpty()) {
-            Map<Long, WarehouseStockCountItem> itemMap = new HashMap<>();
-            for (WarehouseStockCountItem item : sc.getItems()) {
-                itemMap.put(item.getProduct().getId(), item);
-            }
-            for (StockCountItemUpdateRequest itemReq : request.getItems()) {
-                if (itemReq == null || itemReq.getProductId() == null) continue;
-                WarehouseStockCountItem item = itemMap.get(itemReq.getProductId());
-                if (item != null && itemReq.getActualQuantity() != null) {
-                    if (itemReq.getActualQuantity().compareTo(BigDecimal.ZERO) < 0) {
-                        throw new IllegalArgumentException("Số lượng đếm thực tế không được âm cho sản phẩm '" + item.getProduct().getName() + "'");
-                    }
-                    item.setActualQuantity(itemReq.getActualQuantity());
-                    item.calculateDifference();
-                    if (itemReq.getNote() != null) {
-                        item.setNote(itemReq.getNote());
-                    }
-                }
-            }
-        }
+        applyCounts(sc, request.getItems());
 
         // Kiểm tra xem tất cả các dòng đã được nhập số thực đếm hay chưa
-        boolean hasUncounted = sc.getItems().stream().anyMatch(i -> i.getActualQuantity() == null);
+        boolean hasUncounted = sc.getItems().isEmpty() || sc.getItems().stream().anyMatch(i -> i.getActualQuantity() == null);
         if (hasUncounted) {
             throw new IllegalStateException("Vui lòng nhập số lượng đếm thực tế cho tất cả sản phẩm trước khi chốt kiểm kê");
         }
 
-        Warehouse warehouse = sc.getWarehouse();
+        // Lock order: count header -> warehouse -> inventory in ascending product ID,
+        // matching transfers and the ordered inventory locks used by orders.
+        Warehouse warehouse = warehouses.findByIdForUpdate(sc.getWarehouse().getId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy kho kiểm kê"));
+        List<WarehouseStockCountItem> sortedItems = sc.getItems().stream()
+                .sorted(Comparator.comparing(i -> i.getProduct().getId())).toList();
+        Map<Long, WarehouseInventory> lockedStock = new HashMap<>();
+        // Validate every row before writing inventory or adjustment audits.
+        for (WarehouseStockCountItem item : sortedItems) {
+            WarehouseInventory inv = inventories.findByWarehouseIdAndProductIdForUpdate(
+                    warehouse.getId(), item.getProduct().getId()).orElse(null);
+            BigDecimal currentQty = inv != null ? inv.getBaseQuantity() : BigDecimal.ZERO;
+            if (!item.isSnapshotCaptured()
+                    || !Objects.equals(item.getSnapshotInventoryId(), inv != null ? inv.getId() : null)
+                    || !Objects.equals(item.getSnapshotInventoryVersion(), inv != null ? inv.getVersion() : null)
+                    || currentQty.compareTo(item.getBookQuantity()) != 0
+                    || (inv != null && !Objects.equals(inv.getBaseUnit(), item.getBaseUnit()))) {
+                throw new IllegalStateException("Tồn kho của sản phẩm '" + item.getProduct().getCode()
+                        + "' đã thay đổi hoặc không còn xác minh được kể từ khi tạo phiếu. Hãy hủy phiếu và tạo phiếu kiểm kê mới");
+            }
+            BigDecimal reserved = inv != null && inv.getReservedQuantity() != null
+                    ? inv.getReservedQuantity() : BigDecimal.ZERO;
+            if (item.getActualQuantity().compareTo(reserved) < 0) {
+                throw new IllegalStateException("Số thực đếm của sản phẩm '" + item.getProduct().getCode()
+                        + "' thấp hơn số lượng đang giữ chỗ (" + reserved.toPlainString()
+                        + " " + item.getBaseUnit() + "). Hãy xử lý các đơn hàng giữ chỗ trước khi chốt kiểm kê");
+            }
+            lockedStock.put(item.getProduct().getId(), inv);
+        }
         int adjustedCount = 0;
 
         // Cập nhật tồn kho thực tế về số thực đếm cho từng sản phẩm
-        for (WarehouseStockCountItem item : sc.getItems()) {
+        for (WarehouseStockCountItem item : sortedItems) {
             Product product = item.getProduct();
-            WarehouseInventory inv = inventories
-                    .findByWarehouseIdAndProductId(warehouse.getId(), product.getId())
-                    .orElseGet(() -> WarehouseInventory.builder()
+            WarehouseInventory inv = lockedStock.get(product.getId());
+            if (inv == null) {
+                inv = WarehouseInventory.builder()
                             .warehouse(warehouse)
                             .product(product)
                             .baseQuantity(BigDecimal.ZERO)
                             .baseUnit(item.getBaseUnit())
-                            .build());
+                            .build();
+            }
 
             BigDecimal beforeQty = inv.getBaseQuantity() != null ? inv.getBaseQuantity() : BigDecimal.ZERO;
             BigDecimal actualQty = item.getActualQuantity();
@@ -370,8 +351,7 @@ public class StockCountService {
     @Transactional
     public StockCountResponse cancel(Long id, StockCountCancelRequest request, String username) {
         Scope access = scope(false);
-        WarehouseStockCount sc = stockCounts.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu kiểm kê #" + id));
+        WarehouseStockCount sc = lockedCount(id);
         access.require(sc.getWarehouse().getId());
 
         if (sc.getStatus() != StockCountStatus.DRAFT) {
@@ -390,6 +370,36 @@ public class StockCountService {
                 cancelReason, username != null ? username : "system");
 
         return toDetailResponse(saved, access);
+    }
+
+    private void applyCounts(WarehouseStockCount sc, List<StockCountItemUpdateRequest> updates) {
+        if (updates == null) return;
+        Map<Long, WarehouseStockCountItem> items = new HashMap<>();
+        sc.getItems().forEach(item -> items.put(item.getProduct().getId(), item));
+        Set<Long> seen = new HashSet<>();
+        for (StockCountItemUpdateRequest update : updates) {
+            if (update == null || update.getProductId() == null) {
+                throw new IllegalArgumentException("ID sản phẩm kiểm đếm không được để trống");
+            }
+            if (!seen.add(update.getProductId())) {
+                throw new IllegalArgumentException("Sản phẩm kiểm đếm bị trùng: " + update.getProductId());
+            }
+            WarehouseStockCountItem item = items.get(update.getProductId());
+            if (item == null) {
+                throw new IllegalArgumentException("Sản phẩm ID " + update.getProductId() + " không thuộc phiếu kiểm kê này");
+            }
+            BigDecimal qty = update.getActualQuantity();
+            if (qty != null && qty.signum() < 0) {
+                throw new IllegalArgumentException("Số lượng đếm thực tế không được âm cho sản phẩm '" + item.getProduct().getName() + "'");
+            }
+            if (qty != null && (qty.stripTrailingZeros().scale() > 4
+                    || qty.compareTo(new BigDecimal("99999999999.9999")) > 0)) {
+                throw new IllegalArgumentException("Số thực đếm chỉ được có tối đa 11 chữ số nguyên và 4 chữ số thập phân");
+            }
+            item.setActualQuantity(qty);
+            item.calculateDifference();
+            if (update.getNote() != null) item.setNote(update.getNote());
+        }
     }
 
     private Specification<WarehouseStockCount> buildFilter(Scope access, Long warehouseId, Long categoryId,

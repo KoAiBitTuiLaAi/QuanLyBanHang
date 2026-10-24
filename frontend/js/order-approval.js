@@ -105,6 +105,9 @@
   const STATUS_MAP = {
     PENDING_APPROVAL: { label: "Chờ duyệt", cssClass: "oa-status-badge--pending" },
     APPROVED: { label: "Đã duyệt", cssClass: "oa-status-badge--approved" },
+    RECORDED: { label: "Đã duyệt", cssClass: "oa-status-badge--approved" },
+    EXPIRED: { label: "Hết hạn giữ chỗ", cssClass: "oa-status-badge--rejected" },
+    PICKING: { label: "Đang soạn hàng", cssClass: "oa-status-badge--approved" },
     REJECTED: { label: "Từ chối", cssClass: "oa-status-badge--rejected" },
     RETURNED: { label: "Trả lại sửa", cssClass: "oa-status-badge--returned" },
   };
@@ -113,6 +116,10 @@
   let currentPage = 0;
   const pageSize = 20;
   let searchTimeout = null;
+  let permissionEpoch = 0;
+  let listRequest = 0;
+  let detailRequest = 0;
+  const canAccess = () => Auth.hasPermission("ORDER_APPROVE") && Auth.hasPermission("ORDER_VIEW");
 
   // ── DOM refs ──
   const tbody = document.getElementById("oa-tbody");
@@ -126,6 +133,8 @@
 
   // ── Load orders ──
   async function loadOrders() {
+    if (!canAccess()) return;
+    const request = ++listRequest, epoch = permissionEpoch;
     tbody.innerHTML = `<tr class="oa-loading-row"><td colspan="8"><div class="oa-loading">Đang tải dữ liệu…</div></td></tr>`;
     paginationEl.hidden = true;
 
@@ -150,10 +159,12 @@
       const response = await Auth.apiFetch(`/orders?${params}`);
       if (!response.ok) throw new Error("Không thể tải danh sách đơn hàng.");
       const data = await response.json();
+      if (!canAccess() || epoch !== permissionEpoch || request !== listRequest) return;
       renderTable(data.content || data.data || []);
       renderPagination(data);
       updateCount(data);
     } catch (error) {
+      if (!canAccess() || epoch !== permissionEpoch || request !== listRequest) return;
       tbody.innerHTML = `<tr><td colspan="8"><div class="oa-empty">
         <svg viewBox="0 0 24 24" width="40" height="40"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         ${escapeHtml(error.message)}</div></td></tr>`;
@@ -357,6 +368,7 @@
 
   // ── Table action delegation ──
   tbody.addEventListener("click", (e) => {
+    if (!canAccess()) return;
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
 
@@ -387,6 +399,8 @@
   );
 
   async function openOrderDetail(orderId) {
+    if (!canAccess()) return;
+    const request = ++detailRequest, epoch = permissionEpoch;
     detailModal.hidden = false;
     document.getElementById("order-detail-sub").textContent = "Đang tải…";
     document.getElementById("order-detail-info").innerHTML = "";
@@ -399,9 +413,11 @@
       const response = await Auth.apiFetch(`/orders/${orderId}`);
       if (!response.ok) throw new Error("Không thể tải chi tiết đơn hàng.");
       const order = await response.json();
+      if (!canAccess() || epoch !== permissionEpoch || request !== detailRequest || detailModal.hidden) return;
       const data = order.data || order;
       renderOrderDetail(data);
     } catch (error) {
+      if (!canAccess() || epoch !== permissionEpoch || request !== detailRequest || detailModal.hidden) return;
       document.getElementById("order-detail-sub").textContent = error.message;
     }
   }
@@ -421,7 +437,7 @@
       </div>
       <div class="order-detail-field">
         <span class="order-detail-field__label">Kho xuất</span>
-        <span class="order-detail-field__value">${escapeHtml(order.warehouseUnitName || "—")}</span>
+        <span class="order-detail-field__value">${escapeHtml(order.warehouseName || order.warehouseUnitName || "—")}</span>
       </div>
       <div class="order-detail-field">
         <span class="order-detail-field__label">Bảng giá</span>
@@ -434,6 +450,19 @@
       <div class="order-detail-field">
         <span class="order-detail-field__label">Người tạo</span>
         <span class="order-detail-field__value">${escapeHtml(order.createdBy || "—")}</span>
+      </div>
+      <div class="order-detail-field">
+        <span class="order-detail-field__label">Tồn giữ chỗ (S5-06)</span>
+        <span class="order-detail-field__value">
+          ${(() => {
+            const reservation = OrderReservation.describe(order);
+            if (reservation.held) {
+              const expireText = order.reservationExpiresAt ? ` (Hạn: ${formatDateTime(order.reservationExpiresAt)})` : "";
+              return `<span class="oa-status-badge oa-status-badge--approved">${escapeHtml(reservation.label + expireText)}</span>`;
+            }
+            return `<span>${escapeHtml(reservation.label)}</span>`;
+          })()}
+        </span>
       </div>
       ${order.notes ? `<div class="order-detail-field" style="grid-column: 1/-1">
         <span class="order-detail-field__label">Ghi chú</span>
@@ -572,6 +601,9 @@
 
   approveForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!Auth.hasPermission("ORDER_APPROVE") || !Auth.hasPermission("ORDER_VIEW")) return;
+    if (document.getElementById("btn-submit-approve").disabled) return;
+    const epoch = permissionEpoch;
     const orderId = document.getElementById("approve-order-id").value;
     const comment = document.getElementById("approve-comment").value.trim();
     const btn = document.getElementById("btn-submit-approve");
@@ -587,20 +619,22 @@
         body: JSON.stringify({ status: "APPROVED", comment: comment || null }),
       });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => null);
-        throw new Error(err?.message || "Không thể duyệt đơn hàng.");
-      }
+      const result = await response.json().catch(() => null);
+      if (!canAccess() || epoch !== permissionEpoch) return;
+      if (!response.ok || result?.success === false) throw new Error(result?.message || "Không thể duyệt đơn hàng.");
 
       approveModal.hidden = true;
-      showToast("Đã duyệt đơn hàng. Đơn chuyển sang giữ chỗ tồn kho.", "success");
+      showToast(result?.data?.inventoryReserved === true
+        ? "Đã duyệt đơn hàng và giữ chỗ tồn kho."
+        : (result?.message || "Đã xử lý đơn hàng. Tải lại chi tiết để kiểm tra tồn giữ chỗ."), "success");
       loadOrders();
     } catch (error) {
+      if (!canAccess() || epoch !== permissionEpoch) return;
       msgEl.textContent = error.message;
       msgEl.className = "form-message form-message--error";
       msgEl.hidden = false;
     } finally {
-      btn.disabled = false;
+      btn.disabled = !canAccess();
       btn.textContent = "Duyệt đơn hàng";
     }
   });
@@ -626,6 +660,8 @@
 
   rejectForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!canAccess() || document.getElementById("btn-submit-reject").disabled) return;
+    const epoch = permissionEpoch;
     const orderId = document.getElementById("reject-order-id").value;
     const comment = document.getElementById("reject-comment").value.trim();
     const btn = document.getElementById("btn-submit-reject");
@@ -648,6 +684,7 @@
         method: "PATCH",
         body: JSON.stringify({ status: "REJECTED", comment }),
       });
+      if (!canAccess() || epoch !== permissionEpoch) return;
 
       if (!response.ok) {
         const err = await response.json().catch(() => null);
@@ -658,11 +695,12 @@
       showToast("Đã từ chối đơn hàng.", "success");
       loadOrders();
     } catch (error) {
+      if (!canAccess() || epoch !== permissionEpoch) return;
       msgEl.textContent = error.message;
       msgEl.className = "form-message form-message--error";
       msgEl.hidden = false;
     } finally {
-      btn.disabled = false;
+      btn.disabled = !canAccess();
       btn.textContent = "Từ chối đơn hàng";
     }
   });
@@ -688,6 +726,8 @@
 
   returnForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!canAccess() || document.getElementById("btn-submit-return").disabled) return;
+    const epoch = permissionEpoch;
     const orderId = document.getElementById("return-order-id").value;
     const comment = document.getElementById("return-comment").value.trim();
     const btn = document.getElementById("btn-submit-return");
@@ -710,6 +750,7 @@
         method: "PATCH",
         body: JSON.stringify({ status: "RETURNED", comment }),
       });
+      if (!canAccess() || epoch !== permissionEpoch) return;
 
       if (!response.ok) {
         const err = await response.json().catch(() => null);
@@ -720,11 +761,12 @@
       showToast("Đã trả lại đơn hàng để chỉnh sửa.", "success");
       loadOrders();
     } catch (error) {
+      if (!canAccess() || epoch !== permissionEpoch) return;
       msgEl.textContent = error.message;
       msgEl.className = "form-message form-message--error";
       msgEl.hidden = false;
     } finally {
-      btn.disabled = false;
+      btn.disabled = !canAccess();
       btn.textContent = "Trả lại sửa";
     }
   });
@@ -746,5 +788,22 @@
   });
 
   // ── Init ──
+  window.addEventListener("auth:permissions-changed", () => {
+    permissionEpoch++;
+    const allowed = canAccess();
+    for (const id of ["btn-submit-approve", "btn-submit-reject", "btn-submit-return"]) {
+      const button = document.getElementById(id);
+      if (button) { button.disabled = !allowed; button.hidden = !allowed; }
+    }
+    if (!allowed) {
+      [detailModal, approveModal, rejectModal, returnModal].forEach(modal => { modal.hidden = true; });
+      document.getElementById("order-detail-info").textContent = "";
+      for (const id of ["order-detail-sub", "order-detail-violations", "order-detail-items", "order-detail-total", "order-detail-history", "oa-tbody", "oa-count-text", "oa-pagination"])
+        document.getElementById(id).textContent = "";
+      paginationEl.hidden = true;
+    } else {
+      loadOrders();
+    }
+  });
   loadOrders();
 })();

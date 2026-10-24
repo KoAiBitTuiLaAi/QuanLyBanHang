@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="vi"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lô & hạn sử dụng | SaleStock</title><link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css"><link rel="stylesheet" href="/css/toast.css">
+  <link rel="stylesheet" href="/css/stock-ledger.css"><link rel="stylesheet" href="/css/warehouse-lots.css"><link rel="stylesheet" href="/css/app-navigation.css"><script src="/js/app-transition.js"></script>
+</head><body>
+<div data-app-content><main class="content stock-page lot-page">
+  <header class="stock-heading"><div><h1>Lô & hạn sử dụng</h1><p>Theo dõi số lượng còn lại từng lô, ưu tiên kiểm tra hàng sắp hết hạn trước khi giao đại lý.</p></div><button id="lot-reload" type="button" class="btn btn--secondary">Tải lại</button></header>
+  <p class="stock-note">Lô đã quá hạn bị chặn xuất. Chỉ người được cấp quyền ghi đè mới có thể xác nhận xuất, bắt buộc kèm lý do và được lưu vào nhật ký.</p>
+  <p id="lot-error" class="stock-error" role="alert" hidden></p><p id="lot-notice" class="lot-success" role="status" hidden></p>
+  <nav class="lot-tabs" aria-label="Chế độ quản lý lô"><button id="lot-tab-inventory" type="button" class="lot-tab" aria-pressed="true">Tồn theo lô</button><button id="lot-tab-settings" type="button" class="lot-tab" aria-pressed="false">Cấu hình theo SKU</button><button id="lot-tab-fefo" type="button" class="lot-tab" aria-pressed="false" hidden>Gợi ý xuất FEFO</button></nav>
+  <section id="lot-fefo-panel" class="stock-panel" aria-labelledby="fefo-title" hidden>
+    <div class="stock-result-heading"><h2 id="fefo-title">Gợi ý lô xuất theo hạn dùng gần nhất</h2></div>
+    <p class="lot-panel-note">Chọn kho, SKU và số lượng theo đơn vị cơ sở. Máy chủ chọn lô còn hạn, có hạn dùng gần nhất và đủ số lượng. Chỉ xác nhận xuất mới ghi sổ và trừ tồn.</p>
+    <p id="fefo-error" class="stock-error" role="alert" hidden></p>
+    <form id="fefo-request" class="stock-filters">
+      <label>Kho xuất<select id="fefo-warehouse" required disabled><option value="">Đang tải…</option></select></label>
+      <label class="stock-keyword">Sản phẩm / SKU<select id="fefo-product" required disabled><option value="">Đang tải…</option></select></label>
+      <label>Số lượng xuất <span id="fefo-unit"></span><input id="fefo-quantity" type="number" min="0.0001" max="99999999999.9999" step="0.0001" inputmode="decimal" required disabled></label>
+      <div class="stock-actions"><button id="fefo-suggest" class="btn btn--primary" type="submit" disabled>Lấy gợi ý FEFO</button><button id="fefo-reload" class="btn btn--secondary" type="button">Tải lại bộ chọn</button></div>
+    </form>
+    <p id="fefo-readonly" class="lot-panel-note" hidden>Bạn chỉ có quyền xem gợi ý. Cần quyền Xuất kho để xác nhận xuất.</p>
+    <p id="fefo-result" class="lot-panel-note" role="status">Chọn kho, sản phẩm và số lượng để lấy gợi ý.</p>
+    <div id="fefo-preview" hidden>
+      <div class="stock-table-scroll" tabindex="0" role="region" aria-label="Các lô xuất theo thứ tự FEFO"><table class="stock-table fefo-table"><thead><tr><th>Chọn lô</th><th>Số lô / Gợi ý</th><th>Hạn sử dụng</th><th class="stock-number">Tồn lô (đơn vị cơ sở)</th><th>Tình trạng</th></tr></thead><tbody id="fefo-rows"></tbody></table></div>
+      <form id="fefo-export" class="fefo-confirm">
+        <p id="fefo-selected" class="lot-context"></p>
+        <label>Lý do chọn khác lô gợi ý <span id="fefo-reason-required" hidden>(bắt buộc)</span><textarea id="fefo-reason" rows="2" maxlength="255" placeholder="Nhập lý do khi chọn khác lô FEFO gợi ý"></textarea></label>
+        <label class="lot-checkbox"><input id="fefo-confirm" type="checkbox">Tôi đã kiểm tra lô và số lượng; xác nhận sẽ lập phiếu xuất và trừ tồn thật.</label>
+        <div class="stock-actions"><button id="fefo-save" class="btn btn--primary" type="submit" disabled>Xác nhận xuất lô</button></div>
+      </form>
+    </div>
+    <p id="fefo-success" class="lot-success" role="status" hidden></p>
+  </section>
+  <section id="lot-inventory-panel" class="stock-panel" aria-labelledby="lot-result-title">
+    <form id="lot-filter" class="stock-filters" role="search">
+      <label class="stock-keyword">Tìm lô / sản phẩm<input id="lot-keyword" type="search" maxlength="150" placeholder="Số lô, mã SKU hoặc tên sản phẩm"></label>
+      <label>Kho<select id="lot-warehouse" disabled><option value="">Đang tải kho…</option></select></label>
+      <label>Sản phẩm<select id="lot-product" disabled><option value="">Đang tải SKU…</option></select></label>
+      <label>Hạn sử dụng<select id="lot-status" disabled><option value="">Tất cả trạng thái</option></select></label>
+      <label>Ngưỡng xem nhanh (ngày)<input id="lot-threshold" type="number" min="1" step="1" inputmode="numeric" placeholder="Theo từng SKU"></label>
+      <div class="stock-actions"><button id="lot-apply" type="submit" class="btn btn--primary" disabled>Lọc</button><button id="lot-reset" type="button" class="btn btn--secondary" disabled>Đặt lại</button></div>
+    </form>
+    <div class="lot-alerts" aria-live="polite"><span>Cảnh báo theo kho/SKU đã chọn</span><strong id="lot-expired-count">—</strong> đã quá hạn <strong id="lot-soon-count">—</strong> sắp hết hạn <small id="lot-as-of"></small></div>
+    <div class="stock-result-heading"><h2 id="lot-result-title">Tồn kho theo lô</h2><span id="lot-count" role="status">Đang tải…</span></div>
+    <div class="stock-table-scroll" tabindex="0" role="region" aria-label="Bảng lô và hạn sử dụng"><table class="stock-table lot-table"><thead><tr><th>Sản phẩm / SKU</th><th>Kho / Số lô</th><th>Ngày sản xuất</th><th>Hạn sử dụng</th><th>Trạng thái</th><th class="stock-number">Còn lại</th><th>Thao tác</th></tr></thead><tbody id="lot-rows"><tr><td colspan="7" class="stock-empty">Đang tải dữ liệu…</td></tr></tbody></table></div>
+    <footer class="stock-pagination"><span id="lot-page-info"></span><div class="stock-actions"><button id="lot-prev" type="button" class="btn btn--secondary" disabled>Trước</button><button id="lot-next" type="button" class="btn btn--secondary" disabled>Sau</button></div></footer>
+  </section>
+  <section id="lot-settings-panel" class="stock-panel" aria-labelledby="lot-settings-title" hidden>
+    <div class="stock-filters"><label class="stock-keyword">Tìm SKU để cấu hình<input id="lot-setting-search" type="search" maxlength="150" placeholder="Mã hoặc tên sản phẩm"></label></div>
+    <div class="stock-result-heading"><h2 id="lot-settings-title">Quản lý lô theo từng SKU</h2><span id="lot-settings-count"></span></div>
+    <p class="lot-panel-note">Ngưỡng lưu theo SKU được dùng để cảnh báo. Ngưỡng xem nhanh ở bộ lọc không thay đổi cấu hình. SKU còn tồn lô phải được xử lý hết trước khi tắt quản lý lô.</p>
+    <div class="stock-table-scroll" tabindex="0" role="region" aria-label="Bảng cấu hình quản lý lô"><table class="stock-table lot-settings-table"><thead><tr><th>Sản phẩm / SKU</th><th>Đơn vị cơ sở</th><th>Quản lý lô</th><th>Ngưỡng cảnh báo</th><th>Thao tác</th></tr></thead><tbody id="lot-settings-rows"></tbody></table></div>
+  </section>
+</main></div>
+<dialog id="lot-config-dialog" class="lot-dialog" aria-labelledby="lot-config-title">
+  <header class="stock-heading"><h2 id="lot-config-title">Cấu hình quản lý lô</h2><button id="lot-config-close" type="button" class="btn btn--secondary">Đóng</button></header>
+  <p id="lot-config-context" class="lot-context"></p>
+  <form id="lot-config-form"><label class="lot-checkbox"><input id="lot-config-enabled" type="checkbox">Bật quản lý lô cho SKU này</label>
+    <label>Ngưỡng cảnh báo sắp hết hạn (ngày)<input id="lot-config-days" type="number" min="1" step="1" required inputmode="numeric"></label>
+    <p class="lot-panel-note">Thay đổi ngưỡng không sửa hạn sử dụng, số lượng hoặc chứng từ cũ.</p><p id="lot-config-error" class="stock-error" role="alert" hidden></p>
+    <div class="stock-actions lot-dialog-actions"><button id="lot-config-save" type="submit" class="btn btn--primary">Lưu cấu hình</button></div>
+  </form>
+</dialog>
+<dialog id="lot-export-dialog" class="lot-dialog" aria-labelledby="lot-export-title">
+  <header class="stock-heading"><h2 id="lot-export-title">Xuất hàng theo lô</h2><button id="lot-export-close" type="button" class="btn btn--secondary">Đóng</button></header>
+  <p id="lot-export-context" class="lot-context"></p><p id="lot-export-warning" class="stock-error" hidden></p>
+  <form id="lot-export-form"><label>Số lượng xuất <span id="lot-export-unit"></span><input id="lot-export-quantity" type="number" min="0.0001" step="0.0001" required inputmode="decimal"></label>
+    <label>Lý do / chỉ định chọn lô<textarea id="lot-export-reason" rows="3" maxlength="255" placeholder="Bắt buộc khi xuất quá hạn hoặc chọn khác lô FEFO gợi ý"></textarea></label>
+    <label id="lot-export-confirm-label" class="lot-checkbox" hidden><input id="lot-export-confirm" type="checkbox">Tôi xác nhận ghi đè xuất lô quá hạn với lý do đã nhập</label>
+    <p class="lot-panel-note">Lưu sẽ tạo phiếu xuất và trừ tồn thật. Máy chủ kiểm tra lại hạn dùng, tồn khả dụng và quyền tại thời điểm ghi sổ.</p>
+    <p id="lot-export-error" class="stock-error" role="alert" hidden></p><div class="stock-actions lot-dialog-actions"><button id="lot-export-save" type="submit" class="btn btn--primary">Xác nhận xuất lô</button></div>
+  </form>
+</dialog>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/toast.js"></script><script src="/js/warehouse-fefo.js"></script><script src="/js/warehouse-lots.js"></script>
+</body></html>

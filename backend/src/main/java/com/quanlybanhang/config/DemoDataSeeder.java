@@ -356,11 +356,19 @@ public class DemoDataSeeder {
 
     private void importStock(String code, Warehouse warehouse, Supplier supplier, List<WarehouseVoucherItemRequest> items) {
         if (vouchers.existsByVoucherCode(code)) return;
-        WarehouseVoucherResponse response = warehouseService.importGoods(WarehouseVoucherRequest.builder()
-                .voucherCode(code).warehouseId(warehouse.getId()).note(NOTE).items(items).build(), ACTOR);
-        WarehouseVoucher voucher = vouchers.findById(response.getId()).orElseThrow();
-        voucher.setSupplier(supplier);
-        vouchers.save(voucher);
+        // The opt-in startup job uses an explicit bootstrap context, never an API permission fallback.
+        var previous = org.springframework.security.core.context.SecurityContextHolder.getContext();
+        var bootstrap = org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        bootstrap.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                ACTOR, "", List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
+        try {
+            org.springframework.security.core.context.SecurityContextHolder.setContext(bootstrap);
+            warehouseService.importGoods(WarehouseVoucherRequest.builder().voucherCode(code).warehouseId(warehouse.getId())
+                    .supplierId(supplier.getId()).documentNumber(code).voucherDate(LocalDateTime.now())
+                    .note(NOTE).items(items).build(), ACTOR);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.setContext(previous);
+        }
     }
 
     private void createOrders(Scope scope, Catalog catalog, Map<String, Dealer> customers, Map<CustomerGroup, PriceList> prices) {

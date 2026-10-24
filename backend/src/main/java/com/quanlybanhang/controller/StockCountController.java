@@ -21,7 +21,7 @@ import java.security.Principal;
  * - Tạo phiếu kiểm kê theo kho hoặc theo nhóm hàng, hệ thống chốt số tồn sổ tại thời điểm tạo.
  * - Nhập số đếm thực tế, hệ thống tính chênh lệch từng dòng.
  * - Chốt kiểm kê điều chỉnh tồn về số thực đếm và bắt buộc nhập lý do.
- * - Chỉ Quản lý kho (ROLE_ADMIN hoặc quyền WAREHOUSE_ADJUST) được chốt phiếu kiểm kê.
+ * - Chốt phiếu cần ROLE_ADMIN hoặc quyền WAREHOUSE_ADJUST từ ma trận, không cần vai trò kho.
  */
 @RestController
 @RequestMapping("/api/warehouse/stock-counts")
@@ -81,7 +81,7 @@ public class StockCountController {
     /**
      * Chốt phiếu kiểm kê kho và điều chỉnh tồn về số thực đếm.
      * Bắt buộc nhập lý do giải trình.
-     * CHỈ Quản lý kho (ROLE_ADMIN hoặc WAREHOUSE_ADJUST) được phép chốt!
+     * Chốt bằng quyền WAREHOUSE_ADJUST hoặc ROLE_ADMIN, không dùng vai trò kho để cấp quyền.
      */
     @PostMapping("/{id}/complete")
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_ADJUST')")
@@ -98,7 +98,7 @@ public class StockCountController {
     @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('WAREHOUSE_VIEW', 'WAREHOUSE_ADJUST')")
     public ApiResponse cancel(
             @PathVariable Long id,
-            @RequestBody(required = false) StockCountCancelRequest request,
+            @Valid @RequestBody(required = false) StockCountCancelRequest request,
             Principal principal) {
         String username = principal != null ? principal.getName() : "system";
         StockCountResponse result = stockCountService.cancel(id, request, username);

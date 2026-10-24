@@ -66,8 +66,14 @@ class SupplierImportVoucherServiceTest {
     private Product biaKenManageLot;
     private Product snackKhongManageLot;
 
+    @org.junit.jupiter.api.AfterEach
+    void clearAuth() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+
     @BeforeEach
     void setUp() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("admin", "", java.util.List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
         khoHcm = Warehouse.builder().id(1L).code("KHO-HCM").name("Kho Tổng HCM").active(true).build();
 
         nhaCungCapBia = Supplier.builder()
@@ -77,6 +83,8 @@ class SupplierImportVoucherServiceTest {
                 .active(true)
                 .build();
 
+        lenient().when(warehouseRepository.findByIdForUpdate(1L)).thenAnswer(i -> Optional.of(khoHcm));
+        lenient().when(supplierRepository.findById(5L)).thenAnswer(i -> Optional.of(nhaCungCapBia));
         // Sản phẩm có quản lý lô & hạn sử dụng
         biaKenManageLot = Product.builder()
                 .id(10L)
@@ -113,7 +121,7 @@ class SupplierImportVoucherServiceTest {
         when(productRepository.findById(10L)).thenReturn(Optional.of(biaKenManageLot));
         when(unitConversionService.getConversionFactor(biaKenManageLot, "thùng"))
                 .thenReturn(new BigDecimal("24.0000"));
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.empty());
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.empty());
         when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-KEN-202610"))
                 .thenReturn(Optional.empty());
         when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(i -> {
@@ -127,7 +135,7 @@ class SupplierImportVoucherServiceTest {
         LocalDate mfgDate = LocalDate.of(2026, 10, 1);
 
         WarehouseVoucherRequest req = WarehouseVoucherRequest.builder()
-                .warehouseId(1L)
+                .warehouseId(1L).supplierId(5L).documentNumber("DOC-S504").voucherDate(LocalDateTime.now())
                 .supplierId(5L)
                 .documentNumber("HD-HEINEKEN-98765")
                 .voucherDate(importDate)
@@ -179,7 +187,7 @@ class SupplierImportVoucherServiceTest {
         when(supplierRepository.findById(6L)).thenReturn(Optional.of(inactiveSupplier));
 
         WarehouseVoucherRequest req = WarehouseVoucherRequest.builder()
-                .warehouseId(1L)
+                .warehouseId(1L).supplierId(5L).documentNumber("DOC-S504").voucherDate(LocalDateTime.now())
                 .supplierId(6L)
                 .items(List.of(WarehouseVoucherItemRequest.builder().productId(10L).quantity(BigDecimal.ONE).build()))
                 .build();
@@ -201,7 +209,7 @@ class SupplierImportVoucherServiceTest {
         when(unitConversionService.getConversionFactor(biaKenManageLot, "lon")).thenReturn(BigDecimal.ONE);
 
         WarehouseVoucherRequest req = WarehouseVoucherRequest.builder()
-                .warehouseId(1L)
+                .warehouseId(1L).supplierId(5L).documentNumber("DOC-S504").voucherDate(LocalDateTime.now())
                 .items(List.of(WarehouseVoucherItemRequest.builder()
                         .productId(10L)
                         .quantity(new BigDecimal("50"))
@@ -223,7 +231,7 @@ class SupplierImportVoucherServiceTest {
         when(unitConversionService.getConversionFactor(biaKenManageLot, "lon")).thenReturn(BigDecimal.ONE);
 
         WarehouseVoucherRequest req = WarehouseVoucherRequest.builder()
-                .warehouseId(1L)
+                .warehouseId(1L).supplierId(5L).documentNumber("DOC-S504").voucherDate(LocalDateTime.now())
                 .items(List.of(WarehouseVoucherItemRequest.builder()
                         .productId(10L)
                         .quantity(new BigDecimal("50"))
@@ -245,7 +253,7 @@ class SupplierImportVoucherServiceTest {
         when(unitConversionService.getConversionFactor(biaKenManageLot, "lon")).thenReturn(BigDecimal.ONE);
 
         WarehouseVoucherRequest req = WarehouseVoucherRequest.builder()
-                .warehouseId(1L)
+                .warehouseId(1L).supplierId(5L).documentNumber("DOC-S504").voucherDate(LocalDateTime.now())
                 .items(List.of(WarehouseVoucherItemRequest.builder()
                         .productId(10L)
                         .quantity(new BigDecimal("50"))
@@ -266,11 +274,11 @@ class SupplierImportVoucherServiceTest {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(20L)).thenReturn(Optional.of(snackKhongManageLot));
         when(unitConversionService.getConversionFactor(snackKhongManageLot, "gói")).thenReturn(BigDecimal.ONE);
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 20L)).thenReturn(Optional.empty());
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 20L)).thenReturn(Optional.empty());
         when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(i -> i.getArgument(0));
 
         WarehouseVoucherRequest req = WarehouseVoucherRequest.builder()
-                .warehouseId(1L)
+                .warehouseId(1L).supplierId(5L).documentNumber("DOC-S504").voucherDate(LocalDateTime.now())
                 .items(List.of(WarehouseVoucherItemRequest.builder()
                         .productId(20L)
                         .quantity(new BigDecimal("100"))
@@ -301,7 +309,7 @@ class SupplierImportVoucherServiceTest {
         });
 
         WarehouseVoucherRequest req = WarehouseVoucherRequest.builder()
-                .warehouseId(1L)
+                .warehouseId(1L).supplierId(5L).documentNumber("DOC-S504").voucherDate(LocalDateTime.now())
                 .status("DRAFT") // Lưu nháp
                 .items(List.of(WarehouseVoucherItemRequest.builder()
                         .productId(20L)
@@ -333,7 +341,7 @@ class SupplierImportVoucherServiceTest {
                 .build();
 
         WarehouseVoucher draftVoucher = WarehouseVoucher.builder()
-                .id(77L)
+                .id(77L).supplier(nhaCungCapBia).documentNumber("DOC-77").voucherDate(LocalDateTime.now())
                 .voucherCode("PNK-DRAFT-77")
                 .type(WarehouseVoucherType.IMPORT)
                 .warehouse(khoHcm)
@@ -342,8 +350,9 @@ class SupplierImportVoucherServiceTest {
                 .build();
         draftItem.setVoucher(draftVoucher);
 
-        when(voucherRepository.findById(77L)).thenReturn(Optional.of(draftVoucher));
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.empty());
+        when(unitConversionService.getConversionFactor(biaKenManageLot, "thùng")).thenReturn(new BigDecimal("24"));
+        when(voucherRepository.findByIdForUpdate(77L)).thenReturn(Optional.of(draftVoucher));
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.empty());
         when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-202610")).thenReturn(Optional.empty());
         when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -361,11 +370,11 @@ class SupplierImportVoucherServiceTest {
     @DisplayName("Thử xác nhận lại phiếu đã RECORDED/CONFIRMED -> Báo lỗi IllegalStateException")
     void confirmAlreadyConfirmedVoucher_ThrowsException() {
         WarehouseVoucher confirmedVoucher = WarehouseVoucher.builder()
-                .id(88L)
+                .id(88L).warehouse(khoHcm).type(WarehouseVoucherType.IMPORT)
                 .voucherCode("PNK-88")
                 .status("CONFIRMED")
                 .build();
-        when(voucherRepository.findById(88L)).thenReturn(Optional.of(confirmedVoucher));
+        when(voucherRepository.findByIdForUpdate(88L)).thenReturn(Optional.of(confirmedVoucher));
 
         assertThatThrownBy(() -> warehouseService.confirmVoucher(88L, "staff"))
                 .isInstanceOf(IllegalStateException.class)
@@ -380,11 +389,11 @@ class SupplierImportVoucherServiceTest {
     @DisplayName("Phiếu đã xác nhận không được phép sửa (updateVoucher) -> Ném IllegalStateException")
     void updateConfirmedVoucher_ThrowsException() {
         WarehouseVoucher confirmedVoucher = WarehouseVoucher.builder()
-                .id(99L)
+                .id(99L).warehouse(khoHcm).type(WarehouseVoucherType.IMPORT)
                 .voucherCode("PNK-99")
                 .status("CONFIRMED")
                 .build();
-        when(voucherRepository.findById(99L)).thenReturn(Optional.of(confirmedVoucher));
+        when(voucherRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(confirmedVoucher));
 
         WarehouseVoucherRequest updateReq = WarehouseVoucherRequest.builder()
                 .note("Ghi chú sửa đổi")
@@ -399,15 +408,15 @@ class SupplierImportVoucherServiceTest {
     @DisplayName("Phiếu đã xác nhận không được phép xóa (deleteVoucher) -> Ném IllegalStateException")
     void deleteConfirmedVoucher_ThrowsException() {
         WarehouseVoucher confirmedVoucher = WarehouseVoucher.builder()
-                .id(99L)
+                .id(99L).warehouse(khoHcm).type(WarehouseVoucherType.IMPORT)
                 .voucherCode("PNK-99")
                 .status("RECORDED")
                 .build();
-        when(voucherRepository.findById(99L)).thenReturn(Optional.of(confirmedVoucher));
+        when(voucherRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(confirmedVoucher));
 
         assertThatThrownBy(() -> warehouseService.deleteVoucher(99L, "staff"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Phiếu đã xác nhận không thể xóa, chỉ lập phiếu điều chỉnh");
+                .hasMessageContaining("phiếu đã xác nhận chỉ lập phiếu điều chỉnh");
     }
 
     @Test
@@ -422,10 +431,10 @@ class SupplierImportVoucherServiceTest {
                 .items(new ArrayList<>())
                 .build();
 
-        when(voucherRepository.findById(66L)).thenReturn(Optional.of(draftVoucher));
+        when(voucherRepository.findByIdForUpdate(66L)).thenReturn(Optional.of(draftVoucher));
         when(productRepository.findById(20L)).thenReturn(Optional.of(snackKhongManageLot));
         when(unitConversionService.getConversionFactor(snackKhongManageLot, "gói")).thenReturn(BigDecimal.ONE);
-        when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(i -> i.getArgument(0));
+        when(voucherRepository.saveAndFlush(any(WarehouseVoucher.class))).thenAnswer(i -> i.getArgument(0));
 
         WarehouseVoucherRequest updateReq = WarehouseVoucherRequest.builder()
                 .documentNumber("SO-CT-MOI-123")
@@ -457,11 +466,11 @@ class SupplierImportVoucherServiceTest {
                 .status("CONFIRMED")
                 .build();
 
-        when(voucherRepository.findById(33L)).thenReturn(Optional.of(originalVoucher));
+        when(voucherRepository.findByIdForUpdate(33L)).thenReturn(Optional.of(originalVoucher));
         when(productRepository.findById(10L)).thenReturn(Optional.of(biaKenManageLot));
         when(unitConversionService.getConversionFactor(biaKenManageLot, "lon")).thenReturn(BigDecimal.ONE);
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.empty());
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-KEN-202610")).thenReturn(Optional.empty());
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.of(WarehouseInventory.builder().warehouse(khoHcm).product(biaKenManageLot).baseQuantity(new BigDecimal("100")).baseUnit("lon").build()));
+        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-KEN-202610")).thenReturn(Optional.of(WarehouseLotInventory.builder().baseQuantity(new BigDecimal("100")).expiryDate(LocalDate.of(2027, 10, 15)).build()));
         when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(i -> {
             WarehouseVoucher v = i.getArgument(0);
             if (v.getId() == null) v.setId(44L);
@@ -475,6 +484,7 @@ class SupplierImportVoucherServiceTest {
                         .productId(10L)
                         .unit("lon")
                         .quantity(new BigDecimal("2"))
+                        .expiryDate(LocalDate.of(2027, 10, 15))
                         .lotNumber("LOT-KEN-202610")
                         .build()))
                 .build();

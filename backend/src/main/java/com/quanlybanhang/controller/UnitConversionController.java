@@ -25,7 +25,7 @@ public class UnitConversionController {
     private final UnitConversionService unitConversionService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('PRODUCT_VIEW', 'PRODUCT_CREATE', 'PRODUCT_EDIT', 'ORDER_CREATE', 'WAREHOUSE_VIEW', 'WAREHOUSE_MANAGE', 'WAREHOUSE_IMPORT', 'WAREHOUSE_EXPORT')")
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('PRODUCT_VIEW', 'PRODUCT_CREATE', 'PRODUCT_EDIT', 'ORDER_CREATE', 'WAREHOUSE_VIEW', 'WAREHOUSE_MANAGE', 'WAREHOUSE_IMPORT', 'WAREHOUSE_EXPORT', 'WAREHOUSE_APPROVE', 'WAREHOUSE_ADJUST')")
     public ApiResponse getUnitConversions(@PathVariable Long productId) {
         List<UnitConversionResponse> conversions = unitConversionService.getConversionsByProductId(productId);
         return ApiResponse.success("Danh sách đơn vị quy đổi của sản phẩm", conversions);

@@ -97,6 +97,13 @@ public class Product {
     private Boolean manageLot = false;
 
     /**
+     * Ngưỡng cảnh báo sắp hết hạn tính theo số ngày (S6-01).
+     * Mặc định là 30 ngày nếu không khai báo cụ thể cho SKU này.
+     */
+    @Column(name = "expiry_warning_days")
+    private Integer expiryWarningDays;
+
+    /**
      * Danh sách các đơn vị quy đổi của SKU (S2-07).
      * Ví dụ: SKU có đơn vị cơ sở "lon", có thể thêm "lốc" (hệ số 6), "thùng" (hệ số 24).
      */

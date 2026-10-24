@@ -49,7 +49,7 @@ public class ProductController {
     // đọc toàn bộ hồ sơ sản phẩm hoặc làm lộ giá vốn/doanh thu.
     private static final String LOOKUP_PERMISSION = "hasRole('ADMIN') or hasAnyAuthority('PRODUCT_VIEW', "
             + "'PRODUCT_CREATE', 'PRODUCT_EDIT', 'ORDER_CREATE', 'WAREHOUSE_VIEW', "
-            + "'WAREHOUSE_MANAGE', 'WAREHOUSE_IMPORT', 'WAREHOUSE_EXPORT')";
+            + "'WAREHOUSE_MANAGE', 'WAREHOUSE_IMPORT', 'WAREHOUSE_EXPORT', 'WAREHOUSE_APPROVE', 'WAREHOUSE_ADJUST')";
 
     @GetMapping("/lookup")
     @PreAuthorize(LOOKUP_PERMISSION)
@@ -69,7 +69,7 @@ public class ProductController {
     private ProductResponse lookupProduct(ProductResponse product) {
         return ProductResponse.builder().id(product.getId()).code(product.getCode()).sku(product.getSku())
                 .name(product.getName()).categoryId(product.getCategoryId()).categoryName(product.getCategoryName())
-                .unit(product.getUnit()).price(product.getPrice()).active(product.getActive())
+                .unit(product.getUnit()).price(product.getPrice()).active(product.getActive()).manageLot(product.getManageLot())
                 .packingSpecification(product.getPackingSpecification()).imageUrl(product.getImageUrl()).build();
     }
 
@@ -117,6 +117,21 @@ public class ProductController {
     public ApiResponse updateProductStatus(@PathVariable Long id, @RequestParam boolean active) {
         ProductResponse response = productService.updateStatus(id, active);
         String msg = active ? "Đã kích hoạt kinh doanh sản phẩm" : "Đã chuyển sản phẩm sang ngừng kinh doanh";
+        return ApiResponse.success(msg, response);
+    }
+
+    /**
+     * API bật/tắt quản lý lô và cập nhật ngưỡng cảnh báo hạn sử dụng theo từng SKU (S6-01).
+     */
+    @PatchMapping("/{id}/manage-lot")
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('PRODUCT_EDIT', 'WAREHOUSE_MANAGE')")
+    public ApiResponse toggleManageLot(
+            @PathVariable Long id,
+            @Valid @RequestBody com.quanlybanhang.dto.request.ManageLotToggleRequest request) {
+        ProductResponse response = productService.toggleManageLot(id, request.getManageLot(), request.getExpiryWarningDays());
+        String msg = Boolean.TRUE.equals(request.getManageLot())
+                ? "Đã bật quản lý lô cho sản phẩm"
+                : "Đã tắt quản lý lô cho sản phẩm";
         return ApiResponse.success(msg, response);
     }
 

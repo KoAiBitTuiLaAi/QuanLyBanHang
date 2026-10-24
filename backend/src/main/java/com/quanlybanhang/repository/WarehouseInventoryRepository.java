@@ -38,7 +38,7 @@ public interface WarehouseInventoryRepository extends JpaRepository<WarehouseInv
     Optional<WarehouseInventory> findByWarehouseIdAndProductIdForUpdate(@Param("warehouseId") Long warehouseId, @Param("productId") Long productId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT wi FROM WarehouseInventory wi WHERE wi.warehouse.id = :warehouseId AND wi.product.id IN :productIds")
+    @Query("SELECT wi FROM WarehouseInventory wi WHERE wi.warehouse.id = :warehouseId AND wi.product.id IN :productIds ORDER BY wi.product.id")
     List<WarehouseInventory> findByWarehouseIdAndProductIdInForUpdate(@Param("warehouseId") Long warehouseId, @Param("productIds") Collection<Long> productIds);
 
     /**

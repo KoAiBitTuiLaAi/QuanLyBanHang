@@ -89,6 +89,11 @@ class OrderServiceTest {
 
     @BeforeEach
     void setUp() {
+        orderService.setUserRepository(userRepository);
+        org.mockito.Mockito.lenient().when(userRepository.findByUsername(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(call -> Optional.of(com.quanlybanhang.model.User.builder().id(99L).username(call.getArgument(0)).build()));
+        org.mockito.Mockito.lenient().when(orderRepository.findByIdForUpdate(org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(call -> orderRepository.findById(call.getArgument(0)));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("manager", "",
                 List.of(new SimpleGrantedAuthority("ORDER_APPROVE"))));
         biaHeineken = Product.builder()
@@ -195,6 +200,10 @@ class OrderServiceTest {
                 .build();
 
         when(orderRepository.findById(50L)).thenReturn(Optional.of(pendingOrder));
+        pendingOrder.setWarehouse(Warehouse.builder().id(1L).code("TEST-WH").name("Kho kiểm thử").build());
+        pendingOrder.addItem(OrderItem.builder().product(biaHeineken).quantity(BigDecimal.ONE)
+                .unit("lon").baseUnit("lon").conversionFactor(BigDecimal.ONE).baseQuantity(BigDecimal.ONE)
+                .price(new BigDecimal("19000")).subtotalAmount(new BigDecimal("19000")).build());
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         OrderResponse response = orderService.approveOrder(50L, "sales_mgr");
@@ -465,6 +474,10 @@ class OrderServiceTest {
                 .build();
 
         when(orderRepository.findById(1001L)).thenReturn(Optional.of(order));
+        order.setWarehouse(Warehouse.builder().id(1L).code("TEST-WH").name("Kho kiểm thử").build());
+        order.addItem(OrderItem.builder().product(biaHeineken).quantity(BigDecimal.ONE)
+                .unit("lon").baseUnit("lon").conversionFactor(BigDecimal.ONE).baseQuantity(BigDecimal.ONE)
+                .price(new BigDecimal("19000")).subtotalAmount(new BigDecimal("19000")).build());
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // NVKD phụ trách xác nhận
@@ -1089,8 +1102,9 @@ class OrderServiceTest {
                 .build();
         item.setOrder(expiredOrder);
 
-        when(orderRepository.findExpiredReservations(any(java.time.LocalDateTime.class)))
-                .thenReturn(List.of(expiredOrder));
+        when(orderRepository.findExpiredReservationIds(any(java.time.LocalDateTime.class)))
+                .thenReturn(List.of(105L));
+        when(orderRepository.findById(105L)).thenReturn(Optional.of(expiredOrder));
         when(inventoryRepository.findByWarehouseIdAndProductIdInForUpdate(eq(1L), any()))
                 .thenReturn(List.of(inventory));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
