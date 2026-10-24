@@ -1,0 +1,562 @@
+/**
+ * debt-payments.css
+ * Giao diện chức năng Ghi nhận thanh toán và đối trừ công nợ (S7-02).
+ * Kế toán công nợ theo dõi chính xác đại lý còn nợ hoá đơn nào.
+ */
+
+/* ── Container chính ── */
+.debt-payments-page {
+  padding-bottom: 48px;
+}
+
+/* ── Tiêu đề & thanh thao tác trên cùng ── */
+.dp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.dp-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--ink-900, #182433);
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.dp-header p {
+  font-size: 0.875rem;
+  color: var(--ink-600, #617083);
+  max-width: 680px;
+  line-height: 1.5;
+}
+
+.dp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Thông báo trạng thái & cảnh báo quyền ── */
+.dp-notice {
+  padding: 12px 16px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.dp-notice--info {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.dp-notice--warning {
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  color: #92400e;
+}
+
+.dp-notice--error {
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  color: #991b1b;
+}
+
+/* ── Thanh chuyển Tab ── */
+.dp-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line, #dce4eb);
+  margin-bottom: 20px;
+}
+
+.dp-tab-btn {
+  padding: 10px 18px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-600, #617083);
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dp-tab-btn:hover {
+  color: var(--navy-900, #0b2239);
+}
+
+.dp-tab-btn.active {
+  color: var(--teal-deep, #218a69);
+  border-bottom-color: var(--teal-deep, #218a69);
+}
+
+/* ── Panel bộ lọc ── */
+.dp-filter-panel {
+  background: var(--surface-raised, #ffffff);
+  border: 1px solid var(--line, #dce4eb);
+  border-radius: var(--radius, 10px);
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(6, 27, 47, 0.06));
+}
+
+.dp-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 20px;
+  align-items: flex-end;
+}
+
+.dp-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+  flex: 1 1 200px;
+}
+
+.dp-field-group label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-700, #3d4f5f);
+}
+
+.dp-field-group input,
+.dp-field-group select,
+.dp-field-group textarea {
+  height: 38px;
+  padding: 0 12px;
+  font-size: 0.875rem;
+  border: 1px solid var(--line, #dce4eb);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-raised, #ffffff);
+  color: var(--ink-900, #182433);
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.dp-field-group textarea {
+  height: auto;
+  min-height: 80px;
+  padding: 8px 12px;
+}
+
+.dp-field-group input:focus,
+.dp-field-group select:focus,
+.dp-field-group textarea:focus {
+  outline: none;
+  border-color: var(--teal-deep, #218a69);
+  box-shadow: 0 0 0 2px var(--teal-soft, rgba(47, 184, 138, 0.15));
+}
+
+.dp-filter-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: auto;
+}
+
+/* ── Thẻ thống kê / Tổng quan công nợ ── */
+.dp-overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.dp-stat-card {
+  background: var(--surface-raised, #ffffff);
+  border: 1px solid var(--line, #dce4eb);
+  border-radius: var(--radius, 10px);
+  padding: 16px 20px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(6, 27, 47, 0.06));
+}
+
+.dp-stat-card__label {
+  font-size: 0.8125rem;
+  color: var(--ink-600, #617083);
+  margin-bottom: 6px;
+}
+
+.dp-stat-card__val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink-900, #182433);
+}
+
+.dp-stat-card__val--danger {
+  color: #dc2626;
+}
+
+.dp-stat-card__val--success {
+  color: #166534;
+}
+
+/* ── Bảng dữ liệu ── */
+.dp-table-container {
+  background: var(--surface-raised, #ffffff);
+  border: 1px solid var(--line, #dce4eb);
+  border-radius: var(--radius, 10px);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(6, 27, 47, 0.06));
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.dp-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.dp-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.dp-table th {
+  background: var(--surface, #f4f7fa);
+  color: var(--ink-700, #3d4f5f);
+  font-weight: 650;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line, #dce4eb);
+  white-space: nowrap;
+}
+
+.dp-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-light, #ecf0f4);
+  color: var(--ink-900, #182433);
+  vertical-align: middle;
+}
+
+.dp-table tr:last-child td {
+  border-bottom: none;
+}
+
+.dp-table tr:hover td {
+  background: #fbfcfd;
+}
+
+.dp-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Badges ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.badge--payment {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.badge--adjustment {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #ffedd5;
+}
+
+.badge--paid {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.badge--partial {
+  background: #fefce8;
+  color: #a16207;
+  border: 1px solid #fef08a;
+}
+
+.badge--unpaid {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.badge--cash {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.badge--transfer {
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.badge--other {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.badge--overdue {
+  background: #450a0a;
+  color: #fecaca;
+  font-weight: 700;
+}
+
+/* ── Phân trang ── */
+.dp-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--surface-raised, #ffffff);
+  border-top: 1px solid var(--line, #dce4eb);
+  font-size: 0.8125rem;
+  color: var(--ink-600, #617083);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dp-pagination-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Nút bấm chuẩn ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--sm {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 0.8125rem;
+}
+
+.btn--primary {
+  background: var(--teal-deep, #218a69);
+  color: #ffffff;
+  border: 1px solid var(--teal-deep, #218a69);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: #197055;
+}
+
+.btn--secondary {
+  background: #ffffff;
+  color: var(--ink-700, #3d4f5f);
+  border: 1px solid var(--line, #dce4eb);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--surface, #f4f7fa);
+  color: var(--ink-900, #182433);
+}
+
+.btn--danger {
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #dc2626;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+/* ── Modal & Dialog ── */
+.dp-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 34, 57, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+  padding: 16px;
+}
+
+.dp-modal-overlay[hidden] {
+  display: none !important;
+}
+
+.dp-modal {
+  background: #ffffff;
+  border-radius: var(--radius, 10px);
+  width: 100%;
+  max-width: 820px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(6, 27, 47, 0.12));
+  overflow: hidden;
+}
+
+.dp-modal--large {
+  max-width: 960px;
+}
+
+.dp-modal-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line, #dce4eb);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dp-modal-header h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--ink-900, #182433);
+}
+
+.dp-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--ink-400, #9ca7b3);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.dp-modal-close:hover {
+  color: var(--ink-900, #182433);
+}
+
+.dp-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: calc(100vh - 160px);
+}
+
+.dp-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--line, #dce4eb);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: var(--surface, #f4f7fa);
+}
+
+/* ── Form trong Modal ── */
+.dp-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dp-form-row {
+  margin-bottom: 16px;
+}
+
+.dp-radio-group {
+  display: flex;
+  gap: 20px;
+  padding: 8px 0;
+  margin-bottom: 16px;
+}
+
+.dp-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-900, #182433);
+  cursor: pointer;
+}
+
+.dp-radio-label input {
+  accent-color: var(--teal-deep, #218a69);
+  width: 16px;
+  height: 16px;
+}
+
+.dp-allocation-box {
+  border: 1px solid var(--line, #dce4eb);
+  border-radius: var(--radius-sm, 6px);
+  padding: 16px;
+  background: var(--surface, #f4f7fa);
+  margin-top: 14px;
+  margin-bottom: 20px;
+}
+
+.dp-allocation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dp-allocation-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ink-900, #182433);
+}
+
+.dp-allocation-summary {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--teal-deep, #218a69);
+}
+
+.dp-allocation-summary.mismatch {
+  color: #dc2626;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .dp-header {
+    flex-direction: column;
+  }
+  .dp-header-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .dp-header-actions .btn {
+    flex: 1;
+  }
+  .dp-filter-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dp-field-group {
+    width: 100%;
+  }
+  .dp-radio-group {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+

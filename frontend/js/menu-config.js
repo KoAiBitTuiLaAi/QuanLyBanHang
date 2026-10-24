@@ -305,6 +305,15 @@ const MenuConfig = (() => {
       permissions: ["ORDER_VIEW", "ORDER_CREATE", "INVOICE_VIEW", "WAREHOUSE_VIEW", "WAREHOUSE_APPROVE", "WAREHOUSE_IMPORT"],
     },
     {
+      id: "warehouse-adjustments",
+      section: "Kho hàng",
+      label: "Phiếu điều chỉnh",
+      icon: '<path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+      href: "/warehouse/adjustments",
+      roles: ALL_ROLES,
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_ADJUST", "WAREHOUSE_APPROVE"],
+    },
+    {
       id: "debt-limits",
       section: "Tài chính",
       label: "Hạn mức công nợ",
@@ -314,6 +323,15 @@ const MenuConfig = (() => {
       permission: "FINANCE_VIEW_DEBT",
     },
     {
+      id: "debt-payments",
+      section: "Tài chính",
+      label: "Ghi nhận thanh toán",
+      icon: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
+      href: "/finance/debt-payments",
+      roles: ALL_ROLES,
+      permissions: ["FINANCE_VIEW_DEBT", "FINANCE_MANAGE"],
+    },
+    {
       id: "debt-adjustment",
       section: "Tài chính",
       label: "Điều chỉnh công nợ",
@@ -321,6 +339,15 @@ const MenuConfig = (() => {
       href: "/finance/debt-adjustment",
       roles: ALL_ROLES,
       permissions: ["INVOICE_VIEW", "INVOICE_ADJUST"],
+    },
+    {
+      id: "debt-statement",
+      section: "Tài chính",
+      label: "Sổ chi tiết công nợ",
+      icon: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10M6 14h6"/>',
+      href: "/finance/debt-statement",
+      roles: ALL_ROLES,
+      permission: "FINANCE_VIEW_DEBT",
     },
     {
       id: "cash-collections",
@@ -357,6 +384,15 @@ const MenuConfig = (() => {
       href: "/reports/debt-aging",
       roles: ALL_ROLES,
       permission: "REPORT_FINANCE",
+    },
+    {
+      id: "inventory-turnover",
+      section: "Báo cáo",
+      label: "Tồn kho & Vòng quay",
+      icon: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+      href: "/reports/inventory-turnover",
+      roles: ALL_ROLES,
+      permission: "REPORT_INVENTORY",
     },
     {
       id: "users",
