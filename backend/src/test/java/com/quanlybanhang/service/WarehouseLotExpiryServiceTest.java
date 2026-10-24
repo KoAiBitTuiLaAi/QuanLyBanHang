@@ -230,9 +230,16 @@ class WarehouseLotExpiryServiceTest {
     // 3. Không cho xuất lô đã quá hạn, trừ khi Quản lý kho xác nhận ghi đè kèm lý do
     // ─────────────────────────────────────────────────────────────────────────
 
+    private void lockExportStock(WarehouseLotInventory lot) {
+        when(lotInventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(List.of(lot));
+        lenient().when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.of(
+                WarehouseInventory.builder().warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("1000")).baseUnit("hộp").build()));
+    }
+
     @Test
     @DisplayName("Xuất lô còn hạn: Nhân viên kho bình thường (WAREHOUSE_EXPORT) xuất thành công")
     void exportGoods_NonExpiredLot_StaffAllowed() {
+        lockExportStock(lotConHan);
         authenticate("staff01", "ROLE_WAREHOUSE_STAFF", "WAREHOUSE_EXPORT");
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
@@ -247,8 +254,6 @@ class WarehouseLotExpiryServiceTest {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(10L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-2026-01"))
-                .thenReturn(Optional.of(lotConHan));
 
         WarehouseInventory totalInv = WarehouseInventory.builder()
                 .warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("100.0000")).baseUnit("hộp").build();
@@ -265,6 +270,7 @@ class WarehouseLotExpiryServiceTest {
     @Test
     @DisplayName("Xuất lô đã quá hạn: Nhân viên kho không có quyền Quản lý kho -> Bị chặn 403 AccessDenied")
     void exportGoods_ExpiredLot_StaffWithoutManagerPermission_ThrowsAccessDenied() {
+        lockExportStock(lotQuaHan);
         authenticate("staff01", "ROLE_WAREHOUSE_STAFF", "WAREHOUSE_EXPORT");
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
@@ -281,8 +287,6 @@ class WarehouseLotExpiryServiceTest {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(10L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-2026-03"))
-                .thenReturn(Optional.of(lotQuaHan));
 
         assertThatThrownBy(() -> warehouseService.exportGoods(request, "staff01"))
                 .isInstanceOf(AccessDeniedException.class)
@@ -292,6 +296,7 @@ class WarehouseLotExpiryServiceTest {
     @Test
     @DisplayName("Xuất lô đã quá hạn: Quản lý kho nhưng KHÔNG xác nhận cờ ghi đè -> Bị chặn yêu cầu xác nhận")
     void exportGoods_ExpiredLot_ManagerWithoutOverrideFlag_ThrowsException() {
+        lockExportStock(lotQuaHan);
         authenticate("manager01", "ROLE_WAREHOUSE_MANAGER", "WAREHOUSE_EXPORT", "WAREHOUSE_APPROVE");
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
@@ -307,8 +312,6 @@ class WarehouseLotExpiryServiceTest {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(10L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-2026-03"))
-                .thenReturn(Optional.of(lotQuaHan));
 
         assertThatThrownBy(() -> warehouseService.exportGoods(request, "manager01"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -318,6 +321,7 @@ class WarehouseLotExpiryServiceTest {
     @Test
     @DisplayName("Xuất lô đã quá hạn: Quản lý kho có xác nhận cờ ghi đè nhưng BỎ TRỐNG LÝ DO -> Bị chặn bắt buộc lý do")
     void exportGoods_ExpiredLot_ManagerWithoutReason_ThrowsException() {
+        lockExportStock(lotQuaHan);
         authenticate("manager01", "ROLE_WAREHOUSE_MANAGER", "WAREHOUSE_EXPORT", "WAREHOUSE_APPROVE");
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
@@ -334,8 +338,6 @@ class WarehouseLotExpiryServiceTest {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(10L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-2026-03"))
-                .thenReturn(Optional.of(lotQuaHan));
 
         assertThatThrownBy(() -> warehouseService.exportGoods(request, "manager01"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -345,6 +347,7 @@ class WarehouseLotExpiryServiceTest {
     @Test
     @DisplayName("Xuất lô đã quá hạn: Quản lý kho có quyền WAREHOUSE_APPROVE xác nhận ghi đè kèm lý do -> Cho phép xuất và ghi audit log")
     void exportGoods_ExpiredLot_ManagerWithOverrideAndReason_AllowedAndAudited() {
+        lockExportStock(lotQuaHan);
         authenticate("manager01", "ROLE_WAREHOUSE_MANAGER", "WAREHOUSE_EXPORT", "WAREHOUSE_APPROVE");
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
@@ -361,8 +364,6 @@ class WarehouseLotExpiryServiceTest {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(10L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-2026-03"))
-                .thenReturn(Optional.of(lotQuaHan));
 
         WarehouseInventory totalInv = WarehouseInventory.builder()
                 .warehouse(khoHcm).product(suaTuoi).baseQuantity(new BigDecimal("20.0000")).baseUnit("hộp").build();
@@ -390,6 +391,7 @@ class WarehouseLotExpiryServiceTest {
     @Test
     @DisplayName("Xuất kho lô hàng: Số lượng yêu cầu xuất vượt quá số lượng tồn của lô -> Bị chặn báo lỗi tồn lô không đủ")
     void exportGoods_QuantityExceedsLotQuantity_ThrowsException() {
+        lockExportStock(lotConHan);
         authenticate("staff01", "ROLE_WAREHOUSE_STAFF", "WAREHOUSE_EXPORT");
 
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
@@ -404,8 +406,6 @@ class WarehouseLotExpiryServiceTest {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(khoHcm));
         when(productRepository.findById(10L)).thenReturn(Optional.of(suaTuoi));
         when(unitConversionService.getConversionFactor(suaTuoi, "hộp")).thenReturn(BigDecimal.ONE);
-        when(lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(1L, 10L, "LOT-2026-01"))
-                .thenReturn(Optional.of(lotConHan));
 
         assertThatThrownBy(() -> warehouseService.exportGoods(request, "staff01"))
                 .isInstanceOf(IllegalArgumentException.class)

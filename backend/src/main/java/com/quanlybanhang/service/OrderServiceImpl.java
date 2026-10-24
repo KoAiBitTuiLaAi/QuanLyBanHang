@@ -61,6 +61,9 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager reservationTransactions;
 
+    @Autowired
+    private OrderShipmentService shipmentService;
+
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final DealerRepository dealerRepository;
@@ -847,6 +850,10 @@ public class OrderServiceImpl implements OrderService {
 
         checkWarehouseAuthorizationForOrder(order, "cập nhật giao hàng");
 
+        if (Boolean.TRUE.equals(order.getBackordered())) {
+            throw new IllegalArgumentException("Đơn còn nợ hàng. Xuất bù đủ trước khi xác nhận đã giao toàn đơn");
+        }
+
         if (request.getItems() != null) {
             Set<Long> seen = new HashSet<>();
             Map<Long, OrderItem> existing = order.getItems().stream()
@@ -997,6 +1004,16 @@ public class OrderServiceImpl implements OrderService {
         }
 
         validateLifecycleTransition(oldStatus, targetStatus);
+
+        if (Boolean.TRUE.equals(order.getBackordered())) {
+            throw new IllegalArgumentException("Đơn còn nợ hàng. Vào Xuất kho theo đơn để xử lý lượt xuất bù");
+        }
+
+        if ("EXPORTED".equals(targetStatus) && shipmentService != null) {
+            // Spring always injects the service. Legacy isolated unit-test constructors have no container.
+            shipmentService.confirmRemaining(order);
+            return mapToResponse(order);
+        }
 
         // Khi chuyển sang EXPORTED (Đã xuất): trừ tồn kho thực tế và nhả giữ chỗ (S4-06)
         if (("EXPORTED".equals(targetStatus) || "SHIPPED".equals(targetStatus))
@@ -1618,7 +1635,8 @@ public class OrderServiceImpl implements OrderService {
                 .warehouseCode(order.getWarehouse() != null ? order.getWarehouse().getCode() : null)
                 .warehouseName(order.getWarehouse() != null ? order.getWarehouse().getName() : null)
                 .status(order.getStatus())
-                .statusDisplayName(OrderStatus.getDisplayName(order.getStatus()))
+                .statusDisplayName(Boolean.TRUE.equals(order.getBackordered()) ? "Đã xuất một phần · Còn nợ hàng" : OrderStatus.getDisplayName(order.getStatus()))
+                .backordered(Boolean.TRUE.equals(order.getBackordered()))
                 .canCancel(OrderStatus.canCancel(order.getStatus()))
                 .isExported(OrderStatus.isExportedOrLater(order.getStatus()))
                 .inventoryReserved(order.getInventoryReserved())
@@ -1722,6 +1740,8 @@ public class OrderServiceImpl implements OrderService {
                 .conversionFactor(item.getConversionFactor())
                 .baseUnit(item.getBaseUnit())
                 .baseQuantity(item.getBaseQuantity())
+                .exportedQuantity(item.effectiveExportedQuantity())
+                .remainingExportQuantity(item.remainingExportQuantity())
                 .deliveredQuantity(deliveredQty)
                 .deliveredBaseQuantity(item.getDeliveredBaseQuantity())
                 .shortageQuantity(shortageQty)
@@ -3014,6 +3034,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private boolean canUpdateDelivery(Order order) {
+        if (Boolean.TRUE.equals(order.getBackordered())) return false;
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || order.getStatus() == null) return false;
         String status = normalizeLifecycleStatus(order.getStatus());
@@ -3023,6 +3044,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private String nextLifecycleStatus(Order order) {
+        if (Boolean.TRUE.equals(order.getBackordered())) return null;
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || order.getStatus() == null) return null;
         try { checkWarehouseAuthorizationForOrder(order, "chuyển vòng đời đơn"); }

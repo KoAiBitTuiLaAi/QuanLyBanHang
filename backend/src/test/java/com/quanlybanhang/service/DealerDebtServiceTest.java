@@ -438,7 +438,7 @@ class DealerDebtServiceTest {
                 org.mockito.ArgumentMatchers.eq("1"),
                 org.mockito.ArgumentMatchers.eq("CREATE"),
                 org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.contains("30,000,000"),
+                org.mockito.ArgumentMatchers.contains(new java.text.DecimalFormat("#,###").format(new BigDecimal("30000000"))),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.eq("accountant1"));
     }
