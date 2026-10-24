@@ -91,7 +91,7 @@
 
 - S8-01: Kho hàng → Trả hàng đại lý → Lập phiếu từ hóa đơn gốc, chọn dòng/số lượng/lý do/lô và kho nhận, xem chi tiết, xác nhận nhập lại kho hoặc hủy phiếu chờ.
 - S8-02: Tài chính → Điều chỉnh công nợ → Chọn hóa đơn gốc, lưu phiếu trả nháp, xác nhận giảm nợ, xem chứng từ hoặc hủy nháp.
-- S8-03: Một phần: Kho hàng → Sổ cái kho → Chi tiết phiếu nhập đã xác nhận → Lập phiếu điều chỉnh tăng/giảm kèm lý do; chưa có luồng lập/duyệt hai người riêng.
+- S8-03: Kho hàng → Phiếu điều chỉnh → Lập phiếu điều chỉnh (chọn kho, lý do hàng hỏng/mất/hết hạn, ghi rõ giá trị tổn thất), xem chi tiết, liên kết Thẻ kho, Quản lý kho phê duyệt hoặc từ chối (ràng buộc người lập và người duyệt không được là một).
 - S8-04: Chỉ backend → `/api/sales-targets` (đặt/sửa/khóa chỉ tiêu tháng theo nhân viên và khu vực, sửa kỳ đã khóa kèm lý do và nhật ký), `/api/sales-targets/my-progress` (nhân viên xem tiến độ thực tế giữa tháng), `/api/sales-targets/summary` (tổng hợp tiến độ); tự động khóa chỉ tiêu đã qua kỳ.
 - S8-05: Báo cáo → Dashboard điều hành → Sáu chỉ số, doanh số theo ngày/khu vực, đại lý quá hạn và phân trang; lối tắt ở Tổng quan → Công việc.
 - S8-07: Chỉ backend → `/api/reports/inventory-turnover` (giá trị tồn theo kho và nhóm hàng, số ngày tồn bình quân từng SKU, hàng chậm luân chuyển đang chôn vốn), `/api/reports/inventory-turnover/by-warehouse`, `/api/reports/inventory-turnover/by-category`, `/api/reports/inventory-turnover/skus`, `/api/reports/inventory-turnover/slow-moving`, `/api/reports/inventory-turnover/export` (xuất Excel `.xlsx`).

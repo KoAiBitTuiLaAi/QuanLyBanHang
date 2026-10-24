@@ -1,5 +1,21 @@
 # Trạng thái sprint 1–8
 
+## S8-03 — Lập phiếu điều chỉnh tồn kho có phê duyệt (Frontend) — 24/10/2026
+
+Nhánh `feature/S8-03-chuc-nang-tao-phieu-dieu-chinh-ton-kho-co-phe-duyet(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 4 tiêu chí nghiệp vụ theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Dùng cho hàng hỏng, hàng mất, hàng hết hạn phải huỷ | Có | Có | Có | Form tạo phiếu tại `/warehouse/adjustments` cho phép chọn danh mục lý do chuẩn hoá: `DAMAGED` (Hàng hỏng), `LOST` (Hàng mất), `EXPIRED` (Hàng hết hạn phải huỷ), `OTHER` (Lý do khác). Bộ lọc hỗ trợ lọc riêng từng nhóm lý do. |
+| Bắt buộc chọn lý do và ghi rõ giá trị tổn thất | Có | Có | Có | Validate form bắt buộc chọn lý do, bắt buộc nhập chi tiết biên bản giải trình (tối đa 500 ký tự); tự động tính giá trị tổn thất từng dòng hàng (`quantity * unitPrice`) và tổng giá trị tổn thất toàn phiếu (VND), bắt buộc giá trị tổn thất > 0 mới cho submit. |
+| Chỉ Quản lý kho được duyệt; người lập và người duyệt không được là một | Có | Có | Có | Thực thi nguyên tắc phân quyền và kiểm soát nội bộ (Segregation of Duties): Người lập cần quyền `WAREHOUSE_ADJUST`. Người duyệt cần quyền `WAREHOUSE_APPROVE` (hoặc `ROLE_ADMIN`). Ràng buộc `createdBy !== currentUser.username`: nếu người dùng hiện tại là người lập phiếu, hệ thống hiển thị cảnh báo kiểm soát nội bộ và vô hiệu hoá các nút Duyệt/Từ chối. |
+| Mọi phiếu điều chỉnh đều xuất hiện trên thẻ kho | Có | Có | Có | Mỗi dòng hàng trên chi tiết phiếu điều chỉnh có link trực tiếp "Xem thẻ kho" (`/warehouse/stock-card?productId=...&warehouseId=...`). Phiếu ghi sổ với loại `WarehouseVoucherType.ADJUSTMENT` tự động đưa vào thẻ kho sản phẩm qua `StockCardService`. |
+| Ma trận phân quyền động (Permission Matrix) & An toàn dữ liệu | Có | Có | Có | Kết nối chặt chẽ với ma trận phân quyền động `RolePermissionConfig`. Thu hồi `WAREHOUSE_VIEW` chặn truy cập; thu hồi `WAREHOUSE_ADJUST` ẩn/chặn form lập phiếu; thu hồi `WAREHOUSE_APPROVE` ẩn khu vực duyệt. Lắng nghe `auth:permissions-changed` phản ứng tức thì. Tuyệt đối không dùng role fallback và không lưu dữ liệu nghiệp vụ vào localStorage/sessionStorage. |
+
+Kiểm thử: **6/6 tests S8-03 qua 100%** trong `tests/warehouse-adjustments.test.cjs`; toàn bộ **220/220 test frontend qua 100%**. Đã cập nhật `serve_frontend.py`, `frontend/js/menu-config.js` và `docs/FUNCTION_MAP.md`.
+
+---
+
 ## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Backend) (22/10/2026)
 
 Nhánh `feature/S7-02/ghi-nhan-thanh-toan`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS`. Yêu cầu người dùng: **chỉ làm Backend**.
