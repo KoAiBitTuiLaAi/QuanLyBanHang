@@ -1,3 +1,16 @@
+## S7-06 — Biên bản đối chiếu công nợ định kỳ với đại lý (Frontend) — 24/10/2026
+
+Nhánh `feature/S7-06-lap-bien-ban-doi-chieu-cong-no(frontend)`. Phạm vi: **Chỉ làm Frontend (FE)** theo yêu cầu của người dùng ("đọc AGENTS.md và làm theo yêu cầu sau(chỉ frontend)"), tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_frontend_design.md` + `SKILLS/SKILL_backend.md`.
+
+| Tiêu chí / Yêu cầu trong ảnh (S7-06) | Backend | Frontend | Đã kết nối đúng / Ma trận phân quyền |
+|---|:---:|:---:|---|
+| **Sinh biên bản theo kỳ gồm số dư đầu kỳ, phát sinh, số dư cuối kỳ** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Menu Tài chính → Đối chiếu công nợ (`/finance/debt-reconciliation`). Gọi API `GET /api/finance/debt/{dealerId}/statement?from=...&to=...`. Hiển thị mẫu biên bản đối chiếu chuẩn Quốc hiệu tiêu ngữ và Bên bán Bên mua, 4 thẻ KPI chỉ số (Số dư nợ đầu kỳ, Phát sinh tăng, Phát sinh giảm, Dư nợ cuối kỳ), kèm bảng kê chi tiết từng chứng từ phát sinh trong kỳ (Đơn hàng, Phiếu thu, Điều chỉnh HĐ) và kết luận số tiền bằng số. |
+| **Xuất PDF để gửi đại lý ký xác nhận** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Nút "Xuất PDF" gọi trực tiếp API `GET /api/finance/debt/{dealerId}/statement/export?from=...&to=...&format=pdf` tải file PDF chuẩn A4 có đầy đủ thông tin kỳ, số dư và khối chữ ký hai bên. Nút "In biên bản" hỗ trợ xem trước và in trực tiếp qua trình duyệt với CSS `@media print` tối ưu. |
+| **Đại lý xác nhận hoặc phản hồi lệch ngay trên cổng đại lý** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Cung cấp 2 hành động tương tác: "Xác nhận khớp đúng" (ghi nhận đại lý đã đồng ý với số dư công nợ cuối kỳ) và "Phản hồi lệch số liệu" (mở modal nhập số dư sổ sách đại lý, tự động tính chênh lệch, bắt buộc nhập lý do và chứng từ chưa khớp tối đa 500 ký tự). Trạng thái phản hồi được hiển thị trực quan cho cả Kế toán và Đại lý. |
+| **Thực thi Ma trận quyền DB & Không fallback vai trò** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Bắt buộc quyền `FINANCE_VIEW_DEBT` từ ma trận DB (hoặc `ROLE_ADMIN`). Thu hồi quyền ở DB khiến API trả về ngay 403 Forbidden và Frontend ẩn menu/khóa màn hình ngay lập tức. Tự động phản ứng với sự kiện `auth:permissions-changed`. Không dùng role-based fallback. Tài khoản đại lý (`ROLE_DEALER`) được tự động khóa phạm vi chỉ đối chiếu công nợ của chính mình. Tuyệt đối không lưu dữ liệu kinh doanh vào `localStorage` hay `sessionStorage`. |
+
+> Kiểm thử S7-06: Frontend gồm bộ test tự động `tests/debt-reconciliation.test.cjs` (7 ca kiểm thử bao phủ định dạng tiền tệ, ngày giờ, xác thực khoảng ngày, xác thực phản hồi lệch chênh lệch, ma trận phân quyền DB không role fallback, route `/finance/debt-reconciliation`, và cam kết không dùng browser storage). Toàn bộ test suite dự án 221/221 Node.js tests PASS.
+
 # Trạng thái sprint 1–8
 
 ## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Backend) (22/10/2026)
