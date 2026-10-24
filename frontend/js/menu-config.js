@@ -341,6 +341,15 @@ const MenuConfig = (() => {
       permissions: ["INVOICE_VIEW", "INVOICE_ADJUST"],
     },
     {
+      id: "debt-reconciliation",
+      section: "Tài chính",
+      label: "Đối chiếu công nợ",
+      icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+      href: "/finance/debt-reconciliation",
+      roles: ALL_ROLES,
+      permission: "FINANCE_VIEW_DEBT",
+    },
+    {
       id: "debt-statement",
       section: "Tài chính",
       label: "Sổ chi tiết công nợ",
@@ -430,7 +439,7 @@ const MenuConfig = (() => {
     return menuItems.filter((item) => {
       if (isAdmin) return true;
       // Tài khoản chỉ là đại lý truy cập dữ liệu của chính mình qua cổng.
-      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal", "dealer-invoices"].includes(item.id)) return false;
+      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal", "dealer-invoices", "debt-reconciliation"].includes(item.id)) return false;
       if (["dealer-orders", "dealer-portal", "dealer-invoices", "audit-logs"].includes(item.id)
           && !item.roles.some((role) => roles.includes(role))) return false;
       if (item.requiredPermissions && !item.requiredPermissions.every(permission => permissions.includes(permission))) return false;
