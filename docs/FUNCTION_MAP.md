@@ -93,6 +93,7 @@
 - S8-03: Một phần: Kho hàng → Sổ cái kho → Chi tiết phiếu nhập đã xác nhận → Lập phiếu điều chỉnh tăng/giảm kèm lý do; chưa có luồng lập/duyệt hai người riêng.
 - S8-04: Chỉ backend → `/api/sales-targets` (đặt/sửa/khóa chỉ tiêu tháng theo nhân viên và khu vực, sửa kỳ đã khóa kèm lý do và nhật ký), `/api/sales-targets/my-progress` (nhân viên xem tiến độ thực tế giữa tháng), `/api/sales-targets/summary` (tổng hợp tiến độ); tự động khóa chỉ tiêu đã qua kỳ.
 - S8-05: Báo cáo → Dashboard điều hành → Sáu chỉ số, doanh số theo ngày/khu vực, đại lý quá hạn và phân trang; lối tắt ở Tổng quan → Công việc.
+- S8-07: Chỉ backend → `/api/reports/inventory-turnover` (giá trị tồn theo kho và nhóm hàng, số ngày tồn bình quân từng SKU, hàng chậm luân chuyển đang chôn vốn), `/api/reports/inventory-turnover/by-warehouse`, `/api/reports/inventory-turnover/by-category`, `/api/reports/inventory-turnover/skus`, `/api/reports/inventory-turnover/slow-moving`, `/api/reports/inventory-turnover/export` (xuất Excel `.xlsx`).
 - S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel (ba cột tồn); tên tệp hiện là `So-ton-kho.xlsx`, chưa kèm mã kho/ngày.
 
 ## Nguồn đối chiếu

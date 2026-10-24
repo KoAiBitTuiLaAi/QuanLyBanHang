@@ -1,5 +1,18 @@
 # Trạng thái sprint 1–8
 
+## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend) — 24/10/2026
+
+Phạm vi thực hiện: **Chỉ làm Backend (BE)** theo đúng yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_backend.md`.
+
+| Tiêu chí / Hạng mục (S8-07) | Backend | Frontend | Đã kết nối đúng / Ma trận phân quyền |
+|---|:---:|:---:|---|
+| **AC1: Giá trị tồn theo kho và theo nhóm hàng** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | API `GET /api/reports/inventory-turnover`, `/by-warehouse`, `/by-category`, `/by-warehouse-category` tổng hợp đầy đủ số lượng tồn thực tế, giữ chỗ, khả dụng, xuất trong kỳ, giá trị tồn kho (`inventoryValue`), tỷ trọng giá trị (`valueSharePercent`) và giá trị hàng chậm luân chuyển đang chôn vốn (`slowMovingValue`) theo từng kho, từng nhóm hàng (hỗ trợ cả nhóm cha – con) và ma trận Kho × Nhóm hàng. |
+| **AC2: Số ngày tồn bình quân của từng SKU, chỉ ra hàng chậm luân chuyển đang chôn vốn** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | API `GET /api/reports/inventory-turnover/skus` và `/slow-moving` tính tồn bình quân `averageInventoryQuantity = (openingQuantity + closingQuantity) / 2`, hệ số vòng quay `turnoverRate`, số ngày tồn bình quân `averageDaysInInventory = (averageInventoryQuantity * periodDays) / outboundQuantity`, phân loại trạng thái luân chuyển (`FAST_MOVING`, `NORMAL_MOVING`, `SLOW_MOVING`, `DEAD_STOCK`, `OUT_OF_STOCK`), đánh dấu `slowMoving = true` và tính giá trị vốn bị chôn (`tiedUpCapitalValue`) kèm thuyết minh nguyên nhân. |
+| **AC3: Xuất Excel (`.xlsx`)** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | API `GET /api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) sinh file `.xlsx` gồm 4 sheet (`Giá trị tồn theo kho`, `Giá trị tồn theo nhóm hàng`, `Vòng quay & Số ngày tồn SKU`, `Hàng chậm luân chuyển`), định dạng tiền tệ/số lượng chuẩn và chống Spreadsheet Formula Injection (`=`, `+`, `-`, `@`). |
+| **Thực thi Ma trận phân quyền DB (`RolePermissionConfig`) & Phạm vi kho** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | Kiểm tra quyền tại cả `SecurityConfig`, `@PreAuthorize` ở `InventoryTurnoverReportController` và `InventoryTurnoverReportServiceImpl`. Bắt buộc có quyền `REPORT_INVENTORY` (hoặc `ROLE_ADMIN`) từ ma trận DB; không dùng role-based fallback. Thu hồi `REPORT_INVENTORY` khỏi `ROLE_WAREHOUSE_MANAGER` lập tức trả về `403 Forbidden` trên cùng JWT; giới hạn phạm vi kho theo phân công của người dùng (`user.warehouses`). |
+
+Kiểm thử Backend S8-07: Gồm `InventoryTurnoverReportServiceTest` (4 unit tests), `InventoryTurnoverReportSecurityTest` (4 `@WebMvcTest` security matrix tests), và `InventoryTurnoverReportIntegrationTest` (4 `@SpringBootTest` + H2 MySQL mode end-to-end tests kiểm chứng giá trị tồn theo kho/nhóm hàng, số ngày tồn bình quân SKU, phát hiện hàng chậm luân chuyển đang chôn vốn, xuất Excel `.xlsx` 4 sheet, giới hạn phạm vi kho và thu hồi quyền `REPORT_INVENTORY` tức thời trên cùng JWT). Đã cập nhật `backend/API_DOCUMENTATION.md` và `docs/FUNCTION_MAP.md`.
+
 ## S7-01 — Frontend phát hành hóa đơn bán hàng — 23/10/2026
 
 | Hạng mục | Backend | Frontend | Kết nối / ma trận quyền |

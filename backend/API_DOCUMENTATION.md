@@ -4079,3 +4079,110 @@ Hỗ trợ Quản lý kinh doanh đặt chỉ tiêu doanh số theo tháng cho t
 | `POST` | `/api/sales-targets/lock-past-periods` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá toàn bộ các chỉ tiêu đã qua kỳ nhưng chưa gắn cờ khoá trong DB |
 | `DELETE` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Xoá chỉ tiêu chưa khoá thuộc kỳ hiện tại hoặc tương lai |
 
+
+---
+
+## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend — 24/10/2026)
+
+Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và theo từng nhóm hàng, tính hệ số vòng quay và số ngày tồn bình quân (Days Inventory Outstanding / Average Days in Inventory) của từng SKU, chỉ ra mặt hàng chậm luân chuyển đang chôn vốn, và xuất toàn bộ báo cáo ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-07)
+
+1. **Giá trị tồn theo kho và theo nhóm hàng**:
+   - Đơn giá vốn quy chuẩn của từng SKU: `unitCost = COALESCE(costPrice > 0, price > 0, 0)`.
+   - Giá trị tồn kho cuối kỳ của SKU tại kho: `inventoryValue = closingQuantity * unitCost`.
+   - Tổng hợp đầy đủ theo 3 chiều:
+     - **Theo kho (`warehouseValuations` / `/by-warehouse`)**: Tổng số SKU có tồn, số SKU chậm luân chuyển, tồn đầu kỳ, nhập trong kỳ, xuất trong kỳ, tồn thực tế cuối kỳ (`physicalQuantity`), tồn đang giữ chỗ (`reservedQuantity`), tồn khả dụng (`availableQuantity`), giá trị tồn kho (`inventoryValue`), tỷ trọng giá trị tồn (`valueSharePercent`), giá trị hàng chậm luân chuyển đang chôn vốn (`slowMovingValue`), hệ số vòng quay và số ngày tồn bình quân của kho.
+     - **Theo nhóm hàng (`categoryValuations` / `/by-category`)**: Tổng hợp tồn lượng, giá trị tồn, tỷ trọng giá trị, số SKU và giá trị vốn bị chôn ở hàng chậm luân chuyển theo từng nhóm hàng (hỗ trợ lọc cả cây nhóm hàng cha – con).
+     - **Theo cặp Kho × Nhóm hàng (`warehouseCategoryValuations` / `/by-warehouse-category`)**: Bóc tách ma trận giá trị tồn và giá trị chôn vốn theo từng kho kết hợp từng nhóm hàng.
+2. **Số ngày tồn bình quân của từng SKU, chỉ ra hàng chậm luân chuyển đang chôn vốn**:
+   - Tồn kho bình quân trong kỳ (`periodDays`, mặc định `30` ngày):
+     - `averageInventoryQuantity = (openingQuantity + closingQuantity) / 2`
+   - Khi có phát sinh xuất kho trong kỳ (`outboundQuantity > 0`):
+     - Hệ số vòng quay trong kỳ: `turnoverRate = outboundQuantity / averageInventoryQuantity`
+     - Hệ số vòng quay quy đổi năm: `annualizedTurnoverRate = turnoverRate * 365 / periodDays`
+     - **Số ngày tồn bình quân (`averageDaysInInventory` / DIO)**: `averageDaysInInventory = (averageInventoryQuantity * periodDays) / outboundQuantity`
+   - **Phát hiện hàng chậm luân chuyển đang chôn vốn (`slowMoving = true`)**:
+     - Khi SKU còn tồn kho cuối kỳ (`closingQuantity > 0`) và thuộc một trong hai trường hợp:
+       1. `outboundQuantity == 0` trong suốt kỳ phân tích $\rightarrow$ phân loại `DEAD_STOCK` (*Tồn đọng không xuất*).
+       2. `averageDaysInInventory >= slowMovingThresholdDays` (mặc định `60` ngày) $\rightarrow$ phân loại `SLOW_MOVING` (*Chậm luân chuyển*).
+     - Giá trị vốn bị chôn của SKU: `tiedUpCapitalValue = inventoryValue` (nếu `slowMoving == true`, ngược lại `0`).
+     - Cung cấp danh sách chuyên biệt `slowMovingItems` (và endpoint `/slow-moving`) sắp xếp giảm dần theo `tiedUpCapitalValue` kèm thuyết minh nguyên nhân (`slowMovingReason`) và số ngày kể từ lần xuất kho gần nhất (`daysSinceLastOutbound`).
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Giá trị tồn theo kho` (Tổng quan KPI + Bảng giá trị tồn theo kho + Bảng giá trị tồn theo Kho × Nhóm hàng).
+     - Sheet 2: `Giá trị tồn theo nhóm hàng`.
+     - Sheet 3: `Vòng quay & Số ngày tồn SKU`.
+     - Sheet 4: `Hàng chậm luân chuyển` (Danh sách SKU đang chôn vốn).
+   - Tự động làm sạch ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+4. **Ma trận phân quyền DB & Phạm vi kho**:
+   - Bắt buộc có quyền `REPORT_INVENTORY` (hoặc `ROLE_ADMIN`) được đọc trực tiếp từ ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: nếu thu hồi `REPORT_INVENTORY` khỏi `ROLE_WAREHOUSE_MANAGER`, mọi request kế tiếp trên cùng JWT lập tức trả `403 Forbidden`.
+   - Nếu tài khoản được gán danh sách kho cụ thể (`user.warehouses`), báo cáo tự động giới hạn trong các kho được phân công và trả `403 Forbidden` nếu truyền `warehouseId` ngoài phạm vi.
+
+### 2. Danh sách Endpoints (`/api/reports/inventory-turnover`, `/api/reports/inventory`, `/api/warehouse/reports/inventory-turnover`, `/api/warehouse/inventory-turnover`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/inventory-turnover/options` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Bộ lọc kho trong phạm vi phân quyền, nhóm hàng, các ngưỡng mặc định và danh mục trạng thái luân chuyển |
+| `GET` | `/api/reports/inventory-turnover` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp giá trị tồn theo kho, theo nhóm hàng, theo kho × nhóm hàng, vòng quay từng SKU và danh sách hàng chậm luân chuyển |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse` (alias `/warehouses`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng kho |
+| `GET` | `/api/reports/inventory-turnover/by-category` (alias `/categories`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse-category` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho chi tiết theo cặp Kho × Nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
+| `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
+| `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
+
+---
+
+## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend — 24/10/2026)
+
+Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và theo từng nhóm hàng, tính hệ số vòng quay và số ngày tồn bình quân (Days Inventory Outstanding / Average Days in Inventory) của từng SKU, chỉ ra mặt hàng chậm luân chuyển đang chôn vốn, và xuất toàn bộ báo cáo ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-07)
+
+1. **Giá trị tồn theo kho và theo nhóm hàng**:
+   - Đơn giá vốn quy chuẩn của từng SKU: `unitCost = COALESCE(costPrice > 0, price > 0, 0)`.
+   - Giá trị tồn kho cuối kỳ của SKU tại kho: `inventoryValue = closingQuantity * unitCost`.
+   - Tổng hợp đầy đủ theo 3 chiều:
+     - **Theo kho (`warehouseValuations` / `/by-warehouse`)**: Tổng số SKU có tồn, số SKU chậm luân chuyển, tồn đầu kỳ, nhập trong kỳ, xuất trong kỳ, tồn thực tế cuối kỳ (`physicalQuantity`), tồn đang giữ chỗ (`reservedQuantity`), tồn khả dụng (`availableQuantity`), giá trị tồn kho (`inventoryValue`), tỷ trọng giá trị tồn (`valueSharePercent`), giá trị hàng chậm luân chuyển đang chôn vốn (`slowMovingValue`), hệ số vòng quay và số ngày tồn bình quân của kho.
+     - **Theo nhóm hàng (`categoryValuations` / `/by-category`)**: Tổng hợp tồn lượng, giá trị tồn, tỷ trọng giá trị, số SKU và giá trị vốn bị chôn ở hàng chậm luân chuyển theo từng nhóm hàng (hỗ trợ lọc cả cây nhóm hàng cha – con).
+     - **Theo cặp Kho × Nhóm hàng (`warehouseCategoryValuations` / `/by-warehouse-category`)**: Bóc tách ma trận giá trị tồn và giá trị chôn vốn theo từng kho kết hợp từng nhóm hàng.
+2. **Số ngày tồn bình quân của từng SKU, chỉ ra hàng chậm luân chuyển đang chôn vốn**:
+   - Tồn kho bình quân trong kỳ (`periodDays`, mặc định `30` ngày):
+     - `averageInventoryQuantity = (openingQuantity + closingQuantity) / 2`
+   - Khi có phát sinh xuất kho trong kỳ (`outboundQuantity > 0`):
+     - Hệ số vòng quay trong kỳ: `turnoverRate = outboundQuantity / averageInventoryQuantity`
+     - Hệ số vòng quay quy đổi năm: `annualizedTurnoverRate = turnoverRate * 365 / periodDays`
+     - **Số ngày tồn bình quân (`averageDaysInInventory` / DIO)**: `averageDaysInInventory = (averageInventoryQuantity * periodDays) / outboundQuantity`
+   - **Phát hiện hàng chậm luân chuyển đang chôn vốn (`slowMoving = true`)**:
+     - Khi SKU còn tồn kho cuối kỳ (`closingQuantity > 0`) và thuộc một trong hai trường hợp:
+       1. `outboundQuantity == 0` trong suốt kỳ phân tích $\rightarrow$ phân loại `DEAD_STOCK` (*Tồn đọng không xuất*).
+       2. `averageDaysInInventory >= slowMovingThresholdDays` (mặc định `60` ngày) $\rightarrow$ phân loại `SLOW_MOVING` (*Chậm luân chuyển*).
+     - Giá trị vốn bị chôn của SKU: `tiedUpCapitalValue = inventoryValue` (nếu `slowMoving == true`, ngược lại `0`).
+     - Cung cấp danh sách chuyên biệt `slowMovingItems` (và endpoint `/slow-moving`) sắp xếp giảm dần theo `tiedUpCapitalValue` kèm thuyết minh nguyên nhân (`slowMovingReason`) và số ngày kể từ lần xuất kho gần nhất (`daysSinceLastOutbound`).
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Giá trị tồn theo kho` (Tổng quan KPI + Bảng giá trị tồn theo kho + Bảng giá trị tồn theo Kho × Nhóm hàng).
+     - Sheet 2: `Giá trị tồn theo nhóm hàng`.
+     - Sheet 3: `Vòng quay & Số ngày tồn SKU`.
+     - Sheet 4: `Hàng chậm luân chuyển` (Danh sách SKU đang chôn vốn).
+   - Tự động làm sạch ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+4. **Ma trận phân quyền DB & Phạm vi kho**:
+   - Bắt buộc có quyền `REPORT_INVENTORY` (hoặc `ROLE_ADMIN`) được đọc trực tiếp từ ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: nếu thu hồi `REPORT_INVENTORY` khỏi `ROLE_WAREHOUSE_MANAGER`, mọi request kế tiếp trên cùng JWT lập tức trả `403 Forbidden`.
+   - Nếu tài khoản được gán danh sách kho cụ thể (`user.warehouses`), báo cáo tự động giới hạn trong các kho được phân công và trả `403 Forbidden` nếu truyền `warehouseId` ngoài phạm vi.
+
+### 2. Danh sách Endpoints (`/api/reports/inventory-turnover`, `/api/reports/inventory`, `/api/warehouse/reports/inventory-turnover`, `/api/warehouse/inventory-turnover`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/inventory-turnover/options` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Bộ lọc kho trong phạm vi phân quyền, nhóm hàng, các ngưỡng mặc định và danh mục trạng thái luân chuyển |
+| `GET` | `/api/reports/inventory-turnover` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp giá trị tồn theo kho, theo nhóm hàng, theo kho × nhóm hàng, vòng quay từng SKU và danh sách hàng chậm luân chuyển |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse` (alias `/warehouses`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng kho |
+| `GET` | `/api/reports/inventory-turnover/by-category` (alias `/categories`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse-category` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho chi tiết theo cặp Kho × Nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
+| `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
+| `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
+
