@@ -197,7 +197,7 @@ public class OrderController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ORDER_CREATE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_CREATE')")
     public ResponseEntity<ApiResponse> createOrder(
             @Valid @RequestBody OrderRequest request,
             Principal principal) {
@@ -215,7 +215,7 @@ public class OrderController {
      * Không có bảng giá hiệu lực cho SKU đó thì chặn thêm dòng hàng kèm thông báo rõ lý do.
      */
     @PostMapping("/line-item/pricing")
-    @PreAuthorize("hasAuthority('ORDER_CREATE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_CREATE')")
     public ApiResponse calculateLineItemPricing(@Valid @RequestBody OrderLineItemPricingRequest request) {
         OrderLineItemPricingResponse response = orderService.calculateLineItemPricing(request);
         return ApiResponse.success("Áp giá và chiết khấu dòng hàng thành công", response);
@@ -226,7 +226,7 @@ public class OrderController {
      * Chặn thêm dòng hàng nếu có SKU chưa có trong bảng giá hiệu lực.
      */
     @PostMapping("/calculate")
-    @PreAuthorize("hasAuthority('ORDER_CREATE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_CREATE')")
     public ApiResponse calculateOrder(@Valid @RequestBody OrderCalculateRequest request) {
         OrderCalculateResponse response = orderService.calculateOrder(request);
         return ApiResponse.success("Tính toán giá và chiết khấu đơn hàng thành công", response);
@@ -236,7 +236,7 @@ public class OrderController {
      * Cập nhật thông tin giao hàng và số lượng thực giao cho từng dòng hàng (S5-01).
      */
     @PutMapping("/{id}/delivery")
-    @PreAuthorize("hasAuthority('WAREHOUSE_EXPORT')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_EXPORT')")
     public ApiResponse updateOrderDelivery(
             @PathVariable Long id,
             @Valid @RequestBody com.quanlybanhang.dto.request.OrderDeliveryUpdateRequest request,
@@ -263,7 +263,7 @@ public class OrderController {
      * Đơn đã xuất kho thì không huỷ được, phải đi đường trả hàng.
      */
     @PutMapping("/{id}/cancel")
-    @PreAuthorize("hasAuthority('ORDER_CANCEL')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_CANCEL')")
     public ApiResponse cancelOrder(
             @PathVariable Long id,
             @RequestBody(required = false) OrderCancelRequest request,
@@ -320,7 +320,7 @@ public class OrderController {
      * Đơn được duyệt mới chuyển sang giữ chỗ tồn kho và chờ xuất kho.
      */
     @PutMapping("/{id}/approve")
-    @PreAuthorize("hasAuthority('ORDER_APPROVE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_APPROVE')")
     public ApiResponse approveOrder(
             @PathVariable Long id,
             @RequestParam(required = false) Integer reservationHours,
@@ -347,7 +347,7 @@ public class OrderController {
      * Đơn hàng của đại lý bị khoá vẫn được xử lý tiếp nhưng có cảnh báo (S3-07).
      */
     @PutMapping("/{id}/reject")
-    @PreAuthorize("hasAuthority('ORDER_APPROVE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_APPROVE')")
     public ApiResponse rejectOrder(
             @PathVariable Long id,
             @RequestParam(required = false) String reason,
@@ -380,7 +380,7 @@ public class OrderController {
      * Bắt buộc có ý kiến/lý do trả lại (400 Bad Request nếu thiếu hoặc để trống).
      */
     @PutMapping("/{id}/return")
-    @PreAuthorize("hasAuthority('ORDER_APPROVE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_APPROVE')")
     public ApiResponse returnOrder(
             @PathVariable Long id,
             @RequestParam(required = false) String reason,
@@ -399,7 +399,7 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/return")
-    @PreAuthorize("hasAuthority('ORDER_APPROVE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_APPROVE')")
     public ApiResponse returnOrderPost(
             @PathVariable Long id,
             @RequestParam(required = false) String reason,
@@ -412,7 +412,7 @@ public class OrderController {
      * S4-05: Lấy lịch sử duyệt đơn hàng (bất biến, không thể sửa/xoá).
      */
     @GetMapping("/{id}/approval-history")
-    @PreAuthorize("hasAuthority('ORDER_APPROVE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_APPROVE')")
     public ApiResponse getOrderApprovalHistory(@PathVariable Long id) {
         List<OrderApprovalHistoryResponse> history = orderService.getOrderApprovalHistory(id);
         return ApiResponse.success("Lịch sử duyệt đơn hàng", history);
@@ -495,7 +495,7 @@ public class OrderController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('ORDER_APPROVE')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('ORDER_APPROVE')")
     public ApiResponse reviewOrderStatus(
             @PathVariable Long id,
             @Valid @RequestBody OrderStatusUpdateRequest request,

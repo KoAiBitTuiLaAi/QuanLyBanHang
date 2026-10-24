@@ -51,7 +51,7 @@
   }
   function render() {
     $('stock-rows').innerHTML = state.rows.map(row => `<tr class="${row.belowMinimum === true ? 'stock-row--below-minimum' : ''}">
-      <td><strong>${esc(row.productName)}</strong><small>${esc(row.productCode)}</small></td>
+      <td><strong>${esc(row.productName)}</strong><small>${esc(row.productCode)}</small><small><a href="/warehouse/stock-card?productId=${encodeURIComponent(row.productId)}&amp;warehouseId=${encodeURIComponent(row.warehouseId)}">Xem thẻ kho</a></small></td>
       <td>${esc(row.categoryName || 'Chưa phân nhóm')}</td><td><strong>${esc(row.warehouseName)}</strong><small>${esc(row.warehouseCode)}</small></td>
       <td>${esc(row.baseUnit || '—')}</td><td class="stock-number">${quantity(row.physicalQuantity)}</td>
       <td class="stock-number">${quantity(row.reservedQuantity)}</td><td class="stock-number stock-available">${quantity(row.availableQuantity)}</td>

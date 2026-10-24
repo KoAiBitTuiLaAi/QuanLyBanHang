@@ -1,8 +1,113 @@
-# SaleStock API — Sprint 1–5
+# SaleStock API — Sprint 1–7
 
 Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
+
+## S6-07 — Frontend theo dõi chuyến giao và sửa số liệu đọc (23/10/2026)
+
+Menu **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`. VIEW hoặc EXPORT theo ma trận DB; ADMIN luôn có quyền. Các API theo dõi dùng scope kho sẵn có, không dùng vai trò thay grant.
+
+| Method | Endpoint sau `/api` | Hợp đồng đọc |
+|---|---|---|
+| GET | `/warehouse/delivery-trips/options` | Kho trong phạm vi, `tripStatuses`, `stopStatuses`, `canManage` hiện có. Giao diện này không bật thao tác ghi theo `canManage` |
+| GET | `/warehouse/delivery-trips?warehouseId=1&status=IN_PROGRESS&isOverdue=true&keyword=CG&page=0&size=20&outstandingOnly=true` | Spring Page trong `data`; các filter là tùy chọn, page >=0, size 1–200, keyword <=150. `outstandingOnly` mặc định false; true dùng EXISTS điểm chưa DELIVERED và chưa xác nhận trả kho, áp được mọi trạng thái chuyến |
+| GET | `/warehouse/delivery-trips/summary?warehouseId=1` | Chỉ lọc kho, không lọc keyword/status/isOverdue của danh sách. Trả số liệu các chuyến IN_PROGRESS cũ và 4 trường trách nhiệm toàn trạng thái mới bên dưới |
+| GET | `/warehouse/delivery-trips/{id}` | Chi tiết chuyến, tiến độ/giá trị, `isOverdue/overdueMinutes/overdueWarning`, stops và items. Ngoài scope → 403; không thay đổi hàng/tồn/trạng thái |
+
+Trường summary bổ sung (không đổi schema):
+
+- `totalOutstandingValue`: tiền hàng chưa giao/chưa xác nhận trả kho trên **mọi trạng thái**; `totalOutstandingTrips`: số chuyến có điểm chưa xử lý xong (cả trường hợp giá trị 0).
+- `closedOutstandingValue`, `closedOutstandingTrips`: phần còn thuộc chuyến COMPLETED/CANCELLED, để đổi trạng thái không làm biến mất trách nhiệm. Đây là số liệu đọc bổ sung, không thay đổi API hoàn tất/hủy.
+- Các trường cũ `totalRunningTrips/totalValueOnRoad/totalDeliveredPoints/totalRemainingPoints/totalOverdueTrips/...` tiếp tục chỉ cho chuyến đang chạy. `remainingPoints/remainingValue` đã sửa để loại điểm `returnedToWarehouse=true`; FAILED chưa trả vẫn tính, không cộng tồn tự động. `failedPoints/failedValue` vẫn là lịch sử điểm giao thất bại, kể cả sau khi trả.
+- Filter `isOverdue=false` bao gồm trường hợp thiếu thời gian dự kiến (phù hợp `isOverdue=false` trong DTO); không tự coi quá hạn chỉ vì đồng hồ trình duyệt khác server.
+
+Frontend S6-07 chỉ gửi GET, không gọi các POST/PUT tạo chuyến/giao/hoàn/hủy/trả kho hiện có. Không sửa chúng trong nhánh này. Không seed/reset DB hoặc nâng schema để kiểm tra giao diện.
+
+## S6-05 — Xác nhận xuất theo đơn, xuất thiếu và xuất bù (23/10/2026)
+
+| Method | Endpoint (sau `/api`) | Hợp đồng |
+|---|---|---|
+| GET | `/warehouse/order-shipments/options` | Kho hoạt động trong phạm vi, `canConfirm`, `quantityScale`, chính sách giữ chỗ |
+| GET | `/warehouse/order-shipments?queue=READY&warehouseId=1&keyword=DH&page=0&size=20` | `queue`: READY/BACKORDER/HISTORY; Spring Page trong `data`; size 1–100. BACKORDER là đơn đã xuất một phần còn lượng chưa xuất |
+| GET | `/warehouse/order-shipments/{orderId}` | `version`, trạng thái, `backordered`, `canConfirm`, `blockedReason`; từng dòng: ordered/exported/remaining, đơn vị/hệ số đóng băng, lô còn hạn; receipts là các phiếu đã xác nhận, chỉ đọc |
+| POST | `/warehouse/order-shipments/{orderId}/confirm` | Xác nhận ngay một phiếu bất biến. Body bên dưới; không có API sửa/xóa phiếu này |
+
+```json
+{
+  "version": 2,
+  "requestKey": "dbb77869-ff94-44bc-adb7-6c8df0cf98b5",
+  "note": "Xuất lượt đầu",
+  "items": [{"orderItemId": 10, "quantity": "4", "lotNumber": null, "reason": "Còn thiếu, xuất bù lượt sau"}]
+}
+```
+
+- GET cần WAREHOUSE_VIEW hoặc WAREHOUSE_EXPORT; POST cần WAREHOUSE_EXPORT. Ma trận DB được nạp lại mỗi request, kể cả JWT cũ; ADMIN luôn được phép. Mọi tài khoản không phải ADMIN chỉ thao tác kho được gán rõ; không gán kho không được xem toàn cục. Không cần cấp thêm ORDER_VIEW để dùng màn kho.
+- Gửi đủ các dòng của đơn, không trùng/ngoại đơn; quantity >=0, tối đa 11 số nguyên/4 số lẻ, không vượt phần chưa xuất, ít nhất một dòng >0. Mọi dòng xuất thiếu cần reason (<=255); lượng 0 cũng được lưu kèm lý do. Quy đổi cơ sở phải biểu diễn chính xác trong 4 số lẻ. Không nhận giá/hệ số/SL cơ sở do client sửa.
+- Chỉ đơn đã duyệt/đang soạn còn giữ chỗ, chưa hết hạn hoặc EXPORTED còn nợ được xuất. Khóa order → order items → tồn vật lý theo SKU → lô; tính/trừ đúng lượng thực xuất và giữ chỗ trong một transaction cùng phiếu, lịch sử, audit. Tồn vật lý không được thấp hơn tổng giữ chỗ; lỗi bất kỳ hoàn tác toàn bộ. Mỗi lượt tăng `shipmentSequence` để phiên bản đơn tăng kể cả xuất một phần lặp lại.
+- Lô mặc định theo FEFO còn hạn và đủ lượng; kiểm lại trên bản ghi khóa, trừ đúng lô. SKU tắt manageLot nhưng còn tồn lô vẫn xử lý theo lô. Lô thủ công khác gợi ý cần lý do; lô quá hạn/thiếu HSD/không đủ bị chặn. Không tự gộp lô hoặc đổi lô âm thầm.
+- UUID + hash nội dung được lưu trên phiếu. Cùng key/nội dung trả lại kết quả hiện tại, không trừ lần hai; cùng key khác nội dung hoặc version cũ trả 409. Không tự retry bằng key mới khi mất kết quả; đọc lại đơn/phiếu để đối chiếu.
+- Đơn xuất một phần vẫn EXPORTED, `backordered=true`, `inventoryReserved=true`; chỉ phần chưa xuất tiếp tục giữ chỗ, xóa hạn giữ chỗ để scheduler không bỏ quên nợ hàng sau lượt đầu. Xuất bù đủ → `backordered=false`, hết giữ chỗ. Không sửa `deliveredQuantity`, không tự ghi nhận doanh thu/giao hàng. Chặn hủy đơn đã xuất và chặn giao/đóng/gán chuyến toàn đơn khi còn nợ.
+- PUT `/orders/{id}/status` sang EXPORTED dùng chung nghiệp vụ xuất đủ còn lại (giữ tương thích API cũ), không trừ tồn hai lần; UI mở phiếu để người dùng nhập lượng thực. Thẻ kho dùng các phiếu VOUCHER mới và bỏ phát sinh ORDER tương ứng, tránh đếm hai lần. Đơn lịch sử chưa có `exportedQuantity` vẫn suy lượng đã xuất từ trạng thái cũ, không tạo nợ hàng giả.
+- Schema bổ sung nullable/backward-compatible: `orders.backordered`, `orders.shipment_sequence`, `order_items.exported_quantity`, `warehouse_vouchers.shipment_order_id/shipment_request_key` (unique)/`shipment_request_hash`, `warehouse_voucher_items.shipment_order_item_id`. Cơ chế `ddl-auto=update` hiện có thêm cột lúc khởi động; sao lưu DB trước triển khai, không xóa bảng/dữ liệu. Giữ phiếu xuất cũ; phiếu liên kết đơn không sửa/xóa/điều chỉnh qua API phiếu chung, xử lý trả hàng theo luồng riêng.
+
+## S6-04 — Gợi ý FEFO và giao diện xuất theo lô (23/10/2026)
+
+Giao diện **Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO**, `/warehouse/lots?tab=fefo`. Dùng các API hiện có, không đổi schema:
+
+| Method | Endpoint (sau `/api`) | Hợp đồng hiện tại |
+|---|---|---|
+| GET | `/warehouse/lots/options` | Kho đang hoạt động trong phạm vi, SKU/đơn vị cơ sở, `canExport`; VIEW hoặc MANAGE, ADMIN toàn quyền |
+| GET | `/warehouse/export/suggest-lot?warehouseId=1&productId=10&quantity=10&unit=lon` | VIEW hoặc EXPORT; lượng >0, tối đa 11 chữ số nguyên/4 số lẻ. Trả kho/SKU/lượng/đơn vị, `suggestedLot`, `availableLots`, `message`, `hasSufficientStock` |
+| POST | `/warehouse/export/suggest-lots` | Quyền tương tự GET; danh sách yêu cầu gợi ý, không ghi tồn |
+| POST | `/warehouse/export` | EXPORT; `{warehouseId,items:[{productId,quantity,unit,lotNumber,suggestedLotNumber?,overrideReason?}]}`. Server tự sinh mã phiếu, kiểm quyền/scope, đọc lại tồn/lô và ghi phiếu+tồn+audit cùng giao dịch |
+
+- `suggestedLot` chỉ là **một lô còn hạn, có HSD, đủ lượng**, sắp HSD gần nhất, sau đó NSX/ID. HSD hôm nay vẫn còn hạn. Không lấy lô quá hạn/thiếu HSD làm mặc định, kể cả ADMIN. `hasSufficientStock` là có một lô hợp lệ đủ lượng, không phải tổng tồn chia nhiều lô. `availableLots` vẫn trả các lô có tồn để giải thích trường hợp bị chặn; UI không cho chọn quá hạn/thiếu HSD trong tab FEFO.
+- SKU legacy tắt `manageLot` nhưng còn tồn theo lô vẫn được gợi ý theo lô để khớp quy tắc xuất S6-01. SKU không quản lý và không có tồn lô trả danh sách rỗng/thông báo; FEFO không thay luồng xuất hàng không quản lý lô.
+- Server bỏ qua gợi ý do client giả mạo và tính lại dưới khóa khi xuất. Khác lô gợi ý hiện tại bắt buộc lý do; không tự đổi lô người dùng đã chọn khi tồn thay đổi. Không đủ tồn lô hoặc tồn khả dụng (thực tế trừ giữ chỗ) thì 400 và rollback toàn bộ. Lô quá hạn chỉ có thể xuất qua cơ chế ghi đè S6-01 có quyền, xác nhận và lý do; không bỏ kiểm tra này.
+- Xuất lấy khóa tồn vật lý trước, rồi khóa các lô cùng kho/SKU theo ID bằng current read để hai yêu cầu đồng thời không dùng chung số dư lô cũ. Chỉ lô đã chọn bị trừ; không giải phóng giữ chỗ của đơn khác. Thu hồi quyền trả 403 trên JWT hiện tại, không cần đăng nhập lại.
+
+## S6-03 — Phiếu soạn hàng, frontend + backend (23/10/2026)
+
+Trang `/warehouse/picking`, menu **Kho hàng → Phiếu soạn hàng**. Quyền đọc: `WAREHOUSE_VIEW` **hoặc** `WAREHOUSE_EXPORT`; quyền tạo/lưu dòng/hoàn tất/hủy: `WAREHOUSE_EXPORT`. `ROLE_ADMIN` luôn được phép; người dùng khác chỉ thao tác kho được gán, kể cả khi role không phải Thủ kho. Không có kho được gán không đồng nghĩa truy cập toàn bộ kho. Thu hồi quyền có hiệu lực với JWT hiện tại ở request tiếp theo; UI đóng/xóa form và vô hiệu phản hồi trễ khi nhận thay đổi quyền.
+
+| Method | Endpoint (sau `/api`) | Hợp đồng |
+|---|---|---|
+| GET | `/warehouse/picking-batches/options` | Kho đang dùng trong phạm vi, nhãn trạng thái, `canCreate`, `maxOrders=100`, `maxLines=500`, `quantityScale=4`, mô tả tuyến |
+| GET | `/warehouse/picking-batches/eligible-orders?warehouseId=1&page=0&size=20&keyword=DH` | Chỉ đơn cùng kho, đã duyệt/đang soạn (`RECORDED/APPROVED/PICKING/PROCESSING`), còn giữ chỗ, chưa hết hạn và chưa có lượt soạn chưa hủy. Trả `Page<EligibleOrder>` không có giá/công nợ |
+| GET | `/warehouse/picking-batches?warehouseId=1&status=IN_PROGRESS&keyword=PSH&page=0&size=20` | `Page<Summary>`, lọc trong phạm vi kho; `size` 1–100, `page` không âm |
+| GET | `/warehouse/picking-batches/{id}` | `Detail{summary,note,cancelReason,completedAt,items,canEdit,canComplete,canCancel,blockedReason}` |
+| POST | `/warehouse/picking-batches` | `{warehouseId,orderIds:[101,102],code?:"PSH-001",note?:"..."}`; mã trống tự sinh; 1–100 đơn không trùng, cùng kho, tối đa 500 dòng |
+| PUT | `/warehouse/picking-batches/{id}/items/{itemId}` | `{version:0,pickedQuantity:1.5,checked:true,shortageReason:"Thiếu tại kệ"}`. `version` là phiên bản phiếu đang xem; số lượng theo đơn vị đóng băng của dòng đơn gốc |
+| POST | `/warehouse/picking-batches/{id}/complete` | `{version:1}`; mọi dòng đã lưu/đánh dấu, số thực soạn hợp lệ; hoàn tất rồi không sửa/hủy |
+| POST | `/warehouse/picking-batches/{id}/cancel` | `{version:1,reason:"Đổi tuyến soạn"}`; chỉ lượt đang soạn, bắt buộc lý do; giải phóng quyền chọn các đơn cho lượt mới, không đổi tồn |
+
+`Summary` gồm `id,version,code,warehouseId,warehouseCode,warehouseName,status,statusLabel,orderCount,lineCount,checkedCount,shortageCount,createdAt,createdBy`. Mỗi dòng trả `id,orderId,orderCode,productId,productCode,productName,unit,baseUnit,quantity,conversionFactor,pickedQuantity,pickedBaseQuantity,checked,shortageQuantity,shortageReason,locationId,locationCode,locationDisplay,routePosition`. Không tự mặc định số đặt thành thực soạn; chưa nhập trả null, số 0 được lưu nguyên.
+
+Quy tắc dữ liệu:
+
+- Tạo mới chốt số lượng/đơn vị/hệ số từ đơn và vị trí mặc định đang dùng trong kho. Dòng thuộc nhiều đơn được giữ liên kết riêng, nhưng sắp liền theo tuyến khu/kệ. Cột `pickingSequence` (0–1.000.000 hoặc null) được bổ sung vào API tạo/sửa/đọc vị trí hiện có; cấu hình ở **Kho & vị trí lưu → Thêm/Sửa vị trí → Thứ tự đường đi khi soạn**. Số nhỏ trong cùng khu đi trước, chưa khai báo thì so mã tự nhiên (`KE-2` trước `KE-10`), chưa có vị trí hợp lệ xếp cuối và hiển thị cảnh báo. Đây là thứ tự tuyến được khai báo, không tuyên bố đường ngắn nhất theo tọa độ.
+- Sau khi tạo, thay đổi tên/thứ tự/đơn vị trong danh mục không sửa lại snapshot phiếu cũ. Đơn đã duyệt chuyển sang `PICKING` trong cùng giao dịch; không trừ tồn thực hoặc nhả giữ chỗ.
+- Thực soạn từ 0 đến số yêu cầu, tối đa 11 chữ số nguyên và 4 số lẻ; quy đổi cơ sở cũng phải hợp lệ. Có ghi thực soạn thiếu thì bắt buộc lý do, kể cả 0 và dòng chưa đánh dấu. Đánh dấu đã soạn bắt buộc nhập thực soạn. API kiểm tra lại trạng thái/giữ chỗ/hạn của đơn và trạng thái kho mỗi lần lưu/hoàn tất; vẫn cho hủy lượt bị chặn để đối soát.
+- Khóa đơn theo ID tăng dần, claim DB duy nhất cho mỗi đơn chống tạo trùng đồng thời. Claim của phiếu hoàn tất được giữ để không soạn lại cùng đơn; hủy lượt giải phóng claim nhưng giữ các dòng lịch sử. Parent `@Version` + khóa phiếu ngăn ghi đè, phiên bản cũ trả **409**; frontend giữ nguyên dữ liệu nhập để người dùng đối chiếu/tải lại. Mọi lỗi giao dịch, kể cả audit, rollback cả dữ liệu/trạng thái/claim.
+- Phiếu soạn **không phải** phiếu xuất/giao hàng; không tự cập nhật `deliveredQuantity` hoặc nhập trả phần thiếu. Việc xuất/giao vẫn theo luồng chứng từ riêng. Không lưu nghiệp vụ vào localStorage/sessionStorage.
+
+Schema mới do cấu hình Hibernate `ddl-auto=update` hiện có tạo khi triển khai: `picking_batches`, `picking_batch_items`, `picking_order_claims`; thêm `warehouse_locations.picking_sequence`. Kiểm thử chạy trên H2 tạm và Chrome HTTP fixtures, không migration/reset/ghi dữ liệu DB thật.
+
+## S5 — bản sửa tích hợp 22/10/2026
+
+Hợp đồng dưới đây ưu tiên hơn các ví dụ/role mặc định lịch sử ở cuối tài liệu.
+
+| API | Quyền và ràng buộc mới được kiểm thử |
+|---|---|
+| `POST /warehouse/export` | `WAREHOUSE_EXPORT` hoặc ADMIN; chỉ xuất tối đa tồn khả dụng (= tồn thực − giữ chỗ), kiểm tra dưới khóa dòng tồn. Không được dùng hàng giữ chỗ của đơn khác, kể cả ADMIN. |
+| `POST /warehouse/adjust` | `WAREHOUSE_ADJUST` hoặc ADMIN; kiểm tra kho được phân công cho người không phải ADMIN. Tồn sau điều chỉnh không âm và không dưới giữ chỗ. Một dòng lỗi hoàn lại cả giao dịch. |
+| `PUT /orders/{id}/delivery` | `WAREHOUSE_EXPORT` hoặc ADMIN, đồng thời kiểm tra phạm vi kho. Chỉ từ đã xuất sang đã giao (hoặc cập nhật lại khi đã giao). ID dòng phải thuộc đơn, không lặp; số thực giao 0..số đặt, tối đa 4 số lẻ; ghi chú tối đa 500 ký tự. Dòng không gửi giữ nguyên theo hợp đồng cập nhật từng phần. |
+| `GET /orders/{id}` | `OrderResponse.canUpdateDelivery` là khả năng chỉnh thực giao theo quyền, kho và vòng đời hiện tại; không thay thế kiểm tra quyền khi ghi. Trả thực giao/ngày giao/ghi chú/thiếu từ DB. |
+| `GET /portal/orders/{id}/reorder-preview` | ADMIN hoặc đại lý có `ORDER_VIEW` + `ORDER_CREATE`, giới hạn đơn thuộc đại lý. Frontend dùng `sourceOrderId`, `sourceOrderCode`, `defaultExpectedDeliveryDate`, `availableItems[].sourceItemId/currentPrice`, `discontinuedItems`, không yêu cầu thêm `PRODUCT_VIEW`. |
+| `POST /portal/orders/{id}/reorder` | Dùng API đặt lại chuyên biệt, không gọi tạo đơn chung. Gửi `deliveryPointId`, `expectedDeliveryDate`, `note`, `items[{productId,productCode,unit,quantity,note}]`; không gửi giá. Backend kiểm tra lại mặt hàng/bảng giá khi ghi và trả `data: {order, excludedItems, warnings}`. |
+
+Frontend đóng/xóa form và vô hiệu phản hồi đang chờ khi quyền thay đổi; chống bấm kép. Thu hồi quyền có hiệu lực trên API với JWT hiện tại. Form thực giao gửi toàn bộ các dòng được nhập; không tự coi số đặt là số đã giao. Ghi nhận thực giao không tự nhập trả phần giao thiếu; việc trả kho vẫn dùng chứng từ riêng.
 
 ## Ma trận quyền — cập nhật 20/10/2026
 
@@ -14,7 +119,7 @@ Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message":
 | GET `/admin/permissions` | ADMIN; giữ nguyên catalog quyền và matrix |
 | PUT `/admin/permissions` | ADMIN; body là object `{ "ROLE_SALES": ["ORDER_VIEW", "ORDER_CREATE"], "ROLE_VIEWER": [] }`; chỉ thay vai trò có trong body, lưu toàn bộ thay đổi trong một transaction; trả matrix/catalog mới. Body rỗng không hợp lệ |
 | PUT `/admin/permissions/{role}` | ADMIN; array quyền, vẫn tương thích API cũ; `[]` là thu hồi hết quyền và được lưu qua restart |
-| GET `/products/lookup`, `/products/lookup/{id}` | Một trong PRODUCT_VIEW/CREATE/EDIT, ORDER_CREATE, WAREHOUSE_VIEW/MANAGE/IMPORT/EXPORT; danh mục tham chiếu tối thiểu, không trả giá vốn hoặc doanh thu; list hỗ trợ `search`, `active` |
+| GET `/products/lookup`, `/products/lookup/{id}` | Một trong PRODUCT_VIEW/CREATE/EDIT, ORDER_CREATE, WAREHOUSE_VIEW/MANAGE/IMPORT/EXPORT/APPROVE/ADJUST; danh mục tham chiếu tối thiểu, gồm `manageLot`, không trả giá vốn hoặc doanh thu; list hỗ trợ `search`, `active` |
 | GET `/categories/options` | PRODUCT_VIEW/CREATE/EDIT; chỉ id/code/name cho bộ chọn, không trả doanh thu |
 | Sản phẩm / nhóm hàng | GET chi tiết/danh sách: PRODUCT_VIEW; POST: PRODUCT_CREATE; PUT/PATCH/chuyển nhóm: PRODUCT_EDIT; DELETE: PRODUCT_DELETE. Lịch sử giá: FINANCE_VIEW_COST_PRICE |
 | Nhập sản phẩm Excel | Preview/import cần cả PRODUCT_CREATE + PRODUCT_EDIT vì file có thể chứa SKU tạo mới và cập nhật; template cần một trong hai |
@@ -599,67 +704,130 @@ Hỗ trợ Nhân viên kho khai báo đơn vị quy đổi theo cách kho đang 
 
 | Method | Endpoint | Quyền | Mô tả |
 |---|---|---|---|
-| POST | `/warehouse/import` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu nhập kho từ nhà cung cấp (S5-04: hỗ trợ nhập theo thùng/lốc tự động quy về đơn vị cơ sở; khai báo NCC, số chứng từ, ngày nhập, kho nhập; ghi nhận số lô & HSD cho hàng có quản lý lô; `status="DRAFT"` hoặc `draft=true` để lưu nháp) |
-| POST | `/warehouse/import/draft` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Tạo nhanh phiếu nhập kho ở trạng thái Nháp (DRAFT) — phiếu nháp không ảnh hưởng tồn kho |
-| POST | `/warehouse/vouchers/{id}/confirm` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Xác nhận phiếu nhập kho nháp — lúc này hệ thống mới thực hiện cộng tồn kho và cập nhật sổ tồn kho theo lô |
-| PUT | `/warehouse/vouchers/{id}` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Sửa phiếu nhập kho nháp (Phiếu đã xác nhận BỊ CHẶN sửa, trả lỗi yêu cầu lập phiếu điều chỉnh) |
-| DELETE | `/warehouse/vouchers/{id}` | `WAREHOUSE_IMPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Xóa phiếu nhập kho nháp (Phiếu đã xác nhận BỊ CHẶN xóa) |
-| POST | `/warehouse/vouchers/{id}/adjust` | `WAREHOUSE_ADJUST` hoặc `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu điều chỉnh cho phiếu kho đã xác nhận (chỉ Quản lý kho và Quản trị viên) |
-| POST | `/warehouse/export` | `WAREHOUSE_EXPORT` hoặc `ROLE_WAREHOUSE_STAFF`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Lập phiếu xuất kho (quy về đơn vị cơ sở và kiểm tra tồn kho theo đơn vị cơ sở) |
+| GET | `/warehouse/import/options` | Một trong `WAREHOUSE_IMPORT`, `WAREHOUSE_APPROVE`, `WAREHOUSE_ADJUST`; hoặc ADMIN | `{warehouses, suppliers}`: kho trong phạm vi, NCC hoạt động, chỉ id/code/name; không đòi quyền quản lý NCC |
+| GET | `/warehouse/imports?warehouseId=1` | Như options | Phiếu nhập và phiếu điều chỉnh có tham chiếu trong phạm vi kho; dùng cho sổ phiếu khi không có WAREHOUSE_VIEW |
+| POST | `/warehouse/import` | `WAREHOUSE_IMPORT`; ghi sổ ngay còn cần `WAREHOUSE_APPROVE`; hoặc ADMIN | Tương thích nhập trực tiếp; `draft=true`/`status=DRAFT` không cộng tồn |
+| POST | `/warehouse/import/draft` | `WAREHOUSE_IMPORT` hoặc ADMIN | Lưu nháp DB, không thay tồn tổng/lô |
+| POST | `/warehouse/vouchers/{id}/confirm` | `WAREHOUSE_APPROVE` hoặc ADMIN | Khóa phiếu/kho/tồn, chốt quy đổi hiện hành, cộng tồn đúng một lần |
+| PUT | `/warehouse/vouchers/{id}` | `WAREHOUSE_IMPORT` hoặc ADMIN | Chỉ sửa phiếu nhập DRAFT, gửi `version` từ lần đọc gần nhất để chặn ghi đè phiên khác |
+| DELETE | `/warehouse/vouchers/{id}` | `WAREHOUSE_IMPORT` hoặc ADMIN | Chỉ xóa phiếu nhập DRAFT |
+| POST | `/warehouse/vouchers/{id}/adjust` | `WAREHOUSE_ADJUST` hoặc ADMIN | Cùng kho phiếu gốc; bắt buộc lý do; không âm tồn/lô hoặc giảm dưới tồn giữ chỗ; giữ nguyên dòng phiếu gốc |
+| POST | `/warehouse/export` | `WAREHOUSE_EXPORT` hoặc `ROLE_ADMIN` | Lập phiếu xuất kho (quy về đơn vị cơ sở, gợi ý/áp dụng lô FEFO, trừ đúng tồn của lô đã chọn và kiểm tra tồn kho theo đơn vị cơ sở) (S6-04) |
+| GET | `/warehouse/export/suggest-lot` | `WAREHOUSE_EXPORT` hoặc `WAREHOUSE_VIEW` hoặc `ROLE_ADMIN` | Gợi ý lô xuất theo FEFO (hạn dùng gần nhất còn đủ số lượng) cho sản phẩm tại kho (S6-04) |
+| POST | `/warehouse/export/suggest-lots` | `WAREHOUSE_EXPORT` hoặc `WAREHOUSE_VIEW` hoặc `ROLE_ADMIN` | Gợi ý lô xuất hàng loạt theo FEFO cho danh sách sản phẩm tại kho (S6-04) |
 | POST | `/warehouse/adjust` | `WAREHOUSE_ADJUST` hoặc `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Điều chỉnh tồn kho trực tiếp |
 | GET | `/warehouse/inventory` | `ORDER_CREATE` hoặc `WAREHOUSE_VIEW` từ ma trận phân quyền (`ROLE_ADMIN` luôn được phép) | Xem tồn kho sổ sách theo đơn vị cơ sở kèm bảng quy đổi tương đương theo thùng, lốc |
 | GET | `/warehouse/inventory/lots` | `WAREHOUSE_VIEW` hoặc các vai trò có quyền xem kho | Xem danh sách tồn kho chi tiết theo từng Số lô và Hạn sử dụng (S5-04) |
 | GET | `/warehouse/vouchers` | `WAREHOUSE_VIEW` hoặc các vai trò có quyền xem kho | Danh sách phiếu kho (hỗ trợ lọc theo `warehouseId`, `type`, `status`: DRAFT/CONFIRMED/ADJUSTED, `supplierId`) |
 | GET | `/warehouse/vouchers/{id}` | `WAREHOUSE_VIEW` hoặc các vai trò có quyền xem kho | Chi tiết phiếu kho kèm thông tin NCC, số chứng từ, số lô, HSD và đóng băng quy đổi |
+| GET | `/warehouse/stock-card/{productId}` | `WAREHOUSE_VIEW` hoặc `ROLE_ADMIN` | Thẻ kho sản phẩm (S6-02): xem toàn bộ phát sinh nhập/xuất/điều chỉnh/chuyển kho theo thứ tự thời gian, tồn tích lũy và liên kết chứng từ gốc |
 | GET | `/warehouse/stock-counts/options` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN` | Tùy chọn kiểm kê (kho trong phạm vi, nhóm hàng, trạng thái, canAdjust) |
 | GET | `/warehouse/stock-counts` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN` | Danh sách phiếu kiểm kê (lọc theo warehouseId, categoryId, status, keyword; phân trang) |
 | GET | `/warehouse/stock-counts/{id}` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN` | Chi tiết phiếu kiểm kê kèm danh sách sản phẩm, tồn sổ, số thực đếm, chênh lệch |
 | POST | `/warehouse/stock-counts` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN` | Tạo phiếu kiểm kê kho (theo kho hoặc theo nhóm hàng, chốt tồn sổ tại thời điểm tạo) |
 | PUT | `/warehouse/stock-counts/{id}/items` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN` | Cập nhật số đếm thực tế cho các dòng sản phẩm, tự động tính chênh lệch từng dòng |
-| POST | `/warehouse/stock-counts/{id}/complete` | **`WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN` (CHỈ Quản lý kho)** | Chốt kiểm kê, điều chỉnh tồn sổ về số thực đếm và bắt buộc nhập lý do |
+| POST | `/warehouse/stock-counts/{id}/complete` | `WAREHOUSE_ADJUST` từ ma trận hoặc `ROLE_ADMIN` | Chốt kiểm kê trong phạm vi kho, bắt buộc nhập lý do; không yêu cầu vai trò Quản lý kho |
 | POST | `/warehouse/stock-counts/{id}/cancel` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN` | Hủy phiếu kiểm kê ở trạng thái mới tạo (DRAFT) |
+
+### Thẻ kho sản phẩm — Truy nguyên biến động tồn kho (S6-02)
+
+**Cập nhật frontend + sửa backend 22/10/2026:**
+
+- Trang `/warehouse/stock-card`, menu Kho hàng → Thẻ kho sản phẩm; liên kết từ Tồn kho chọn sẵn SKU và kho. Tất cả API dưới đây có tiền tố `/api/warehouse/stock-card`, cần WAREHOUSE_VIEW từ ma trận hoặc ADMIN, kể cả API chứng từ gốc. Không cần PRODUCT_VIEW/ORDER_VIEW; không trả giá bán hoặc hồ sơ khách hàng.
+- `GET /options`: `data={warehouses:[{id,code,name}],products:[{id,code,name}],pageSizes:[20,50,100],defaultPageSize:50}`. Kho theo phân công (gồm kho ngừng hoạt động để truy lịch sử); danh mục gồm SKU hiện tại và ngừng kinh doanh.
+- `GET /{productId}` giữ bộ tham số cũ. Kiểm fromDate <= toDate (400 khi ngược); thiếu quyền/sai scope kho trả 403. UI ngày bắt đầu đổi thành 00:00:00, ngày kết thúc thành 23:59:59.999999999 để bao gồm cả ngày.
+- Tính lịch sử đầy đủ **trước khi lọc ngày và phân trang**. Tồn đầu lịch sử đối chiếu với tổng tồn vật lý DB trong scope trừ toàn bộ phát sinh đã ghi; không sinh phiếu giả cho dữ liệu seed/migration. Tồn trước trang = tồn sau dòng đầu trừ biến động dòng đó. `openingBalance` trả ở cả trang 0 nếu tồn đầu khác 0 hoặc có fromDate; null chỉ có nghĩa 0 ở trang đầu không lọc từ. Khi khoảng lọc không có dòng, vẫn trả tồn tại cuối khoảng lọc. Page vượt cuối trả currentPage đã chặn về trang cuối, openingBalance theo trang thực tế.
+- Nguồn gồm phiếu đã ghi sổ RECORDED/CONFIRMED/ADJUSTED (không lấy DRAFT/CANCELLED), chuyển kho xuất/nhận/hủy, kiểm kê COMPLETED (chênh lệch có dấu), đơn đã có lịch sử EXPORTED/SHIPPED (mỗi dòng đơn chỉ ghi một lần ở lần xuất đầu tiên), điểm giao đã xác nhận nhập trả kho. Không tính giữ chỗ là trừ tồn vật lý.
+- `sourceType`: VOUCHER, TRANSFER, STOCK_COUNT, ORDER, DELIVERY_RETURN. Riêng DELIVERY_RETURN, sourceId là ID điểm giao và sourceCode là mã chuyến. Ngày/đơn vị/biến động từ bản ghi nghiệp vụ, không tính trong JS.
+- `GET /{productId}/sources/{sourceType}/{sourceId}?warehouseId=`: bản xem chứng từ gốc chỉ đọc **giới hạn các phát sinh của SKU trong scope kho**; response `data={sourceType,sourceId,sourceCode,productCode,productName,entries:[StockCardEntryResponse]}`. Không giới hạn 500 dòng đầu của thẻ kho khi tìm chứng từ. Không tìm thấy chứng từ đúng SKU/scope trả 403, không lộ thông tin kho ngoài scope. Đây không phải API sửa/hủy hay đọc toàn bộ dữ liệu bán hàng.
+- Chỉnh luồng `/warehouse/adjust` để dòng phiếu lưu `baseQuantity` là chênh lệch vật lý có dấu (sau - trước), không dùng lượng đích làm số tăng tồn. Không đổi cách điều chỉnh tồn hay quyền hiện tại. **Giới hạn lịch sử:** phiếu điều chỉnh tuyệt đối tạo trước bản sửa, thiếu số biến động có dấu, cần đối soát/migration riêng; không tự suy đoán audit hoặc sửa lại dữ liệu cũ. Dữ liệu bị chỉnh ngoài hệ thống không thể truy nguyên thành chứng từ.
+- Các phép đọc thẻ kho cùng transaction read-only REPEATABLE_READ; không ghi nghiệp vụ, không thêm schema. Quyền của JWT cũ vẫn nạp từ DB mỗi request, nhiều role lấy hợp quyền; ADMIN luôn được phép.
+
+Dành cho **Nhân viên kho (`ROLE_WAREHOUSE_STAFF`)**, Quản lý kho và Quản trị viên (`ROLE_ADMIN`):
+- **User story**: *"Là Nhân viên kho, tôi muốn xem thẻ kho của một sản phẩm, để truy nguyên được từ phiếu nào làm số tồn bị lệch."*
+- **Endpoint**: `GET /api/warehouse/stock-card/{productId}`
+- **Quyền**: `WAREHOUSE_VIEW` hoặc `ROLE_ADMIN`. Phạm vi kho tự động giới hạn theo danh sách kho được phân công trong DB (không fallback role; ADMIN xem toàn bộ).
+- **Query parameters**:
+  - `warehouseId` (tùy chọn, `Long`): Lọc theo một kho cụ thể. Nếu truyền kho ngoài phạm vi được phân công, hệ thống trả về `403 Forbidden`.
+  - `fromDate` (tùy chọn, ISO 8601): Lọc biến động từ thời điểm này (bao gồm).
+  - `toDate` (tùy chọn, ISO 8601): Lọc biến động đến thời điểm này (bao gồm).
+  - `page` (tùy chọn, `int`, mặc định `0`): Chỉ số trang (0-based).
+  - `size` (tùy chọn, `int`, mặc định `50`, tối đa `500`): Số dòng mỗi trang.
+- **Dữ liệu trả về**:
+  - Thông tin sản phẩm: `productId`, `productCode`, `productName`, `baseUnit`.
+  - Danh sách dòng biến động `entries` được sắp xếp theo thời gian tăng dần (`eventTime` ASC, sau đó `sourceId` ASC):
+    - `rowNumber`: Số thứ tự dòng liên tục trong trang (1-based).
+    - `eventTime`: Thời điểm phát sinh sự kiện (thời điểm ghi sổ phiếu kho hoặc điều phối/nhận/hủy chuyển kho).
+    - `eventType`: Loại phát sinh (`IMPORT`, `EXPORT`, `ADJUSTMENT`, `TRANSFER_DISPATCH`, `TRANSFER_RECEIVE`, `TRANSFER_CANCEL`).
+    - `eventTypeLabel`: Nhãn hiển thị tiếng Việt ("Nhập kho", "Xuất kho", "Điều chỉnh", "Xuất chuyển kho", "Nhận chuyển kho", "Hủy chuyển kho (hoàn tồn)").
+    - `baseQuantityChange`: Số lượng biến động theo đơn vị cơ sở (có dấu: `+` khi tăng tồn, `-` khi giảm tồn).
+    - `runningBaseBalance`: Tồn kho lũy kế theo đơn vị cơ sở sau khi phát sinh sự kiện này.
+    - `baseUnit`: Đơn vị cơ sở của sản phẩm.
+    - `displayQuantity`: Số lượng theo đơn vị ghi trên chứng từ gốc.
+    - `displayUnit`: Đơn vị ghi trên chứng từ gốc.
+    - `warehouseId`, `warehouseCode`, `warehouseName`: Kho diễn ra phát sinh.
+    - `sourceType`: Loại chứng từ gốc (`VOUCHER` cho phiếu kho, `TRANSFER` cho phiếu chuyển kho).
+    - `sourceId`: ID chứng từ gốc (dùng để điều hướng mở chi tiết chứng từ).
+    - `sourceCode`: Mã chứng từ gốc (`voucherCode` hoặc `transferCode`).
+    - `note`: Ghi chú trên chứng từ hoặc dòng hàng / lý do hủy chuyển kho.
+  - Phân trang: `totalElements`, `totalPages`, `currentPage`, `pageSize`.
+  - `openingBalance`: Tồn vật lý trước dòng đầu tiên của trang thực tế. Trang đầu cũng có giá trị nếu có tồn đầu lịch sử hoặc lọc từ ngày; null chỉ biểu thị 0 ở trang đầu không lọc từ. Các trang sau tiếp tục số dư trang trước, không tính lại từ 0.
 
 ### Kiểm kê kho và ghi nhận chênh lệch (S5-08)
 
-Dành cho vai trò **Quản lý kho (`ROLE_WAREHOUSE_MANAGER`)** và Thủ kho (`ROLE_WAREHOUSE_STAFF`):
+Dùng quyền từ ma trận phân quyền, không dùng tên vai trò để cấp quyền. Tất cả đường dẫn dưới đây có tiền tố `/api/warehouse/stock-counts`.
+
 1. **Tạo phiếu kiểm kê theo kho hoặc theo nhóm hàng**:
    - `warehouseId` (bắt buộc): Kho cần kiểm kê.
    - `categoryId` (tùy chọn): Nhóm hàng cần kiểm kê. Nếu để trống, hệ thống đưa toàn bộ sản phẩm đang hoạt động trong kho vào danh sách kiểm kê.
-   - `code` (tùy chọn): Mã phiếu kiểm kê (tự sinh `PKK-yyyyMMddHHmmssSSS` nếu để trống).
+   - `code` (tùy chọn, tối đa 50 ký tự): Mã phiếu kiểm kê (tự sinh `PKK-yyyyMMddHHmmssSSS-xxxxxxxx` nếu để trống).
    - `note` (tùy chọn): Ghi chú phiếu kiểm kê.
-   - **Chốt tồn sổ sách tại thời điểm tạo**: Hệ thống tự động snapshot số lượng tồn sổ sách hiện tại (`bookQuantity`) theo đơn vị cơ sở cho từng sản phẩm. Trạng thái ban đầu là `DRAFT`.
+   - **Chốt tồn sổ sách tại thời điểm tạo**: Hệ thống khóa kho và tồn theo thứ tự ID sản phẩm để snapshot số lượng hiện tại (`bookQuantity`), ID và phiên bản tồn kho. Đơn vị được đóng băng từ dòng tồn kho hiện có; nếu chưa có tồn thì dùng đơn vị cơ sở sản phẩm và số lượng 0. Trạng thái ban đầu là `DRAFT`; tạo phiếu chưa điều chỉnh tồn.
+   - `items` (tùy chọn): Nhập trước số đếm qua các dòng `{ "productId": 123, "actualQuantity": 0, "note": "Đã đếm" }`.
 2. **Nhập số đếm thực tế & Tự động tính chênh lệch từng dòng**:
-   - Nhân viên kiểm đếm nhập `actualQuantity` (số lượng thực tế theo đơn vị cơ sở, >= 0) cho từng sản phẩm.
+   - `PUT /{id}/items` nhận `{ "items": [{ "productId": 123, "actualQuantity": 0 }], "note": "Ghi chú phiếu" }`. Chỉ sửa phiếu `DRAFT`; các sản phẩm không được gửi lên giữ nguyên.
+   - `actualQuantity` theo đơn vị cơ sở đóng băng, >= 0, tối đa 11 chữ số nguyên và 4 chữ số thập phân. `0` nghĩa là đã đếm và không có hàng; `null`/bỏ trường nghĩa là chưa đếm (hoặc xóa số đã nhập). `differenceQuantity` bằng `null` khi chưa đếm.
    - Hệ thống tự động tính `differenceQuantity = actualQuantity - bookQuantity`:
      - Giá trị dương (> 0): Thừa thực tế so với sổ sách.
      - Giá trị âm (< 0): Thiếu thực tế so với sổ sách (hao hụt, mất mát...).
      - Bằng 0: Số thực tế khớp hoàn toàn với sổ sách.
-   - Cho phép nhập ghi chú riêng cho từng dòng sản phẩm để giải trình chênh lệch cục bộ.
+   - Cho phép ghi chú riêng cho từng dòng và ghi chú phiếu, đều tối đa 500 ký tự. Từ chối dòng null, thiếu `productId`, ID sản phẩm lặp hoặc không thuộc snapshot, số âm, số vượt độ chính xác, kể cả trong `items` gửi lúc tạo hoặc chốt.
 3. **Chốt kiểm kê và Điều chỉnh tồn kho về số thực đếm**:
-   - **Bắt buộc nhập lý do giải trình** (`reason` không được để trống).
+   - `POST /{id}/complete` nhận `{ "reason": "Kiểm kê định kỳ", "items": [...] }`; `items` tùy chọn để lưu và chốt trong cùng giao dịch. **Bắt buộc nhập lý do giải trình** (`reason` không được để trống, tối đa 500 ký tự).
    - Kiểm tra tất cả sản phẩm trong phiếu đã có số thực đếm.
-   - Hệ thống tự động cập nhật số lượng tồn kho `WarehouseInventory.baseQuantity = actualQuantity`.
+   - Khóa bi quan phiếu trước khi cập nhật/chốt/hủy; khi chốt tiếp tục khóa kho rồi từng dòng tồn theo ID sản phẩm tăng dần. Thứ tự khóa tồn thống nhất với đơn hàng và chuyển kho. Hai lần chốt đồng thời chỉ một lần thành công.
+   - Kiểm tra toàn bộ snapshot trước khi ghi tồn. Nếu ID/phiên bản/số lượng/đơn vị tồn thay đổi, từ chối với thông báo yêu cầu **hủy phiếu và tạo phiếu kiểm kê mới**. Bao gồm chuyển động xuất rồi nhập trả đúng lượng cũ, và dòng tồn mới được tạo sau snapshot số 0. Thay đổi tên đơn vị trên danh mục sản phẩm không thay đơn vị đã đóng băng trên phiếu.
+   - Nếu `actualQuantity < reservedQuantity` đang giữ chỗ, từ chối toàn bộ và yêu cầu xử lý đơn hàng giữ chỗ. Khi hợp lệ mới cập nhật `WarehouseInventory.baseQuantity = actualQuantity`; giữ nguyên reserved/in-transit và đơn vị đóng băng.
    - Ghi nhận nhật ký thao tác `AuditLog` cho từng sản phẩm bị điều chỉnh lệch tồn và cho toàn bộ phiếu kiểm kê.
-   - Chuyển trạng thái phiếu sang `COMPLETED`, lưu người chốt và thời điểm chốt.
+   - Chuyển trạng thái phiếu sang `COMPLETED`, lưu người chốt và thời điểm chốt. Số đếm gửi kèm, tồn, trạng thái và audit cùng giao dịch: lỗi bất kỳ dòng nào hoặc lỗi ghi audit đều rollback toàn bộ.
 4. **Phân quyền ma trận và Giới hạn quyền chốt kiểm kê**:
-   - **Chỉ Quản lý kho (`WAREHOUSE_ADJUST` hoặc `ROLE_ADMIN`)** mới được quyền chốt kiểm kê (`POST /api/warehouse/stock-counts/{id}/complete`).
-   - Thủ kho (`ROLE_WAREHOUSE_STAFF`) chỉ có quyền xem, tạo phiếu và nhập số đếm thực tế, nếu gọi API chốt kiểm kê sẽ bị từ chối `403 Forbidden`.
-   - Thu hồi quyền `WAREHOUSE_ADJUST` khỏi vai trò Quản lý kho trong ma trận phân quyền sẽ lập tức vô hiệu hóa khả năng chốt kiểm kê ở request kế tiếp (không fallback theo role cứng).
-   - Kiểm tra phạm vi kho: Người dùng chỉ được kiểm kê trên các kho được gán.
+   - Đọc danh sách/chi tiết/options, tạo, nhập số đếm và hủy cần `WAREHOUSE_VIEW` **hoặc** `WAREHOUSE_ADJUST`. Chốt chỉ cần `WAREHOUSE_ADJUST`. Bất kỳ vai trò nào (ví dụ VIEWER) được cấp ADJUST đều có thể chốt; vai trò Quản lý kho thiếu quyền không được phép. `ROLE_ADMIN` luôn được phép.
+   - JWT hiện tại được nạp lại quyền theo ma trận ở mỗi request; cấp/thu hồi quyền có hiệu lực ở request kế tiếp. Nhiều vai trò lấy hợp quyền.
+   - Phạm vi kho đã gán được áp dụng cho mọi vai trò; riêng vai trò kho không có kho được gán thì phạm vi rỗng. Vai trò khác không có kho được gán giữ phạm vi toàn cục như các chức năng kho hiện có. ADMIN có phạm vi toàn cục.
+   - `/options` trả `warehouses`, `categories`, `statuses`, `canAdjust` theo quyền. Chi tiết trả `items`; danh sách phân trang trả bản tóm tắt, gồm `totalItems`, `matchedItems`, `diffItems`, `uncountedItems`. `canEdit` chỉ true khi có VIEW hoặc ADJUST, đúng phạm vi và phiếu DRAFT; `canAdjust` trên phiếu chỉ true khi có ADJUST, đúng phạm vi và DRAFT. Không suy ra quyền từ tên vai trò.
+5. **Hủy và phản hồi lỗi**:
+   - `POST /{id}/cancel` nhận body tùy chọn `{ "reason": "Chọn nhầm kho" }` (lý do tối đa 500 ký tự). Chỉ hủy phiếu DRAFT; lưu người/thời điểm/lý do, không thay tồn. Phiếu COMPLETED/CANCELLED không sửa/chốt/hủy lại.
+   - Giữ envelope `{ "success": true, "message": "...", "data": ... }` và đường dẫn hiện có. Request hợp lệ thành công trả HTTP 200; dữ liệu không hợp lệ, snapshot cũ, thiếu số đếm, dưới tồn giữ chỗ hoặc trạng thái không hợp lệ trả 400 với `success: false` và thông báo; thiếu quyền hoặc sai phạm vi trả 403; chưa xác thực trả 401.
+6. **Triển khai schema và phiếu cũ**:
+   - Bổ sung `warehouse_inventories.version` (`BIGINT NOT NULL DEFAULT 0`, JPA `@Version`) và `warehouse_stock_count_items.snapshot_captured` (`BOOLEAN NOT NULL DEFAULT FALSE`), `snapshot_inventory_id`, `snapshot_inventory_version` (BIGINT nullable). Đây là metadata nội bộ, không thêm trường bắt buộc vào DTO.
+   - Mở rộng `warehouse_stock_count_items.note` lên `VARCHAR(500)` để thống nhất giới hạn ghi chú toàn tính năng.
+   - Các phiếu cũ có `snapshot_captured = false` vẫn xem/hủy được nhưng không chốt được: cần hủy và kiểm kê lại. Không backfill snapshot cũ bằng tồn hiện tại vì sẽ bỏ qua chuyển động sau khi lập phiếu.
+   - Phiên bản tăng cho thay đổi tồn qua JPA (kể cả giữ chỗ/đang chuyển được cập nhật qua JPA), nên có thể cần kiểm kê lại dù lượng vật lý bằng cũ. Luồng giữ chỗ S5-06 dùng cập nhật JPA dưới khóa để tăng phiên bản; completion vẫn đọc reserved mới dưới khóa để bảo vệ lượng giữ chỗ. Không dùng SQL ngoài ứng dụng để sửa tồn mà bỏ qua phiên bản.
+   - Sau khi lấy khóa phiếu kiểm kê, refresh lại header và các dòng trước khi lưu/chốt/hủy. Truy vấn join có thể đã đọc số đếm trước lúc phải đợi khóa; không dùng bản số đếm cũ đó để chốt tồn. Kiểm thử điều khiển khóa xác minh completion đang chờ phải lấy số đếm vừa commit.
 
 ### Lập phiếu nhập kho từ nhà cung cấp & Quản lý lô, hạn sử dụng (S5-04)
 
-Dành cho vai trò **Nhân viên kho (`ROLE_WAREHOUSE_STAFF`)** và Quản lý kho (`ROLE_WAREHOUSE_MANAGER`):
+Dành cho người dùng được cấp quyền trong **ma trận DB**, không khóa cứng theo vai trò. Mọi thao tác tuân thủ kho được giao; vai trò kho không được giao kho thì phạm vi rỗng. ADMIN luôn được phép.
 1. **Khai báo thông tin chứng từ khi xe dỡ hàng**:
    - `supplierId` hoặc `supplierCode`: Nhà cung cấp giao hàng (phải tồn tại và đang hoạt động `active = true`).
    - `documentNumber`: Số chứng từ đi kèm (số hóa đơn đỏ, biên bản giao nhận hàng).
-   - `voucherDate`: Ngày nhập kho thực tế (mặc định là thời điểm lập phiếu nếu không cung cấp).
+   - `voucherDate`: Ngày nhập kho thực tế, dạng `2026-10-21T00:00:00`; bắt buộc khi nhập trực tiếp, được lưu riêng ở DB.
    - `warehouseId`: Kho nhập hàng (phải tồn tại và đang hoạt động).
-   - `voucherCode`: Mã phiếu nhập kho (nếu không cung cấp, hệ thống tự động sinh dạng `PNK-yyyyMMddHHmmssSSS`).
+   - `voucherCode`: Bỏ trống để server sinh mã `PNK-<UUID>`; không lấy số thứ tự từ số phiếu đang hiển thị trên trình duyệt.
 2. **Nhập theo đơn vị tính bất kỳ, quy về đơn vị cơ sở khi ghi sổ**:
    - Dòng hàng có thể chọn bất kỳ đơn vị tính nào đã được cấu hình trong bảng quy đổi của SKU (vd: thùng, lốc, bao, chai, lon...).
    - Hệ thống tự động nhân với hệ số quy đổi đóng băng `conversionFactor` để tính `baseQuantity = quantity * factor`.
-   - Toàn bộ thông tin đơn vị, hệ số và số lượng cơ sở được đóng băng vĩnh viễn trên dòng phiếu kho.
+   - Nháp chỉ chứa quy đổi dự kiến; khi xác nhận server tính lại hệ số hiện hành và đóng băng đơn vị/hệ số/số lượng cơ sở. Đổi quy đổi sau xác nhận không thay phiếu cũ.
 3. **Quản lý Số lô và Hạn sử dụng**:
    - Trên sản phẩm (`Product`), cờ `manageLot = true` xác định mặt hàng được quản lý theo lô (vd: bia, nước giải khát, thực phẩm...).
    - Khi lập phiếu nhập kho:
@@ -677,10 +845,18 @@ Dành cho vai trò **Nhân viên kho (`ROLE_WAREHOUSE_STAFF`)** và Quản lý k
      - Trạng thái phiếu chuyển thành `CONFIRMED`.
 5. **Phiếu đã xác nhận không sửa được, chỉ lập phiếu điều chỉnh**:
    - Mọi hành vi cố tình gọi `PUT` hoặc `DELETE` trên phiếu đã ở trạng thái `CONFIRMED` / `RECORDED` đều bị hệ thống chặn với ngoại lệ `IllegalStateException` ("Phiếu đã xác nhận không sửa được, chỉ lập phiếu điều chỉnh").
-   - Khi có sai sót (hàng vỡ, hàng trả lại...): Quản lý kho (`ROLE_WAREHOUSE_MANAGER`) hoặc Admin (`ROLE_ADMIN`) sử dụng API `POST /api/warehouse/vouchers/{id}/adjust` để lập phiếu điều chỉnh:
+   - Khi có sai sót, người có `WAREHOUSE_ADJUST` hoặc ADMIN dùng `POST /api/warehouse/vouchers/{id}/adjust`:
      - Phiếu điều chỉnh tự động liên kết đến `referenceVoucherId` và `referenceVoucherCode`.
      - Ghi nhận `adjustmentReason` (lý do điều chỉnh).
      - Điều chỉnh lại số lượng tồn kho theo chênh lệch và cập nhật trạng thái phiếu gốc sang `ADJUSTED`.
+
+Frontend dùng luồng `POST /warehouse/import/draft` → `PUT /warehouse/vouchers/{id}` nếu sửa → `POST /warehouse/vouchers/{id}/confirm`. Người chỉ có IMPORT lưu/sửa/xóa nháp nhưng không được xác nhận. Người chỉ có APPROVE mở sổ phiếu và xác nhận nhưng không sửa nháp. Thu hồi quyền trên token đang dùng có hiệu lực từ request tiếp theo; FE ẩn/khóa thao tác khi nhận thay đổi quyền.
+
+Các trường header gửi riêng: `supplierId`, `documentNumber` (tối đa 100 ký tự), `voucherDate`, `warehouseId`, `note` (500). Mỗi dòng gửi `productId`, `unit`, `quantity` (dương, tối đa 4 số lẻ), `lotNumber` (50), `expiryDate`, tùy chọn `manufacturingDate`, `note` (255). Không nhét NCC/lô/HSD vào note. Cùng SKU/kho/số lô phải cùng HSD; không ghi đè ngày lô cũ.
+
+Điều chỉnh từ UI dùng một dòng và `delta` có dấu theo đơn vị dòng, `quantity=abs(delta)` trong request, `adjustmentReason` 1–500 ký tự. Response phiếu điều chỉnh ghi lượng thay đổi có dấu và tham chiếu phiếu gốc. API cũng hỗ trợ số đích khi không gửi delta: nếu chọn lô, tổng kho chỉ thay đổi theo chênh lệch của lô đó, không ghi đè tổng bằng số của một lô.
+
+Schema bổ sung `warehouse_vouchers.version BIGINT NOT NULL DEFAULT 0` cho kiểm soát phiên sửa. Cấu hình phát triển hiện tại `ddl-auto=update` tự bổ sung khi khởi động; môi trường dùng migration thủ công cần thêm cột tương đương trước khi chạy. Không xóa hoặc khởi tạo lại DB.
 
 ### Danh sách API Chuyển kho nội bộ (S5-07)
 
@@ -799,7 +975,7 @@ Trạng thái dùng `active`, không dùng chuỗi `status`; người liên hệ
 | GET | `/orders/{id}/tracking` | `ORDER_VIEW` | Theo dõi vòng đời đơn hàng (7 bước chính và nhánh Huỷ, timeline lịch sử, người thực hiện, lý do huỷ/từ chối; áp dụng RLS theo người phụ trách/kho) |
 | PUT | `/orders/{id}/status` | `WAREHOUSE_IMPORT` hoặc `WAREHOUSE_EXPORT` | Cập nhật từng bước kế tiếp của vòng đời đơn hàng; chỉ nhận `PICKING`, `EXPORTED`, `DELIVERED`, `CLOSED`, giới hạn theo kho được gán và tự động trừ tồn kho/giải phóng giữ chỗ khi chuyển sang `EXPORTED` |
 | PUT | `/orders/{id}/delivery` | `WAREHOUSE_EXPORT` | Cập nhật thực giao; chỉ chuyển `EXPORTED` sang `DELIVERED`, không được bỏ qua bước vòng đời và không dùng role fallback |
-| PUT | `/orders/{id}/approve` | `ORDER_APPROVE` hoặc `ROLE_ADMIN`; `ORDER_CREATE` chỉ cho NVKD xác nhận đơn cổng được phân công | Phê duyệt đơn hàng (chuyển trạng thái sang `RECORDED`) và giữ chỗ tồn kho sau khi kiểm quyền |
+| PUT | `/orders/{id}/approve` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Phê duyệt đơn hàng (chuyển trạng thái sang `RECORDED`) và giữ chỗ tồn kho sau khi kiểm quyền/phạm vi kho; xác nhận đơn cổng dùng endpoint `/confirm` với `ORDER_CONFIRM`, không dùng `ORDER_CREATE` để thay quyền duyệt |
 | PUT | `/orders/{id}/reject?reason={ly_do}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN`; `ORDER_CREATE` chỉ cho NVKD xử lý đơn cổng được phân công | Từ chối đơn hàng với lý do bắt buộc (chuyển trạng thái sang `REJECTED`) |
 | PUT | `/orders/{id}/return?reason={ly_do}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Trả lại đơn để sửa với lý do bắt buộc (chuyển trạng thái sang `RETURNED`) |
 | PATCH | `/orders/{id}/status` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Duyệt, từ chối hoặc trả lại đơn trên màn hình S4-05 |
@@ -1634,13 +1810,13 @@ Hỗ trợ Nhân viên kinh doanh (`ROLE_SALES`) nhìn thấy tồn khả dụng
      + Nếu tồn khả dụng bằng 0: Thông báo rõ *"Mặt hàng '...' đã hết tồn khả dụng trong kho phục vụ '...'. Số lượng tối đa có thể đặt là 0 ...".*
 
 4. **Giữ chỗ và Giải phóng tồn kho (Vòng đời đơn hàng)**:
-   - **Khi tạo đơn thành công**: Hệ thống tự động tăng `reservedQuantity` của sản phẩm tại kho phục vụ tương ứng với số lượng cơ sở của đơn, đồng thời đánh dấu `inventoryReserved = true` trên đơn hàng.
-   - **Khi xuất kho thực tế** (`POST /api/warehouse/export`): Hệ thống trừ tồn thực tế (`baseQuantity`) và hoàn trừ tương ứng `reservedQuantity` (nếu `reservedQuantity > 0`).
+   - **Khi tạo đơn hợp lệ ghi nhận ngay (`RECORDED`)**: tăng `reservedQuantity` và đánh dấu `inventoryReserved = true`. Đơn chờ duyệt (`PENDING_APPROVAL`) chưa giữ chỗ; lúc được duyệt phải kiểm tra lại tồn và giữ chỗ nguyên tử (xem S5-06).
+   - **Khi xuất đơn** (`PUT /api/orders/{id}/status` với `EXPORTED`, sau `PICKING`): trừ tồn thực tế và lượng giữ riêng của đơn trong cùng giao dịch; không lấy lượng giữ của đơn khác. Phiếu xuất thủ công phải kiểm tra tồn khả dụng, không phải đường để nhả giữ chỗ của đơn.
    - **Khi huỷ đơn** (`PUT /api/orders/{id}/cancel`) hoặc **từ chối đơn** (`PUT /api/orders/{id}/reject`): Nếu đơn đã được giữ chỗ (`inventoryReserved = true`), hệ thống tự động hoàn trả lại tồn giữ chỗ (`reservedQuantity = reservedQuantity - baseQuantity`) và cập nhật `inventoryReserved = false`.
 
 5. **Chống Race Condition / Bán âm kho khi chốt đơn đồng thời (Concurrency Safety)**:
    - Sử dụng cơ chế khóa bi quan `LockModeType.PESSIMISTIC_WRITE` (`SELECT ... FOR UPDATE`) trên bảng `warehouse_inventories`.
-   - Các dòng sản phẩm được khóa theo thứ tự `productId` tăng dần (`sorted productIds`) để triệt tiêu nguy cơ xảy ra Deadlock giữa nhiều giao dịch đồng thời.
+   - Khóa dòng đơn trước, sau đó các dòng sản phẩm theo thứ tự `productId` tăng dần để giảm nguy cơ deadlock giữa các luồng giữ/nhả/xuất tồn.
    - Khi 2 người dùng (hoặc 2 tiến trình) cùng chốt đơn mặt hàng sắp hết: Người chốt trước giữ chỗ thành công (HTTP 201 Created), người chốt sau ngay lập tức bị chặn với HTTP 400 Bad Request, tồn kho thực tế và tồn khả dụng tuyệt đối không bao giờ bị âm (`acceptedOrders <= 1`).
 
 6. **Phân quyền theo ma trận quyền**:
@@ -1844,31 +2020,38 @@ Hỗ trợ Nhân viên kinh doanh có tồn được giữ chỗ ngay khi đơn 
 #### Quy tắc nghiệp vụ cốt lõi:
 1. **Giữ chỗ tồn kho ngay khi đơn được duyệt (`approveOrder`)**:
    - Khi đơn hàng tạo ở trạng thái Chờ duyệt (`PENDING_APPROVAL`, ví dụ do bán dưới giá sàn hoặc vượt hạn mức công nợ), tồn kho chưa bị trừ và chưa bị giữ chỗ (`inventoryReserved = false`).
-   - Khi Quản lý kinh doanh (`ROLE_SALES_MANAGER`) hoặc Quản trị viên (`ROLE_ADMIN`) phê duyệt đơn (`PUT /api/orders/{id}/approve`):
-     - Hệ thống thực hiện kiểm tra tồn khả dụng tại kho phục vụ với cơ chế khóa bi quan (`LockModeType.PESSIMISTIC_WRITE` trên `warehouse_inventories`, khóa sắp xếp theo thứ tự `productId` tăng dần để tránh Deadlock).
+   - Khi người dùng được cấp `ORDER_APPROVE` từ ma trận DB hoặc Quản trị viên (`ROLE_ADMIN`) phê duyệt đơn (`PUT /api/orders/{id}/approve`, hoặc `PATCH /api/orders/{id}/status` với `APPROVED`):
+     - Khóa ghi dòng đơn hàng trước, sau đó khóa các dòng tồn tại kho phục vụ theo `productId` tăng dần. Duyệt, hủy, hết hạn và xuất kho cùng khóa dòng đơn nên không giữ/nhả hai lần khi chạy đồng thời. Vai trò không thay thế quyền; người được gán kho chỉ thao tác trong kho được gán.
      - Nếu tồn khả dụng không đủ: ném ngoại lệ `IllegalArgumentException` kèm thông báo chi tiết, giao dịch `@Transactional` tự động hoàn lại (rollback) toàn bộ, không thay đổi trạng thái đơn và không giữ chỗ tồn kho.
      - Nếu tồn khả dụng đủ: hệ thống tự động tăng `reservedQuantity` tại kho tương ứng với số lượng cơ sở của đơn hàng, chuyển trạng thái đơn sang `RECORDED` (Đã duyệt / Đã ghi sổ), đánh dấu `inventoryReserved = true`, gán thời điểm giữ chỗ `reservedAt` và thời điểm hết hạn giữ chỗ `reservationExpiresAt`.
-     - Cho phép truyền tùy chọn tham số `reservationHours` (số giờ giữ chỗ, ví dụ `?reservationHours=24` hoặc `?reservationHours=48`, mặc định cấu hình `app.order.default-reservation-hours: 24`).
+     - `reservationHours` phải lớn hơn 0 (ví dụ `?reservationHours=24`). Nếu không truyền: dùng cuối ngày giao dự kiến khi còn ở tương lai, nếu không thì 48 giờ. Không có cấu hình `app.order.default-reservation-hours`. Ngày hết hạn tường minh khi tạo đơn phải ở tương lai.
 
 2. **Giao dịch `@Transactional` nguyên tử (Atomic Transaction & Rollback)**:
    - Toàn bộ thao tác kiểm tra tồn kho, tăng tồn giữ chỗ (`reservedQuantity`), cập nhật trạng thái đơn hàng (`RECORDED`), và ghi nhật ký kiểm toán (`AuditLog`) diễn ra trong cùng một transaction `@Transactional`.
    - Bất kỳ lỗi nào xảy ra giữa chừng đều làm toàn bộ giao dịch rollback, đảm bảo tính toàn vẹn dữ liệu tuyệt đối (không có tình trạng đơn đã duyệt nhưng chưa giữ chỗ, hoặc ngược lại).
 
 3. **Tự động giải phóng tồn kho khi huỷ hoặc từ chối đơn**:
-   - Khi huỷ đơn (`PUT /api/orders/{id}/cancel`) hoặc từ chối đơn (`PUT /api/orders/{id}/reject`): Nếu đơn đã được giữ chỗ (`inventoryReserved = true`), hệ thống khóa bi quan dòng tồn kho, hoàn trả chính xác số lượng tồn giữ chỗ (`reservedQuantity = max(0, reservedQuantity - reqBase)`), chuyển `inventoryReserved = false`, xóa `reservationExpiresAt` và ghi nhật ký kiểm toán.
+   - Khi huỷ đơn (`PUT /api/orders/{id}/cancel`, bắt buộc lý do) hoặc từ chối đơn chờ duyệt (`PUT /api/orders/{id}/reject`): khóa dòng đơn và tồn, chỉ trừ chính xác lượng đã giữ của đơn. Nếu sổ giữ chỗ không khớp, từ chối và rollback thay vì ép về 0 làm mất giữ chỗ của đơn khác. Cập nhật `inventoryReserved = false`, xóa `reservationExpiresAt` trong cùng giao dịch; đã xuất kho không được hủy. Giữ chỗ không giảm tồn vật lý; xuất kho mới giảm tồn vật lý và lượng giữ tương ứng.
 
 4. **Tự động quét và nhả tồn khi đơn quá hạn giữ chỗ (Background Scheduler)**:
    - Background Task (`OrderReservationScheduler`) chạy định kỳ (mặc định mỗi phút một lần qua cấu hình `app.order.reservation-check-interval-ms:60000`).
    - Scheduler tự động tìm tất cả các đơn hàng có `inventoryReserved = true` và `reservationExpiresAt <= now()`.
    - Với mỗi đơn quá hạn: hệ thống tự động giải phóng tồn giữ chỗ (`reservedQuantity`), chuyển trạng thái đơn hàng sang `EXPIRED`, xóa cờ giữ chỗ, ghi chú tự động lý do hết hạn và lưu vết nhật ký kiểm toán (`AuditLog`).
-   - Cung cấp thêm API thủ công/chủ động: `POST /api/orders/release-expired-reservations` cho Quản lý kho, Quản lý kinh doanh và Admin kích hoạt kiểm tra và nhả tồn tức thì.
+   - Quét ID rồi xử lý từng đơn bằng giao dịch riêng (`REQUIRES_NEW`), đọc lại cờ/hạn/trạng thái sau khi khóa; worker khác, hủy hoặc xuất đã xử lý thì bỏ qua. Không gom khóa nhiều dòng đơn vào một giao dịch quét dài. Thời gian trong ghi chú là hạn gốc trước khi xóa.
+   - API thủ công `POST /api/orders/release-expired-reservations` kiểm quyền DB và phạm vi kho/đại lý của người gọi; không nhả đơn ngoài phạm vi. Scheduler nội bộ tự xử lý toàn hệ thống. Lỗi giao dịch giữ nguyên đơn/tồn của đơn lỗi; các đơn đã xử lý ở giao dịch riêng không bị hoàn lại.
 
 | Method | Endpoint | Quyền | Mô tả |
 |---|---|---|---|
-| PUT | `/orders/{id}/approve?reservationHours={hours}` | `ORDER_APPROVE`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Phê duyệt đơn hàng chờ duyệt, giữ chỗ tồn kho tức thì và thiết lập thời hạn giữ chỗ |
-| PUT | `/orders/{id}/cancel` | `ORDER_CANCEL`, `ROLE_SALES`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Huỷ đơn hàng; tự động hoàn trả tồn kho đang giữ chỗ nếu đơn đã giữ chỗ |
-| PUT | `/orders/{id}/reject` | `ORDER_APPROVE`, `ROLE_SALES_MANAGER`, `ROLE_ADMIN` | Từ chối đơn hàng chờ duyệt; giải phóng tồn giữ chỗ nếu có |
-| POST | `/orders/release-expired-reservations` | `ORDER_APPROVE`, `ROLE_SALES_MANAGER`, `ROLE_WAREHOUSE_MANAGER`, `ROLE_ADMIN` | Quét và tự động giải phóng tồn giữ chỗ cho các đơn hàng đã quá hạn giữ chỗ |
+| PUT | `/orders/{id}/approve?reservationHours={hours}` | `ORDER_APPROVE` hoặc ADMIN | Phê duyệt đơn hàng chờ duyệt trong phạm vi, giữ chỗ và thiết lập thời hạn; HTTP 200 |
+| PATCH | `/orders/{id}/status` | `ORDER_APPROVE` hoặc ADMIN | Body `{"status":"APPROVED","comment":"..."}`; dùng cùng nghiệp vụ giữ chỗ như PUT approve |
+| PUT | `/orders/{id}/confirm` | `ORDER_CONFIRM` hoặc ADMIN | Xác nhận đơn cổng không vi phạm của đại lý được phân công; cũng giữ chỗ nguyên tử |
+| PUT | `/orders/{id}/cancel` | `ORDER_CANCEL` hoặc ADMIN | Huỷ đơn trong phạm vi; nhả giữ chỗ chính xác một lần |
+| PUT | `/orders/{id}/reject` | `ORDER_APPROVE` hoặc ADMIN | Từ chối đơn hàng chờ duyệt; không cho từ chối lại đơn đã duyệt |
+| POST | `/orders/release-expired-reservations` | Một trong `ORDER_APPROVE`, `ORDER_CANCEL`, `WAREHOUSE_APPROVE`, hoặc ADMIN | Quét và nhả các đơn quá hạn trong phạm vi người gọi |
+
+Frontend: trang Duyệt đơn cần cả `ORDER_VIEW` và `ORDER_APPROVE`; tạo đơn chỉ cần `ORDER_CREATE`, đọc tồn qua `/orders/check-inventory`, không tải danh sách đơn để tự cộng giữ chỗ. Chi tiết và tracking đọc `inventoryReserved`, `reservedAt`, `reservationExpiresAt` từ server. Hạn đã qua nhưng cờ còn true hiển thị “Quá hạn — chờ hệ thống nhả tồn”; đồng hồ trình duyệt không sửa tồn hoặc tự báo đã nhả. Thu hồi quyền vô hiệu hóa/ẩn hành động và bỏ phản hồi cũ, backend từ chối JWT hiện có ở request kế tiếp. ADMIN luôn được phép.
+
+Schema bổ sung `orders.version BIGINT NOT NULL DEFAULT 0` để tránh cập nhật cũ ghi đè thao tác đồng thời. Cấu hình phát triển `ddl-auto=update` thêm cột khi khởi động lại backend; môi trường quản lý migration phải thêm cột tương đương trước khi triển khai. Không xóa/reset DB. Dòng tồn được cập nhật qua JPA dưới khóa, nên tăng `warehouse_inventories.version` và vô hiệu hóa snapshot kiểm kê cũ đúng cách.
 
 #### Ví dụ Response phê duyệt đơn hàng kèm giữ chỗ tồn kho (`PUT /api/orders/1/approve?reservationHours=24`):
 ```json
@@ -2627,3 +2810,1606 @@ Quy tắc nhất quán khi tính/tạo đơn:
 - Đơn có đại lý bắt buộc dùng kho phục vụ đang hoạt động gắn với đại lý. Gửi warehouseId khác trả 403; thiếu kho phục vụ trả 400, không chọn kho đầu tiên thay thế.
 - Công nợ và quá hạn tính chung các trạng thái đã ghi nhận: APPROVED, RECORDED, PICKING, PROCESSING, EXPORTED, SHIPPED, DELIVERED, CLOSED, COMPLETED. Chuyển vòng đời không có nghĩa đã thu tiền. Hiện chưa có sổ thu tiền để đối trừ số dư, nên không tự xóa nợ khi giao/đóng đơn.
 - Luồng tạo dữ liệu demo nội bộ dùng SecurityContext bootstrap ADMIN riêng và khôi phục trong finally; service duyệt không còn chấp nhận lời gọi không xác thực.
+
+### Gợi ý lô xuất theo nguyên tắc FEFO và Xuất kho theo lô (S6-04)
+
+Hệ thống hỗ trợ quản lý xuất kho theo phương pháp FEFO (First Expired, First Out - Hạn sử dụng gần nhất trước), giúp hàng cũ được ưu tiên xuất trước, giảm thiểu tình trạng hàng hóa hết hạn phải tiêu hủy.
+
+#### 1. Nguyên tắc gợi ý lô (FEFO Suggestion)
+- **Mặc định gợi ý lô có hạn sử dụng gần nhất còn đủ số lượng**:
+  - Khi cần xuất một số lượng hàng hóa (quy đổi về đơn vị cơ sở `baseQuantity`), hệ thống rà soát tất cả các lô còn tồn kho (`baseQuantity > 0`) của sản phẩm tại kho chỉ định.
+  - Các lô chưa hết hạn (`expiryDate >= today`) được ưu tiên sắp xếp trước theo thứ tự `expiryDate` tăng dần (ngày hết hạn sớm nhất lên đầu). Nếu cùng hạn sử dụng, ưu tiên lô có ngày sản xuất (`manufacturingDate`) cũ hơn.
+  - Lô đầu tiên có tồn kho đáp ứng đủ số lượng yêu cầu (`lot.baseQuantity >= requestedBaseQuantity`) được chọn làm lô gợi ý mặc định (`suggestedLot`).
+  - Nếu không có lô đơn lẻ nào đủ số lượng yêu cầu, `suggestedLot` trả về `null`, cờ `hasSufficientStock = false`, và `availableLots` trả về toàn bộ danh sách các lô còn hàng sắp xếp theo FEFO để người dùng tham khảo chia dòng hoặc xuất theo từng phần.
+
+#### 2. Quyền chọn lô khác và Bắt buộc nhập lý do
+- Thủ kho có thể chủ động chọn một lô khác (ví dụ: khách hàng yêu cầu lấy lô date xa, hoặc chọn lô gần cửa bốc dỡ):
+  - **Trường hợp chọn đúng lô gợi ý** (hoặc không truyền `lotNumber` để hệ thống tự áp dụng lô gợi ý): Không bắt buộc nhập lý do.
+  - **Trường hợp chọn lô khác với lô gợi ý**: Thủ kho **bắt buộc phải nhập lý do** (qua trường `overrideReason`, bí danh `lotReason`, hoặc `note`). Nếu để trống lý do, hệ thống sẽ từ chối tạo phiếu xuất kho và trả lỗi `400 Bad Request` (`"Thủ kho chọn lô '...' khác với lô gợi ý hạn dùng gần nhất ('...'), bắt buộc phải nhập lý do"`).
+  - Lý do chọn lô và mã lô gợi ý ban đầu được ghi nhận vào dòng phiếu kho (`WarehouseVoucherItem.suggestedLotNumber`, `WarehouseVoucherItem.overrideReason`) để phục vụ kiểm toán và báo cáo.
+
+#### 3. Xuất kho trừ đúng tồn của lô đã chọn & Chặn âm kho
+- Khi ghi sổ phiếu xuất kho (`POST /api/warehouse/export`):
+  - Hệ thống kiểm tra số lượng tồn của lô đã chọn trong bảng `warehouse_lot_inventories`.
+  - Trừ chính xác số lượng xuất quy đổi cơ sở vào tồn của lô đó (`lotInv.subtractBaseQuantity(baseQty)`).
+  - Nếu lô được chọn không đủ tồn (`lotInv.baseQuantity < baseQty`) hoặc lô không tồn tại trong kho: Hệ thống từ chối giao dịch, quăng lỗi `400 Bad Request` và rollback toàn bộ thay đổi.
+  - Đồng thời cập nhật giảm số lượng tồn kho tổng thể của sản phẩm tại kho (`warehouse_inventories.baseQuantity`).
+
+#### 4. Chi tiết Request / Response API Gợi ý lô
+
+##### `GET /api/warehouse/export/suggest-lot`
+- **Quyền**: `WAREHOUSE_EXPORT` hoặc `WAREHOUSE_VIEW` từ ma trận phân quyền, hoặc `ROLE_ADMIN`. Kiểm tra phạm vi kho phân công.
+- **Query Params**:
+  - `warehouseId` (Long, bắt buộc): ID kho xuất hàng.
+  - `productId` (Long, bắt buộc): ID sản phẩm cần xuất.
+  - `quantity` (BigDecimal, tùy chọn, mặc định 1): Số lượng cần xuất.
+  - `unit` (String, tùy chọn): Đơn vị tính (nếu bỏ trống dùng đơn vị cơ sở).
+
+**Ví dụ Response (`200 OK`):**
+```json
+{
+  "success": true,
+  "message": "Gợi ý lô xuất kho theo FEFO",
+  "data": {
+    "warehouseId": 1,
+    "warehouseCode": "KHO-HCM",
+    "warehouseName": "Kho Hồ Chí Minh",
+    "productId": 10,
+    "productCode": "SP-SUA-100",
+    "productName": "Sữa tươi tiệt trùng 1L",
+    "manageLot": true,
+    "requestedQuantity": 10.0,
+    "requestedUnit": "lon",
+    "requestedBaseQuantity": 10.0,
+    "baseUnit": "lon",
+    "suggestedLot": {
+      "lotId": 2,
+      "lotNumber": "LOT-2026-B",
+      "expiryDate": "2026-11-20",
+      "manufacturingDate": "2026-10-10",
+      "availableQuantity": 20.0,
+      "baseUnit": "lon",
+      "isExpired": false,
+      "daysUntilExpiry": 29,
+      "sufficientForRequest": true
+    },
+    "availableLots": [
+      {
+        "lotId": 1,
+        "lotNumber": "LOT-2026-A",
+        "expiryDate": "2026-11-01",
+        "manufacturingDate": "2026-09-20",
+        "availableQuantity": 5.0,
+        "baseUnit": "lon",
+        "isExpired": false,
+        "daysUntilExpiry": 10,
+        "sufficientForRequest": false
+      },
+      {
+        "lotId": 2,
+        "lotNumber": "LOT-2026-B",
+        "expiryDate": "2026-11-20",
+        "manufacturingDate": "2026-10-10",
+        "availableQuantity": 20.0,
+        "baseUnit": "lon",
+        "isExpired": false,
+        "daysUntilExpiry": 29,
+        "sufficientForRequest": true
+      }
+    ],
+    "hasSufficientStock": true,
+    "message": "Gợi ý xuất lô 'LOT-2026-B' (hạn dùng gần nhất còn đủ số lượng)"
+  }
+}
+```
+
+##### `POST /api/warehouse/export/suggest-lots`
+- **Quyền**: `WAREHOUSE_EXPORT` hoặc `WAREHOUSE_VIEW` hoặc `ROLE_ADMIN`.
+- **Request Body**:
+```json
+{
+  "warehouseId": 1,
+  "items": [
+    {
+      "productId": 10,
+      "quantity": 10,
+      "unit": "lon"
+    }
+  ]
+}
+```
+- **Response**: Trả về danh sách `List<LotSuggestionResponse>` cho từng mặt hàng.
+
+##### `POST /api/warehouse/export`
+- **Quyền**: `WAREHOUSE_EXPORT` hoặc `ROLE_ADMIN`. Kiểm tra phạm vi kho phân công.
+- **Request Body** (Ví dụ khi thủ kho chọn lô khác và nhập lý do):
+```json
+{
+  "warehouseId": 1,
+  "type": "EXPORT",
+  "voucherCode": "PXK-202610-001",
+  "note": "Xuất hàng giao đại lý",
+  "items": [
+    {
+      "productId": 10,
+      "quantity": 10,
+      "unit": "lon",
+      "lotNumber": "LOT-2026-C",
+      "overrideReason": "Khách hàng yêu cầu date xa để vận chuyển tỉnh"
+    }
+  ]
+}
+```
+- **Response**: Trả về `WarehouseVoucherResponse` chứa `suggestedLotNumber` và `overrideReason` trên từng dòng sản phẩm.
+
+### S6-01 - Theo dõi Lô và Hạn sử dụng của Hàng hoá (Backend) - 22/10/2026
+
+Tất cả các endpoint dưới đây có prefix `/api`. Quyền được lấy từ ma trận phân quyền database-backed, không dùng vai trò cứng. `ROLE_ADMIN` luôn có toàn quyền.
+
+#### Danh sách API Lô & Hạn sử dụng (S6-01):
+
+Cập nhật kết nối frontend 22/10/2026: trang `/warehouse/lots` dùng `GET /api/warehouse/lots/options` (WAREHOUSE_VIEW hoặc WAREHOUSE_MANAGE; ADMIN luôn được phép). Response envelope `data` gồm `warehouses` đang hoạt động trong phạm vi phân công, `products` gồm cả SKU bật/tắt lô (LotThresholdResponse), `statuses`, `minimumThresholdDays`, `maximumThresholdDays`, `asOfDate`, `canConfigure`, `canExport`, `canOverrideExpiredLot`. Các cờ là khả năng thực tế của phiên hiện tại; không thay thế kiểm quyền ở API ghi.
+
+`GET /inventory/lots` và `/lot-expiry-alerts` không có warehouseId chỉ trả lô trong phạm vi kho; chỉ định kho ngoài phạm vi trả 403. Ngưỡng xem nhanh phải >= 1; trạng thái danh sách không hợp lệ trả 400. Ngày hết hạn bằng hôm nay chưa quá hạn; quá hạn khi trước ngày server. Cảnh báo chỉ đếm lô còn số lượng dương.
+
+PATCH cấu hình SKU lưu `manageLot` và `expiryWarningDays` (số nguyên >=1). Không được tắt quản lý lô khi SKU còn lượng tồn lô dương; trả 400, không đổi cấu hình. Bảo vệ này cũng áp dụng khi cập nhật sản phẩm đầy đủ.
+
+Xuất hàng luôn đối chiếu hạn dùng/ngày sản xuất từ lô trong DB, không dùng ngày client gửi để vượt chặn quá hạn. SKU legacy tắt quản lý lô nhưng còn tồn lô vẫn bị kiểm tra lô khi xuất. Lô thiếu hạn dùng không được ghi sổ xuất. Ghi đè cần EXPORT và (APPROVE hoặc MANAGE), `overrideExpiredLot=true`, lý do không rỗng tối đa 255 ký tự; ADMIN vẫn phải xác nhận/lý do. Thiếu quyền trả 403; thiếu xác nhận/lý do trả 400. Phiếu/tồn/lô/nhật ký cùng transaction.
+
+| Method | Endpoint | Quyền ma trận | Mô tả |
+|---|---|---|---|
+| `PATCH` | `/products/{id}/manage-lot` | `PRODUCT_EDIT` hoặc `WAREHOUSE_MANAGE` hoặc `ROLE_ADMIN` | Bật/tắt quản lý lô theo từng SKU, có thể cấu hình kèm `expiryWarningDays` |
+| `GET` | `/warehouse/inventory/lots` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_MANAGE` hoặc `ROLE_ADMIN` | Danh sách tồn kho theo lô (hỗ trợ lọc `warehouseId`, `productId`, `status`: EXPIRED/EXPIRING_SOON/ACTIVE/ALL, `thresholdDays`, `keyword`) |
+| `GET` | `/warehouse/lot-expiry-alerts` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_MANAGE` hoặc `ROLE_ADMIN` | Danh sách cảnh báo lô sắp hết hạn / quá hạn kèm tổng hợp thống kê theo ngưỡng |
+| `GET` | `/warehouse/lot-thresholds` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_MANAGE` hoặc `ROLE_ADMIN` | Danh sách ngưỡng cảnh báo hạn dùng theo từng SKU có quản lý lô |
+| `PUT` | `/warehouse/lot-thresholds/{productId}` | `WAREHOUSE_MANAGE` hoặc `ROLE_ADMIN` | Khai báo / cập nhật ngưỡng cảnh báo hạn dùng (số ngày) cho SKU |
+| `POST` | `/warehouse/export` | `WAREHOUSE_EXPORT` hoặc `ROLE_ADMIN` | Lập phiếu xuất kho. Lô quá hạn BỊ CHẶN trừ khi Quản lý kho (`WAREHOUSE_APPROVE` / `WAREHOUSE_MANAGE` / `ROLE_ADMIN`) xác nhận ghi đè kèm lý do |
+| `POST` | `/warehouse/vouchers/{id}/confirm` | `WAREHOUSE_APPROVE` hoặc `ROLE_ADMIN` | Xác nhận phiếu kho nháp (nếu là phiếu xuất có lô quá hạn, bắt buộc đã được ghi đè kèm lý do) |
+
+#### 1. Bật hoặc tắt quản lý lô theo từng SKU
+- **Endpoint**: `PATCH /api/products/{id}/manage-lot`
+- **Request Body**:
+```json
+{
+  "manageLot": true,
+  "expiryWarningDays": 20
+}
+```
+- **Response**: Trả về `ProductResponse` với `manageLot: true`, `expiryWarningDays: 20`.
+- **Quy tắc**: Khi bật `manageLot = true`, khi nhập kho hoặc xuất kho bắt buộc phải chọn/nhập số lô. Ngưỡng cảnh báo hạn sử dụng mặc định là 30 ngày nếu không khai báo cụ thể.
+
+#### 2. Mỗi lô có số lô, ngày sản xuất, hạn sử dụng và số lượng còn lại
+- **Endpoint**: `GET /api/warehouse/inventory/lots`
+- **Query params**:
+  - `warehouseId` (tùy chọn)
+  - `productId` (tùy chọn)
+  - `status` (tùy chọn: `ALL`, `EXPIRED`, `EXPIRING_SOON`, `ACTIVE`)
+  - `thresholdDays` (tùy chọn: ghi đè ngưỡng cảnh báo khi tính `expiringSoon`)
+  - `keyword` (tùy chọn: tìm theo số lô, mã SKU, tên hàng)
+- **Response item**:
+```json
+{
+  "id": 102,
+  "warehouseId": 1,
+  "warehouseCode": "KHO-HCM",
+  "warehouseName": "Kho HCM",
+  "productId": 10,
+  "productCode": "SP-SUA01",
+  "productName": "Sữa tươi tiệt trùng 1L",
+  "lotNumber": "LOT-2026-02",
+  "manufacturingDate": "2026-09-02",
+  "expiryDate": "2026-10-29",
+  "baseQuantity": 50.0,
+  "baseUnit": "hộp",
+  "warningThresholdDays": 15,
+  "daysUntilExpiry": 7,
+  "isExpired": false,
+  "isExpiringSoon": true,
+  "status": "EXPIRING_SOON",
+  "updatedAt": "2026-10-22T00:00:00"
+}
+```
+
+#### 3. Cảnh báo lô sắp hết hạn theo ngưỡng khai báo được
+- **Endpoint**: `GET /api/warehouse/lot-expiry-alerts`
+- **Query params**: `warehouseId`, `productId`, `thresholdDays`, `status` (`ALL`, `EXPIRED`, `EXPIRING_SOON`)
+- **Response**:
+```json
+{
+  "success": true,
+  "message": "Danh sách cảnh báo hạn sử dụng lô",
+  "data": {
+    "totalAlerts": 2,
+    "expiredCount": 1,
+    "expiringSoonCount": 1,
+    "defaultThresholdDays": 30,
+    "items": [
+      {
+        "id": 103,
+        "lotNumber": "LOT-2026-03",
+        "expiryDate": "2026-10-19",
+        "daysUntilExpiry": -3,
+        "isExpired": true,
+        "isExpiringSoon": false,
+        "status": "EXPIRED",
+        "baseQuantity": 20.0,
+        "baseUnit": "hộp"
+      },
+      {
+        "id": 102,
+        "lotNumber": "LOT-2026-02",
+        "expiryDate": "2026-10-29",
+        "daysUntilExpiry": 7,
+        "isExpired": false,
+        "isExpiringSoon": true,
+        "status": "EXPIRING_SOON",
+        "baseQuantity": 50.0,
+        "baseUnit": "hộp"
+      }
+    ]
+  }
+}
+```
+- **Khai báo cấu hình ngưỡng SKU**: `PUT /api/warehouse/lot-thresholds/{productId}`
+```json
+{
+  "thresholdDays": 15
+}
+```
+
+#### 4. Không cho xuất lô đã quá hạn, trừ khi Quản lý kho xác nhận ghi đè kèm lý do
+- **Endpoint**: `POST /api/warehouse/export`
+- **Quy tắc chặn nghiêm ngặt**:
+  - Khi xuất hàng có chỉ định `lotNumber`, hệ thống tự động kiểm tra `expiryDate` của lô trong kho.
+  - Nếu lô hàng đã quá hạn sử dụng (`expiryDate < today`):
+    - Tài khoản không có quyền Quản lý kho (thiếu `WAREHOUSE_APPROVE`, `WAREHOUSE_MANAGE` và không phải `ROLE_ADMIN`): **Bị chặn 403 Forbidden** với thông điệp: `"Lô hàng '...' của sản phẩm '...' đã quá hạn sử dụng (...). Chỉ Quản lý kho mới có quyền xác nhận ghi đè xuất lô đã quá hạn."`
+    - Tài khoản Quản lý kho nhưng chưa xác nhận cờ ghi đè (`overrideExpiredLot != true`): **Bị chặn 400 Bad Request** với thông điệp: `"Lô hàng '...' đã quá hạn sử dụng (...). Cần Quản lý kho xác nhận ghi đè để xuất hàng."`
+    - Tài khoản Quản lý kho xác nhận ghi đè nhưng bỏ trống lý do: **Bị chặn 400 Bad Request** với thông điệp: `"Bắt buộc phải nhập lý do khi Quản lý kho xác nhận ghi đè xuất lô đã quá hạn '...'."`
+    - Tài khoản Quản lý kho xác nhận ghi đè (`overrideExpiredLot = true`) VÀ có lý do hợp lệ (`expiredLotOverrideReason` không rỗng): **Cho phép xuất hàng**. Phiếu kho và các dòng chi tiết ghi nhận `overrideExpiredLot = true`, lưu lại `expiredLotOverrideReason`, và ghi Audit Log hành động `EXPIRED_LOT_OVERRIDE` (19 ký tự, phù hợp cột action 20 ký tự).
+- **Request Body mẫu ghi đè xuất lô quá hạn**:
+```json
+{
+  "warehouseId": 1,
+  "overrideExpiredLot": true,
+  "expiredLotOverrideReason": "Xuất hàng trả về nhà cung cấp để tiêu huỷ theo biên bản số 12/BB-TH",
+  "items": [
+    {
+      "productId": 10,
+      "lotNumber": "LOT-2026-03",
+      "quantity": 20,
+      "unit": "hộp"
+    }
+  ]
+}
+```
+
+---
+
+## S6-07 — Theo dõi hàng đã xuất nhưng chưa giao xong & Tiền hàng trên đường (22/10/2026)
+
+> Cập nhật 23/10/2026: xem mục S6-07 đầu tài liệu cho frontend chỉ đọc, `outstandingOnly`, số liệu trách nhiệm mọi trạng thái và cách loại hàng đã xác nhận trả kho. Các API ghi dưới đây giữ nguyên, không được giao diện theo dõi gọi.
+
+Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến giao hàng đang chạy, kiểm soát số điểm đã giao / còn lại, số tiền hàng đang nằm trên đường, và cảnh báo chuyến giao quá thời gian dự kiến.
+
+### 1. Nguyên tắc nghiệp vụ cốt lõi
+
+1. **Theo dõi tiền hàng trên đường**:
+   - `totalValue`: Tổng tiền hàng xuất phát của chuyến.
+   - `deliveredValue`: Giá trị hàng đã giao thành công tại các điểm `DELIVERED`.
+   - `remainingValue` (Tiền hàng trên đường): Bằng `totalValue - deliveredValue`. Bao gồm giá trị hàng tại các điểm chờ giao (`PENDING`) và các điểm chưa giao được (`FAILED`).
+2. **Quy tắc bất biến hàng chưa giao được**:
+   - Hàng tại điểm giao chưa giao được (`status = FAILED`) **vẫn thuộc trách nhiệm của chuyến/tài xế, tuyệt đối KHÔNG tự động hoàn về tồn kho**.
+   - `returnedToWarehouse` được khởi tạo là `false`. Tồn kho `WarehouseInventory` không đổi khi giao thất bại.
+   - Chỉ khi thực hiện thủ tục nhập kho trả hàng tường minh qua API `POST /stops/{stopId}/return-to-warehouse`, tồn kho mới được ghi nhận cộng lại.
+3. **Cảnh báo chuyến quá thời gian dự kiến**:
+   - Chuyến ở trạng thái `IN_PROGRESS` có thời điểm hiện tại vượt qua `expectedCompletionTime` sẽ được gắn cờ `isOverdue = true`, đi kèm số phút quá hạn `overdueMinutes` và thông báo cảnh báo `overdueWarning`.
+   - Hỗ trợ lọc nhanh danh sách chuyến quá hạn bằng tham số `isOverdue=true`.
+4. **Phân quyền ma trận (Database-backed Permission Matrix)**:
+   - Các API xem/tra cứu/thống kê (`GET`): Bắt buộc quyền `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ROLE_ADMIN`.
+   - Các API thao tác nghiệp vụ (tạo chuyến, cập nhật tiến trình, hoàn tất, hủy, nhập trả kho): Bắt buộc quyền `WAREHOUSE_EXPORT` hoặc `ROLE_ADMIN`.
+   - Thu hồi quyền trên phiên JWT hiện tại lập tức có hiệu lực và trả về `403 Forbidden` trên API request kế tiếp (không fallback theo role).
+   - Phân vùng dữ liệu kho (Warehouse Scoping): Tài khoản kho chỉ được thao tác và xem các chuyến giao thuộc kho được phân công (`user.getWarehouses()`). Truy cập kho ngoài phạm vi trả về `403 Forbidden`.
+
+### 2. Danh sách Endpoints (`/api/warehouse/delivery-trips`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/options` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Lấy danh sách kho trong phạm vi quyền, danh mục trạng thái chuyến và điểm giao |
+| `GET` | `` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tìm kiếm, lọc và phân trang danh sách chuyến giao hàng (`warehouseId`, `status`, `isOverdue`, `keyword`, `page`, `size`) |
+| `GET` | `/summary` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thống kê tổng hợp: số chuyến đang chạy, số chuyến quá hạn, tổng tiền hàng trên đường, tổng điểm đã giao/còn lại |
+| `GET` | `/{id}` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xem chi tiết chuyến giao hàng, danh sách điểm giao và các mặt hàng chi tiết |
+| `POST` | `` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tạo mới chuyến giao hàng (từ danh sách `orderIds` hoặc `stops` tùy chỉnh) |
+| `PUT` | `/{id}/stops/{stopId}/status` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Cập nhật trạng thái điểm giao (`DELIVERED` hoặc `FAILED` kèm lý do). Hàng FAILED không tự về kho |
+| `POST` | `/{id}/complete` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hoàn tất chuyến giao hàng. Cảnh báo nếu còn điểm chưa giao được |
+| `POST` | `/{id}/cancel` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hủy chuyến giao hàng (bắt buộc lý do; chặn hủy nếu đã có điểm giao thành công) |
+| `POST` | `/{id}/stops/{stopId}/return-to-warehouse` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thao tác tường minh: Nhập trả lại kho hàng chưa giao được của điểm giao thất bại |
+| `GET` | `/eligible-orders` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Danh sách đơn hàng đã xuất kho (`EXPORTED`) thuộc kho sẵn sàng gán chuyến |
+
+### 3. Payload mẫu
+
+#### Tạo mới chuyến giao hàng (`POST /api/warehouse/delivery-trips`)
+
+```json
+{
+  "warehouseId": 1,
+  "tripCode": "CG-20261022-001",
+  "driverName": "Nguyễn Văn Lái",
+  "driverPhone": "0988123456",
+  "vehiclePlate": "29C-123.45",
+  "departureTime": "2026-10-22T08:00:00",
+  "expectedCompletionTime": "2026-10-22T12:00:00",
+  "note": "Giao hàng khu vực quận Hoàn Kiếm",
+  "stops": [
+    {
+      "orderCode": "DH-001",
+      "receiverName": "Đại lý Mai Linh",
+      "receiverPhone": "0912345678",
+      "deliveryAddress": "123 Phố Huế, Hoàn Kiếm, Hà Nội",
+      "deliveryAmount": 15000000.00,
+      "stopOrder": 1,
+      "items": [
+        {
+          "productId": 10,
+          "productCode": "BIA-HN",
+          "productName": "Bia Hà Nội Lon 330ml",
+          "unit": "thùng",
+          "quantity": 50,
+          "unitPrice": 300000.00
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Cập nhật trạng thái điểm giao (`PUT /api/warehouse/delivery-trips/{id}/stops/{stopId}/status`)
+
+```json
+{
+  "status": "FAILED",
+  "failedReason": "Cửa hàng đóng cửa, hẹn giao lại vào sáng mai",
+  "note": "Đã gọi điện xác nhận với chủ cửa hàng"
+}
+```
+*(Ghi chú: Khi `status` là `FAILED`, hàng vẫn ở trên xe thuộc trách nhiệm chuyến giao, không cộng lại tồn kho).*
+
+#### Nhập trả kho hàng chưa giao được (`POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/return-to-warehouse`)
+
+```json
+{
+  "returnReason": "Thủ kho đã kiểm đếm và nhận lại 50 thùng hàng nguyên vẹn",
+  "note": "Biên bản hoàn trả số BB-0123"
+}
+```
+
+---
+
+## S7-04 — Hệ thống tự cảnh báo và khoá bán công nợ (22/10/2026)
+
+Tài liệu hợp đồng API phục vụ Bộ phận Kế toán - Tài chính và Quản lý kinh doanh quản lý rủi ro công nợ tự động, kiểm soát hạn mức nợ tiền, số ngày cho phép nợ, tự động khóa bán hoặc chuyển duyệt đơn khi đại lý vi phạm, và tự động gỡ cờ khi thu hồi công nợ.
+
+### 1. Nguyên tắc nghiệp vụ cốt lõi
+
+1. **Tự động gắn cờ đại lý vi phạm công nợ**:
+   - **Vượt hạn mức nợ tiền (`DEBT_LIMIT_EXCEEDED`)**: Khi công nợ hiện tại (`currentDebt = tổng đơn ghi sổ - tổng tiền đã thu`) lớn hơn hạn mức nợ cho phép (`debtLimit`) của đại lý.
+   - **Khoản nợ quá số ngày cho phép (`OVERDUE`)**: Khi đại lý có ít nhất một đơn hàng đã ghi sổ vượt quá số ngày nợ tối đa (`maxDebtDays`) tính từ ngày ghi sổ/tạo đơn mà chưa được thanh toán đủ theo nguyên tắc phân bổ thu tiền FIFO (tiền thu ưu tiên cấn trừ đơn nợ cũ nhất trước).
+   - **Cả hai vi phạm (`BOTH`)**: Đại lý đồng thời vừa vượt hạn mức tiền vừa có khoản nợ quá hạn.
+   - Cờ vi phạm gồm: `debtFlagged` (boolean), `debtFlagType` (`NONE`, `DEBT_LIMIT_EXCEEDED`, `OVERDUE`, `BOTH`), `debtFlagReason` (mô tả chi tiết số tiền vượt và số ngày nợ quá hạn), `debtFlaggedAt` và `lastDebtEvaluatedAt`.
+
+2. **Hành vi xử lý đơn hàng mới theo cấu hình kiểm soát rủi ro**:
+   - **Cấu hình toàn hệ thống (`DebtRiskConfig`)**:
+     - `limitExceededAction`: Hành vi mặc định khi vượt hạn mức tiền (`BLOCK` hoặc `REQUIRE_APPROVAL`).
+     - `overdueAction`: Hành vi mặc định khi có nợ quá hạn (`BLOCK` hoặc `REQUIRE_APPROVAL`).
+     - `defaultAction`: Hành vi dự phòng chung (`BLOCK` hoặc `REQUIRE_APPROVAL`).
+     - `autoFlagEnabled`: Bật/tắt tính năng tự động gắn cờ.
+     - Khi bảng chưa có bản ghi, các API GET/đọc đơn/đọc công nợ chỉ trả cấu hình mặc định trong bộ nhớ (`id = null`), **không INSERT trong giao dịch read-only**. Chỉ `PUT /api/finance/debt/config` với `FINANCE_MANAGE` hoặc ADMIN mới lưu cấu hình. Mặc định chưa lưu: `BLOCK`/`BLOCK`/`REQUIRE_APPROVAL`/`true` theo thứ tự default/overdue/limit/autoFlag. Lỗi truy vấn DB phải được ném ra, không nuốt lỗi rồi dựng cấu hình thành công.
+   - **Cấu hình riêng biệt cho từng đại lý (`Dealer.debtActionConfig`)**:
+     - `DEFAULT`: Áp dụng theo cấu hình hệ thống tương ứng với loại vi phạm.
+     - `BLOCK`: Khóa bán hoàn toàn. Nhân viên kinh doanh / đại lý tạo đơn mới sẽ bị chặn ngay lập tức, API trả về `400 Bad Request` kèm thông báo chi tiết lý do bị khóa và mã đại lý.
+     - `REQUIRE_APPROVAL`: Cho phép ghi nhận tạo đơn nhưng đơn hàng tự động đánh dấu `orderRequiresApproval = true`, trạng thái chuyển `PENDING_APPROVAL`, bổ sung cảnh báo vi phạm công nợ vào đơn để Quản lý kinh doanh phê duyệt.
+
+3. **Tác vụ đánh giá công nợ tự động và tự động gỡ cờ**:
+   - **Tác vụ định kỳ hằng ngày**: Chạy tự động mỗi ngày một lần vào lúc 01:00 AM (`@Scheduled(cron = "${app.debt.evaluation.cron:0 0 1 * * ?}")`) quét toàn bộ đại lý, kiểm tra công nợ và ngày nợ thực tế để cập nhật cờ rủi ro.
+   - **Tự động chạy lại sau khi thu tiền**: Sau mỗi lần ghi nhận phiếu thu tiền công nợ (`POST /api/finance/debt-payments`), hệ thống tự động kích hoạt đánh giá lại công nợ ngay lập tức cho đại lý đó. Nếu công nợ giảm về dưới hạn mức và không còn nợ quá hạn, hệ thống tự động gỡ cờ (`debtFlagged = false`, `debtFlagType = NONE`, `debtFlagReason = null`).
+   - **Đánh giá thủ công theo yêu cầu**: Hỗ trợ gọi API chạy đánh giá toàn bộ đại lý (`POST /api/finance/debt/evaluate`) hoặc một đại lý cụ thể (`POST /api/finance/debt/{dealerId}/evaluate`).
+
+4. **Phân quyền ma trận (Database-backed Permission Matrix)**:
+   - Nguồn chân lý duy nhất là ma trận phân quyền lưu trong database, không dùng fallback vai trò mặc định.
+   - Các API đọc / tra cứu (`GET /api/finance/debt/config`, `/flagged-dealers`, `/debt-payments`): Bắt buộc quyền `FINANCE_VIEW_DEBT` hoặc `FINANCE_MANAGE` hoặc `ROLE_ADMIN`.
+   - Các API ghi / thay đổi cấu hình / thu tiền / đánh giá công nợ (`PUT /api/finance/debt/config`, `PUT /api/finance/debt/{dealerId}/action-config`, `POST /api/finance/debt-payments`, `POST /api/finance/debt/evaluate`, `POST /api/finance/debt/{dealerId}/evaluate`): Bắt buộc quyền `FINANCE_MANAGE` hoặc `ROLE_ADMIN`.
+   - Thu hồi quyền `FINANCE_MANAGE` hoặc `FINANCE_VIEW_DEBT` có hiệu lực ngay lập tức trên các request tiếp theo của cùng token JWT, trả về `403 Forbidden`.
+   - `ROLE_ADMIN` luôn có toàn quyền truy cập.
+
+---
+
+### 2. Danh sách Endpoints Quản lý Rủi ro Công nợ & Thu tiền
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/finance/debt/config` | `FINANCE_VIEW_DEBT`, `FINANCE_MANAGE` hoặc `ADMIN` | Đọc cấu hình, không tạo bản ghi khi bảng còn rỗng; tránh lỗi rollback-only của MySQL do ghi trong giao dịch chỉ đọc |
+| `PUT` | `/api/finance/debt/config` | `FINANCE_MANAGE` hoặc `ADMIN` | Cập nhật cấu hình rủi ro công nợ hệ thống (hành vi khi vượt hạn mức, khi quá hạn, bật/tắt tự động) |
+| `PUT` | `/api/finance/debt/{dealerId}/action-config` | `FINANCE_MANAGE` hoặc `ADMIN` | Cập nhật hành vi xử lý công nợ riêng biệt cho một đại lý (`DEFAULT`, `BLOCK`, `REQUIRE_APPROVAL`) |
+| `GET` | `/api/finance/debt/flagged-dealers` | `FINANCE_VIEW_DEBT`, `FINANCE_MANAGE` hoặc `ADMIN` | Lấy danh sách các đại lý đang bị gắn cờ cảnh báo công nợ |
+| `POST` | `/api/finance/debt/evaluate` | `FINANCE_MANAGE` hoặc `ADMIN` | Chạy tác vụ đánh giá lại công nợ thủ công cho toàn bộ đại lý |
+| `POST` | `/api/finance/debt/{dealerId}/evaluate` | `FINANCE_MANAGE` hoặc `ADMIN` | Chạy tác vụ đánh giá lại công nợ cho một đại lý cụ thể |
+| `POST` | `/api/finance/debt-payments` | `FINANCE_MANAGE` hoặc `ADMIN` | Ghi nhận phiếu thu tiền công nợ đại lý (tự động đánh giá lại và gỡ cờ) |
+| `GET` | `/api/finance/debt-payments` | `FINANCE_VIEW_DEBT`, `FINANCE_MANAGE` hoặc `ADMIN` | Tra cứu lịch sử thu tiền công nợ có lọc theo `dealerId`, `paymentMethod`, khoảng ngày và phân trang |
+
+---
+
+### 3. Chi tiết Hợp đồng Payload và Request/Response Mẫu
+
+#### 3.1 Cấu hình kiểm soát rủi ro hệ thống (`PUT /api/finance/debt/config`)
+
+**Request Body:**
+```json
+{
+  "defaultAction": "BLOCK",
+  "overdueAction": "REQUIRE_APPROVAL",
+  "limitExceededAction": "BLOCK",
+  "autoFlagEnabled": true
+}
+```
+
+**Response Body:**
+```json
+{
+  "success": true,
+  "message": "Đã cập nhật cấu hình kiểm soát rủi ro công nợ",
+  "data": {
+    "id": 1,
+    "defaultAction": "BLOCK",
+    "overdueAction": "REQUIRE_APPROVAL",
+    "limitExceededAction": "BLOCK",
+    "autoFlagEnabled": true,
+    "updatedAt": "2026-10-22T16:30:00"
+  }
+}
+```
+
+---
+
+#### 3.2 Cấu hình hành vi xử lý công nợ riêng cho đại lý (`PUT /api/finance/debt/{dealerId}/action-config`)
+
+**Request Body:**
+```json
+{
+  "action": "REQUIRE_APPROVAL"
+}
+```
+
+**Response Body:**
+```json
+{
+  "success": true,
+  "message": "Đã cập nhật cấu hình hành vi đại lý",
+  "data": {
+    "id": 12,
+    "code": "DL-001",
+    "name": "Đại lý Cấp 1 Minh Phát",
+    "debtLimit": 50000000.00,
+    "maxDebtDays": 30,
+    "currentDebt": 55000000.00,
+    "debtFlagged": true,
+    "debtFlagType": "DEBT_LIMIT_EXCEEDED",
+    "debtActionConfig": "REQUIRE_APPROVAL"
+  }
+}
+```
+
+---
+
+#### 3.3 Tra cứu danh sách đại lý bị gắn cờ (`GET /api/finance/debt/flagged-dealers`)
+
+**Response Body:**
+```json
+{
+  "success": true,
+  "message": "Danh sách đại lý đang bị gắn cờ cảnh báo công nợ",
+  "data": [
+    {
+      "dealerId": 12,
+      "dealerCode": "DL-001",
+      "dealerName": "Đại lý Cấp 1 Minh Phát",
+      "currentDebt": 55000000.00,
+      "debtLimit": 50000000.00,
+      "excessDebtAmount": 5000000.00,
+      "maxDebtDays": 30,
+      "maxOverdueDays": 0,
+      "overdueAmount": 0.00,
+      "debtFlagType": "DEBT_LIMIT_EXCEEDED",
+      "debtFlagReason": "Vượt hạn mức nợ: Nợ hiện tại (55,000,000 đ) vượt hạn mức (50,000,000 đ) một khoản 5,000,000 đ",
+      "debtFlaggedAt": "2026-10-22T01:00:00",
+      "lastDebtEvaluatedAt": "2026-10-22T01:00:00",
+      "configuredAction": "REQUIRE_APPROVAL",
+      "effectiveAction": "REQUIRE_APPROVAL"
+    }
+  ]
+}
+```
+
+---
+
+#### 3.4 Kích hoạt tác vụ đánh giá công nợ (`POST /api/finance/debt/evaluate`)
+
+**Response Body:**
+```json
+{
+  "success": true,
+  "message": "Đã thực hiện tác vụ đánh giá lại công nợ toàn bộ đại lý",
+  "data": {
+    "evaluatedAt": "2026-10-22T16:35:00",
+    "totalEvaluated": 15,
+    "totalFlagged": 2,
+    "newlyFlagged": 1,
+    "unflagged": 0,
+    "limitExceededCount": 1,
+    "overdueCount": 1,
+    "bothCount": 0,
+    "flaggedDealers": [
+      {
+        "dealerId": 12,
+        "dealerCode": "DL-001",
+        "dealerName": "Đại lý Cấp 1 Minh Phát",
+        "currentDebt": 55000000.00,
+        "debtLimit": 50000000.00,
+        "excessDebtAmount": 5000000.00,
+        "maxDebtDays": 30,
+        "maxOverdueDays": 0,
+        "overdueAmount": 0.00,
+        "debtFlagType": "DEBT_LIMIT_EXCEEDED",
+        "debtFlagReason": "Vượt hạn mức nợ: Nợ hiện tại (55,000,000 đ) vượt hạn mức (50,000,000 đ) một khoản 5,000,000 đ",
+        "debtFlaggedAt": "2026-10-22T16:35:00",
+        "lastDebtEvaluatedAt": "2026-10-22T16:35:00",
+        "configuredAction": "DEFAULT",
+        "effectiveAction": "BLOCK"
+      }
+    ]
+  }
+}
+```
+
+---
+
+#### 3.5 Ghi nhận phiếu thu tiền công nợ (`POST /api/finance/debt-payments`)
+
+**Request Body:**
+```json
+{
+  "dealerId": 12,
+  "amount": 10000000.00,
+  "paymentMethod": "BANK_TRANSFER",
+  "referenceCode": "UNC-20261022-88",
+  "note": "Thu nợ chuyển khoản đợt 2"
+}
+```
+
+**Response Body:**
+```json
+{
+  "success": true,
+  "message": "Ghi nhận thu tiền công nợ thành công",
+  "data": {
+    "id": 101,
+    "paymentCode": "PT-20261022-0001",
+    "dealerId": 12,
+    "dealerCode": "DL-001",
+    "dealerName": "Đại lý Cấp 1 Minh Phát",
+    "amount": 10000000.00,
+    "paymentDate": "2026-10-22T16:40:00",
+    "paymentMethod": "BANK_TRANSFER",
+    "referenceCode": "UNC-20261022-88",
+    "note": "Thu nợ chuyển khoản đợt 2",
+    "recordedBy": "accountant_user",
+    "createdAt": "2026-10-22T16:40:00"
+  }
+}
+```
+*(Ghi chú: Ngay sau khi phản hồi 201 Created, công nợ đại lý được trừ 10,000,000 đ, hệ thống tự động chạy đánh giá lại và gỡ cờ `debtFlagged = false` nếu công nợ còn lại <= hạn mức nợ và không còn đơn quá hạn).*
+
+---
+
+#### 3.6 Tra cứu danh sách phiếu thu tiền (`GET /api/finance/debt-payments?dealerId=12&page=0&size=20`)
+
+**Response Body:**
+```json
+{
+  "success": true,
+  "message": "Danh sách lịch sử thu tiền công nợ",
+  "data": {
+    "content": [
+      {
+        "id": 101,
+        "paymentCode": "PT-20261022-0001",
+        "dealerId": 12,
+        "dealerCode": "DL-001",
+        "dealerName": "Đại lý Cấp 1 Minh Phát",
+        "amount": 10000000.00,
+        "paymentDate": "2026-10-22T16:40:00",
+        "paymentMethod": "BANK_TRANSFER",
+        "referenceCode": "UNC-20261022-88",
+        "note": "Thu nợ chuyển khoản đợt 2",
+        "recordedBy": "accountant_user",
+        "createdAt": "2026-10-22T16:40:00"
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalElements": 1,
+    "totalPages": 1
+  }
+}
+```
+
+---
+
+## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Backend)
+
+Hỗ trợ Kế toán công nợ (`ROLE_ACCOUNTANT`) ghi nhận thanh toán từ đại lý và đối trừ vào công nợ, để biết chính xác đại lý còn nợ những hoá đơn nào.
+
+### Quy tắc nghiệp vụ cốt lõi:
+1. **Thông tin phiếu thu đầy đủ**:
+   - Ghi nhận số tiền (`amount` > 0), hình thức thu (`paymentMethod`: `TIEN_MAT`, `CHUYEN_KHOAN`, `KHAC`), ngày thu (`paymentDate`), người thu (`recordedBy`), mã chứng từ tham chiếu (`referenceCode`), và ghi chú (`note`).
+   - Mã phiếu thu tự động sinh theo mẫu: `PT-YYYYMMDD-XXXX`.
+2. **Đối trừ linh hoạt**:
+   - **Tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO)**: Khi `autoAllocate = true` (hoặc không truyền danh sách đối trừ cụ thể), hệ thống tự động tìm các đơn hàng/hoá đơn còn nợ theo thứ tự `recordedAt` cũ nhất trước và cấn trừ lần lượt cho tới khi hết số tiền thu.
+   - **Chọn đối trừ vào hoá đơn cụ thể**: Khi `autoAllocate = false` và truyền mảng `allocations`: Kế toán chỉ định rõ đơn hàng nào (`orderId`) được đối trừ bao nhiêu tiền (`amount`). Tổng số tiền đối trừ phải khớp chính xác với số tiền phiếu thu.
+3. **Cho phép thu một phần (Partial Payment)**:
+   - Một hoá đơn khi được thanh toán một phần (`paidAmount < totalAmount`) sẽ chuyển trạng thái sang **"Thanh toán một phần"** (`paymentStatus = "PARTIALLY_PAID"`).
+   - Khi đã thanh toán đủ (`paidAmount >= totalAmount`), chuyển trạng thái sang **"Đã thanh toán"** (`paymentStatus = "PAID"`).
+   - Đơn hàng chưa thanh toán có trạng thái `UNPAID`.
+4. **Không cho thu vượt tổng công nợ còn lại**:
+   - Nếu số tiền thu lớn hơn tổng số nợ còn lại của các đơn hàng đã ghi sổ của đại lý: Hệ thống chặn và trả lỗi **HTTP 400 Bad Request** kèm thông báo chi tiết: *"Số tiền thu (...) không được vượt quá tổng công nợ còn lại của đại lý (...)"*.
+   - Với đối trừ chỉ định cụ thể: Không được đối trừ vượt quá số nợ còn lại của từng hoá đơn.
+5. **Bất biến: Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh**:
+   - API xoá phiếu thu `DELETE /api/finance/debt-payments/{id}` bị chặn và luôn trả về **HTTP 400 Bad Request**: *"Đã ghi nhận thanh toán thì không được xoá, chỉ lập bút toán điều chỉnh"*.
+   - Hỗ trợ lập bút toán điều chỉnh qua `POST /api/finance/debt-payments/{id}/adjust`:
+     + `REVERSAL`: Huỷ bỏ toàn bộ khoản thu (lập bút toán điều chỉnh hoàn trả toàn bộ số tiền âm, khôi phục nợ và trạng thái các hoá đơn đã đối trừ). Mã bút toán điều chỉnh: `BTDC-YYYYMMDD-XXXX`.
+     + `PARTIAL_REVERSAL`: Điều chỉnh giảm một phần số tiền thu (`adjustmentAmount`), hoàn trả tiền từ các hoá đơn được đối trừ gần nhất trở về trước.
+6. **Ma trận phân quyền**:
+   - Ghi nhận thanh toán và lập bút toán điều chỉnh: Bắt buộc `FINANCE_MANAGE` hoặc `ROLE_ADMIN`.
+   - Tra cứu hoá đơn, xem trước đối trừ, xem lịch sử: Bắt buộc `FINANCE_VIEW_DEBT` hoặc `FINANCE_MANAGE` hoặc `ROLE_ADMIN`.
+   - Nguồn sự thật duy nhất là ma trận phân quyền trong DB (`RolePermissionConfig`), không fallback theo role cứng.
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| POST | `/api/finance/debt-payments` | `FINANCE_MANAGE` hoặc ADMIN | Ghi nhận thanh toán và đối trừ vào công nợ (FIFO hoặc cụ thể) |
+| GET | `/api/finance/debt-payments/{id}` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Chi tiết phiếu thu tiền kèm danh sách các hoá đơn được đối trừ |
+| POST | `/api/finance/debt-payments/{id}/adjust` | `FINANCE_MANAGE` hoặc ADMIN | Lập bút toán điều chỉnh cho phiếu thu đã ghi nhận |
+| DELETE | `/api/finance/debt-payments/{id}` | `FINANCE_MANAGE` hoặc ADMIN | Chặn xoá phiếu thu, luôn trả 400 Bad Request |
+| GET | `/api/finance/dealers/{dealerId}/invoices` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Danh sách hoá đơn công nợ của đại lý (lọc theo `status`: `UNPAID`, `PARTIALLY_PAID`, `PAID`) |
+| GET | `/api/finance/dealers/{dealerId}/unpaid-invoices` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Danh sách các hoá đơn còn nợ của đại lý |
+| POST | `/api/finance/debt-payments/preview-allocation` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Xem trước đối trừ tự động theo FIFO trước khi lưu phiếu thu |
+| GET | `/api/finance/orders/{orderId}/settlements` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Lịch sử các lần đối trừ vào một đơn hàng/hoá đơn cụ thể |
+
+#### Ví dụ Request Ghi nhận thanh toán có đối trừ cụ thể (`POST /api/finance/debt-payments`):
+```json
+{
+  "dealerId": 12,
+  "amount": 15000000,
+  "paymentDate": "2026-10-22",
+  "paymentMethod": "CHUYEN_KHOAN",
+  "referenceCode": "UNC-20261022-99",
+  "note": "Thanh toán đợt 1 cho 2 hoá đơn",
+  "recordedBy": "Kế toán Nguyễn Văn A",
+  "autoAllocate": false,
+  "allocations": [
+    {
+      "orderId": 101,
+      "amount": 10000000,
+      "note": "Trả hết hoá đơn DH-001"
+    },
+    {
+      "orderId": 102,
+      "amount": 5000000,
+      "note": "Trả một phần hoá đơn DH-002"
+    }
+  ]
+}
+```
+
+#### Ví dụ Response:
+```json
+{
+  "success": true,
+  "message": "Ghi nhận thu tiền thành công và đã đánh giá lại công nợ",
+  "data": {
+    "id": 55,
+    "paymentCode": "PT-20261022-0005",
+    "dealerId": 12,
+    "dealerCode": "DL-001",
+    "dealerName": "Đại lý Cấp 1 Minh Phát",
+    "amount": 15000000.00,
+    "paymentDate": "2026-10-22",
+    "paymentMethod": "CHUYEN_KHOAN",
+    "referenceCode": "UNC-20261022-99",
+    "note": "Thanh toán đợt 1 cho 2 hoá đơn",
+    "recordedBy": "Kế toán Nguyễn Văn A",
+    "paymentType": "PAYMENT",
+    "allocations": [
+      {
+        "id": 1,
+        "orderId": 101,
+        "orderCode": "DH-001",
+        "allocatedAmount": 10000000.00,
+        "orderTotalAmount": 10000000.00,
+        "orderPaidAmount": 10000000.00,
+        "orderRemainingAmount": 0.00,
+        "orderPaymentStatus": "PAID",
+        "orderPaymentStatusDisplayName": "Đã thanh toán"
+      },
+      {
+        "id": 2,
+        "orderId": 102,
+        "orderCode": "DH-002",
+        "allocatedAmount": 5000000.00,
+        "orderTotalAmount": 12000000.00,
+        "orderPaidAmount": 5000000.00,
+        "orderRemainingAmount": 7000000.00,
+        "orderPaymentStatus": "PARTIALLY_PAID",
+        "orderPaymentStatusDisplayName": "Thanh toán một phần"
+      }
+    ],
+    "remainingDebt": 7000000.00,
+    "dealerStillFlagged": false
+  }
+}
+```
+
+#### Ví dụ Request Lập bút toán điều chỉnh (`POST /api/finance/debt-payments/55/adjust`):
+```json
+{
+  "reason": "Khách hàng chuyển nhầm đại lý, lập bút toán hoàn trả toàn bộ",
+  "adjustmentType": "REVERSAL",
+  "recordedBy": "Kế toán trưởng"
+}
+```
+
+## S7-01 — Phát hành hóa đơn bán hàng từ phiếu đã giao (22/10/2026)
+
+**Bổ sung 23/10/2026:** `GET /api/invoices/{id}/adjustments/{adjustmentId}/pdf` kiểm tra chứng từ thuộc đúng hóa đơn `{id}` trước khi tạo PDF. Sai cặp hóa đơn/chứng từ trả `400 Bad Request`, không gọi dịch vụ xuất PDF. Quyền đọc vẫn là `INVOICE_VIEW` hoặc ADMIN; không đổi schema hay hợp đồng phát hành.
+
+Tài liệu hợp đồng API phục vụ Kế toán công nợ phát hành hóa đơn bán hàng từ các phiếu giao hàng đã hoàn thành, xuất đúng số lượng thực giao thay vì số lượng đặt, quản lý dãy số hóa đơn liên tục không nhảy cóc, và hỗ trợ chứng từ điều chỉnh cho hóa đơn bất biến.
+
+### 1. Nguyên tắc nghiệp vụ cốt lõi
+
+1. **Hóa đơn sinh từ số lượng thực giao (Delivered Quantity)**:
+   - Số lượng xuất trên hóa đơn (`invoicedQuantity`) được lấy từ `deliveredQuantity` của từng dòng hàng trên phiếu giao đã hoàn tất (`status = DELIVERED`), không lấy theo `orderedQuantity`.
+   - Các dòng hàng có `deliveredQuantity == 0` hoặc chưa giao sẽ không được tính tiền vào hóa đơn.
+   - Thành tiền = `invoicedQuantity * unitPrice - discountAmount`.
+2. **Số hóa đơn tự sinh liên tục, không trùng và không nhảy cóc**:
+   - Sử dụng cơ chế khóa bi quan (`PESSIMISTIC_WRITE`) trên bảng `invoice_sequences` trong cùng transaction phát hành hóa đơn.
+   - Định dạng số 8 chữ số Ả Rập chuẩn: `00000001`, `00000002`... đi kèm mã hóa đơn `HD-00000001`.
+   - Nếu transaction gặp lỗi hoặc rollback, bộ đếm tự động rollback theo, đảm bảo tuyệt đối không có khoảng trống (không nhảy cóc) và không trùng số.
+3. **Gộp nhiều phiếu giao của cùng đại lý trong kỳ**:
+   - Hỗ trợ gộp 1 hoặc nhiều phiếu giao (`orderIds`) của cùng một đại lý (`dealerId`) thành một hóa đơn duy nhất.
+   - Ràng buộc kiểm tra nghiêm ngặt: Tất cả phiếu giao phải thuộc cùng đại lý và ở trạng thái `DELIVERED`.
+   - Chặn xuất hóa đơn lặp: Mỗi phiếu giao chỉ được xuất hóa đơn 1 lần duy nhất trong toàn hệ thống (ràng buộc unique `order_id` trên bảng `invoice_orders`).
+4. **Hóa đơn đã phát hành không sửa và không xóa**:
+   - Hóa đơn ở trạng thái `ISSUED` là bất biến. Mọi thao tác `PUT` hoặc `DELETE` trực tiếp vào hóa đơn đều bị chặn với mã lỗi `400 Bad Request`.
+   - Khi có sai sót, chỉ được lập **Chứng từ điều chỉnh** (`InvoiceAdjustment`):
+     - `INCREASE`: Điều chỉnh tăng tiền / số lượng.
+     - `DECREASE`: Điều chỉnh giảm tiền / số lượng / chiết khấu.
+     - `INFORMATION`: Điều chỉnh thông tin (tên đại lý, MST, địa chỉ...).
+     - `CANCEL`: Điều chỉnh hủy hóa đơn.
+   - Bắt buộc nhập lý do điều chỉnh (`adjustmentReason`). Hóa đơn sau khi điều chỉnh chuyển trạng thái `ADJUSTED` (hoặc `CANCELLED` nếu hủy).
+5. **In và xuất file PDF**:
+   - `GET /api/invoices/{id}/pdf`: Xuất file PDF hóa đơn chuẩn A4 theo thiết kế doanh nghiệp (OpenPDF).
+   - `GET /api/invoices/{id}/print-preview`: Trả về mẫu in HTML hỗ trợ in trực tiếp từ trình duyệt (`window.print`).
+   - `GET /api/invoices/{id}/adjustments/{adjustmentId}/pdf`: Xuất file PDF chứng từ điều chỉnh hóa đơn.
+6. **Phân quyền ma trận (Database-backed Permission Matrix)**:
+   - Các API xem/tra cứu/tải PDF (`GET`): Bắt buộc quyền `INVOICE_VIEW` hoặc `ROLE_ADMIN`.
+   - Các API phát hành hóa đơn / xem trước (`POST /api/invoices`, `POST /api/invoices/preview`): Bắt buộc quyền `INVOICE_CREATE` hoặc `ROLE_ADMIN`.
+   - API lập chứng từ điều chỉnh (`POST /api/invoices/{id}/adjustments`): Bắt buộc quyền `INVOICE_ADJUST` hoặc `ROLE_ADMIN`.
+   - Thu hồi quyền trên phiên JWT hiện tại lập tức có hiệu lực và trả về `403 Forbidden` trên request kế tiếp (không fallback theo role).
+
+### 2. Danh sách Endpoints (`/api/invoices`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/dealers-with-eligible-orders` | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách đại lý có phiếu giao hàng chưa xuất hóa đơn |
+| `GET` | `/eligible-orders` | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách phiếu giao hàng hợp lệ sẵn sàng xuất hóa đơn của đại lý (`dealerId`, `startDate`, `endDate`) |
+| `POST` | `/preview` | `INVOICE_CREATE` hoặc `ADMIN` | Xem trước thông tin hóa đơn gộp trước khi phát hành chính thức |
+| `POST` | `` | `INVOICE_CREATE` hoặc `ADMIN` | Phát hành hóa đơn bán hàng chính thức từ các phiếu giao hàng |
+| `GET` | `` | `INVOICE_VIEW` hoặc `ADMIN` | Tìm kiếm, lọc và phân trang danh sách hóa đơn (`dealerId`, `status`, `startDate`, `endDate`, `keyword`, `page`, `size`) |
+| `GET` | `/{id}` | `INVOICE_VIEW` hoặc `ADMIN` | Xem chi tiết hóa đơn, các dòng hàng thực giao, phiếu giao liên kết và chứng từ điều chỉnh |
+| `PUT` | `/{id}` | `INVOICE_CREATE` hoặc `ADMIN` | Chặn sửa hóa đơn đã phát hành (luôn trả 400 Bad Request) |
+| `DELETE` | `/{id}` | `INVOICE_CREATE` hoặc `ADMIN` | Chặn xóa hóa đơn đã phát hành (luôn trả 400 Bad Request) |
+| `POST` | `/{id}/adjustments` | `INVOICE_ADJUST` hoặc `ADMIN` | Lập chứng từ điều chỉnh cho hóa đơn đã phát hành (bắt buộc lý do) |
+| `GET` | `/{id}/adjustments` | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách chứng từ điều chỉnh của hóa đơn |
+| `GET` | `/{id}/pdf` | `INVOICE_VIEW` hoặc `ADMIN` | Xuất file PDF hóa đơn bán hàng (`application/pdf`) |
+| `GET` | `/{id}/print-preview` | `INVOICE_VIEW` hoặc `ADMIN` | Xem trước bản in hóa đơn dạng HTML (`text/html`) |
+| `GET` | `/{id}/adjustments/{adjustmentId}/pdf` | `INVOICE_VIEW` hoặc `ADMIN` | Xuất file PDF chứng từ điều chỉnh (`application/pdf`) |
+
+### 3. Payload mẫu
+
+#### Phát hành hóa đơn (`POST /api/invoices`)
+
+```json
+{
+  "dealerId": 1,
+  "orderIds": [101, 102],
+  "invoiceDate": "2026-10-22T14:30:00",
+  "note": "Xuất hóa đơn đợt 1 tháng 10/2026"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "message": "Phát hành hóa đơn thành công",
+  "data": {
+    "id": 1,
+    "invoiceNumber": "00000001",
+    "invoiceCode": "HD-00000001",
+    "invoiceDate": "2026-10-22T14:30:00",
+    "status": "ISSUED",
+    "statusLabel": "Đã phát hành",
+    "dealerId": 1,
+    "dealerCode": "DL-TEST-001",
+    "dealerName": "Đại lý Bia Mai Linh",
+    "dealerTaxCode": "0109988776",
+    "subtotalAmount": 3850000.00,
+    "discountAmount": 0.00,
+    "totalAmount": 3850000.00,
+    "adjustedTotalAmount": 3850000.00,
+    "items": [
+      {
+        "orderId": 101,
+        "orderCode": "PG-20261022-001",
+        "productCode": "SP-BIA-HN",
+        "productName": "Bia Hà Nội Lon 330ml",
+        "unit": "thùng",
+        "orderedQuantity": 10,
+        "deliveredQuantity": 7,
+        "invoicedQuantity": 7,
+        "unitPrice": 300000.00,
+        "subtotalAmount": 2100000.00,
+        "totalAmount": 2100000.00
+      }
+    ]
+  }
+}
+```
+
+#### Lập chứng từ điều chỉnh (`POST /api/invoices/{id}/adjustments`)
+
+```json
+{
+  "adjustmentType": "DECREASE",
+  "adjustmentReason": "Chiết khấu bổ sung hỗ trợ đại lý 50,000 do bao bì cấn móp",
+  "adjustmentAmount": 50000.00,
+  "note": "Đã có biên bản kiểm tra hàng lỗi với đại lý"
+}
+```
+
+## S8-02 — Chứng từ điều chỉnh giảm công nợ khi trả hàng
+
+Base path: `/api/invoices/returns`. Yêu cầu Bearer JWT; dữ liệu lưu trong database.
+
+### Phân quyền
+
+- `INVOICE_ADJUST`: lập phiếu trả hàng, xác nhận để sinh chứng từ giảm công nợ, hủy phiếu nháp.
+- `INVOICE_VIEW`: xem danh sách, chi tiết và phiếu trả theo hóa đơn.
+- Tra cứu hóa đơn nguồn cho người lập chỉ cần `INVOICE_ADJUST`, không cần quyền khách hàng, công nợ hoặc VIEW. Lookup không cấp quyền đọc toàn bộ lịch sử phiếu trả.
+- `ROLE_ADMIN`: luôn có quyền API. Không có fallback cho ACCOUNTANT hoặc vai trò khác.
+- Quyền được đọc qua ma trận DB hiện có, có hiệu lực ở request tiếp theo kể cả JWT cũ. Người chỉ có ADJUST không tự động được VIEW, và ngược lại. Khi thử thu hồi phải bảo đảm không có vai trò thứ hai cấp cùng quyền.
+
+### API
+
+| Method | Path tương đối | Quyền | Kết quả |
+|---|---|---|---|
+| POST | base path | INVOICE_ADJUST | 201, tạo phiếu DRAFT, chưa giảm công nợ |
+| POST | `/{id}/confirm` | INVOICE_ADJUST | 200, xác nhận trả và tạo InvoiceAdjustment(DECREASE) trong cùng transaction |
+| POST | `/{id}/cancel` | INVOICE_ADJUST | 200, chỉ hủy phiếu DRAFT |
+| GET | base path | INVOICE_VIEW | Page, lọc `dealerId`, `invoiceId`, `status`; `page=0`, `size=20` (giới hạn 1–100) |
+| GET | `/{id}` | INVOICE_VIEW | Chi tiết kèm chứng từ điều chỉnh nếu đã xác nhận |
+| GET | `/by-invoice/{invoiceId}` | INVOICE_VIEW | Danh sách phiếu trả liên kết hóa đơn gốc |
+| GET | `/options` | INVOICE_VIEW hoặc INVOICE_ADJUST | Danh sách mã/nhãn trạng thái phiếu trả |
+| GET | `/eligible-invoices` | INVOICE_ADJUST | Page hóa đơn ISSUED/ADJUSTED, tìm `keyword` theo mã/số hóa đơn hoặc mã/tên đại lý; tối đa 100 ký tự |
+| GET | `/eligible-invoices/{invoiceId}` | INVOICE_ADJUST | Dòng hóa đơn gốc, số đã trả CONFIRMED và số còn được trả |
+
+Các API Page nhận `page >= 0`, `size` từ 1 đến 100; giá trị ngoài khoảng trả 400, không âm thầm cắt giới hạn. Lookup dòng trả `invoiceItemId`, snapshot sản phẩm/đơn vị, `invoicedQuantity`, `confirmedReturnQuantity`, `remainingQuantity`, `invoiceUnitPrice`, `originalDiscountAmount`, `originalLineTotal`, `previouslyCreditedAmount`. Chỉ các dòng liên kết đơn gốc, có lượng xuất hóa đơn dương được đưa vào nguồn; kiểm tra lại điều kiện lúc tạo/xác nhận. Hóa đơn hết số được trả có thể vẫn xuất hiện trong lookup nhưng không thể lập thêm lượng trả.
+
+POST tạo phiếu:
+
+```json
+{
+  "invoiceId": 12,
+  "returnReason": "Đại lý trả lại hàng",
+  "returnDate": "2026-10-23T08:00:00",
+  "note": "Đã kiểm tra hàng trả",
+  "items": [{"invoiceItemId": 41, "returnQuantity": 2.0000, "note": "Hàng trả của hóa đơn gốc"}]
+}
+```
+
+- `invoiceId` và `invoiceItemId`: bắt buộc, dương. Dòng hàng phải thuộc hóa đơn gốc và có liên kết đơn hàng gốc.
+- `returnReason`: bắt buộc, không chỉ khoảng trắng, tối đa 500 ký tự.
+- `returnDate`: tùy chọn (mặc định thời điểm lập), không ở tương lai. `note`: tối đa 500 ký tự.
+- `items`: 1–500 dòng; không nhận phần tử null hoặc dòng hóa đơn trùng lặp. Note của dòng tối đa 255 ký tự.
+- `returnQuantity`: > 0, tối đa 11 chữ số nguyên và 4 chữ số thập phân. Tổng trả đã CONFIRMED cộng số lượng lần này không được vượt lượng xuất hóa đơn. Kiểm tra lại lúc confirm vì nhiều phiếu DRAFT có thể cùng tồn tại.
+- Không nhận đơn giá/thành tiền hay trạng thái từ client. Không cho trả trên hóa đơn CANCELLED.
+
+POST hủy phiếu nháp:
+
+```json
+{"cancelReason":"Nhập nhầm số lượng"}
+```
+
+Lý do hủy bắt buộc, tối đa 500 ký tự. Không có API sửa/xóa phiếu hoặc hủy khoản trả đã xác nhận.
+
+### Trạng thái, liên kết và tiền giảm trừ
+
+Response dùng envelope `ApiResponse` hiện có. Phiếu trả gồm `id`, `returnCode`, `invoiceId`, `invoiceCode`, `invoiceNumber`, thông tin đại lý, `status`/`statusLabel`, `returnReason`, `returnDate`, `totalReturnAmount`, người/thời điểm lập và xác nhận, `cancelReason`, `note`, `items`, `invoiceAdjustment`.
+
+Response xác nhận thành công còn có `currentDebtAfter`, `remainingLimitAfter`: số dư được server tính trong chính giao dịch đó. Hai trường này không lưu như số dư lịch sử và không có trong các lần GET sau; không suy diễn thành số dư hiện tại khi xem phiếu cũ.
+
+Mỗi dòng trả có `invoiceItemId` để truy vết chính xác dòng hóa đơn gốc, snapshot sản phẩm/đơn vị, `invoiceUnitPrice`, `invoiceDiscountPerUnit`, `returnQuantity`, `returnAmount`. Khi xác nhận:
+
+1. Khóa hóa đơn và phiếu trả trong DB, kiểm tra còn DRAFT và còn số lượng được trả.
+2. Tính tiền từ **thành tiền sau chiết khấu của dòng hóa đơn gốc**, theo tỷ lệ số lượng trả. Không đọc giá hiện hành của sản phẩm hoặc bảng giá.
+3. Dùng chênh lệch tổng làm tròn lũy kế (2 chữ số thập phân): `round(originalLineTotal * cumulativeReturnedQty / invoicedQty, 2) - previouslyCreditedAmount`. Ví dụ dòng 3 đơn vị trị giá 100.00, trả 3 lần từng đơn vị: 33.33, 33.34, 33.33, tổng chính xác 100.00.
+4. Ghi `InvoiceAdjustment` loại `DECREASE`, số tiền âm, liên kết hóa đơn gốc. Phiếu trả liên kết duy nhất tới chứng từ đã sinh. Mã phiếu/chứng từ dùng UUID, không trùng do đếm sequence đồng thời.
+5. Chuyển phiếu thành CONFIRMED, lưu người/thời điểm; ghi audit RETURN_ORDER và INVOICE_ADJUSTMENT. Chỉ khoản CONFIRMED tác động công nợ.
+6. Tính lại cảnh báo công nợ trong cùng transaction. Nếu bước này lỗi, rollback cả phiếu xác nhận và chứng từ, không nuốt lỗi.
+
+**Hóa đơn gốc giữ nguyên toàn bộ cột**, gồm trạng thái, tổng tiền, adjustedTotalAmount, thông tin khách hàng và các dòng hàng. Chứng từ là bản ghi mới; có thể tra cứu qua response phiếu trả hoặc API hiện có `GET /api/invoices/{id}/adjustments`. Không dùng việc sửa `Invoice.adjustedTotalAmount` để tính giảm nợ S8-02.
+
+### Công nợ và hạn mức
+
+Với từng hóa đơn: `netInvoice = max(0, adjustedTotalAmount (hoặc totalAmount nếu null) - khoản trả CONFIRMED của chính hóa đơn)`.
+
+`currentDebt = max(0, tổng netInvoice + tổng nợ đơn chưa xuất hóa đơn sau giảm trừ đúng đơn - tổng thanh toán)`.
+
+`remainingLimit = debtLimit - currentDebt`.
+
+Khoản trả gắn đúng hóa đơn và đơn nguồn qua `ReturnOrderItem.invoiceItem.order`. Giảm số dư đúng hóa đơn/đơn trước, sau đó phân bổ quỹ thanh toán theo FIFO hiện có; không trừ tiền trả lần hai ở tổng công nợ. Tổng nợ, nợ quá hạn, còn nợ từng hóa đơn và hồ sơ đại lý cùng dùng số dư đã giảm trừ. Quỹ thanh toán vẫn là quỹ chung của đại lý theo thiết kế cũ, không được đánh dấu là đã phân bổ cố định cho một hóa đơn. Không tạo phiếu thu giả, không thay đổi tiền đã thanh toán. Số dư vượt nợ hiện tại không tự tạo phiếu hoàn tiền hoặc số dư nợ âm.
+
+S8-02 là luồng tài chính trả hàng; không tạo phiếu nhập kho hoặc cập nhật tồn kho vật lý.
+
+### Mã lỗi
+
+- 400: dữ liệu không hợp lệ, dòng không thuộc hóa đơn, trả vượt, hóa đơn đã hủy, trạng thái lọc sai.
+- 401: chưa xác thực; 403: không có quyền theo ma trận.
+- 404: không có hóa đơn hoặc phiếu trả.
+- 409: xác nhận/hủy phiếu không còn DRAFT. Xác nhận lại không sinh chứng từ thứ hai.
+
+### Lưu trữ, frontend và kiểm thử
+
+Hibernate `ddl-auto=update` hiện có tạo `return_orders`, `return_order_items`, khóa ngoại tới invoice/item/dealer/adjustment, version và unique adjustment link. Branch này chưa chạy migration hay kiểm thử trên MySQL thật; bộ tích hợp dùng H2 MySQL mode. Nếu môi trường đã có dữ liệu từ bản S8-02 viết dở, cần đối chiếu/backfill liên kết invoice_item_id trước khi áp ràng buộc NOT NULL.
+
+Frontend đã nối ở **Tài chính → Điều chỉnh công nợ**, `/finance/debt-adjustment`: tra cứu nguồn, lưu nháp, xem chi tiết, xác nhận và hủy nháp. Không dùng API điều chỉnh hóa đơn thủ công để giả lập phiếu trả; không gọi nhập kho vật lý. Kiểm thử Chrome dùng HTTP fixtures; kiểm thử backend dùng H2 cách ly, chưa nghiệm thu ghi chứng từ trên MySQL thật.
+
+Lệnh kiểm thử liên quan:
+
+```text
+mvn -q "-Dtest=ReturnOrderIntegrationTest,InvoiceServiceTest,InvoiceIntegrationTest,InvoiceControllerTest,InvoiceSecurityTest,DealerDebtServiceTest,DealerServiceTest,DebtRiskIntegrationTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
+```
+
+`ReturnOrderIntegrationTest` gồm 13 ca: giữ 9 ca giá lịch sử/hóa đơn bất biến, làm tròn, trả vượt, validation/hủy, quyền cùng JWT/ADMIN, rollback, đồng thời, thanh toán và đúng đơn nguồn; bổ sung lookup ADJUST-only, đối chiếu số dư giữa API công nợ/hóa đơn/hồ sơ đại lý, điều chỉnh thủ công kết hợp trả hàng không trừ kép, phân trang và dòng gốc thiếu dữ liệu trả 400.
+
+Kết quả và phạm vi kiểm tra cập nhật tại `status.md`; không coi báo cáo kiểm thử cũ trước đồng bộ là nghiệm thu bản tích hợp mới.
+
+## S8-05 — Dashboard điều hành bán hàng và kho
+
+### API và quyền
+
+| Method | URL | Tham số | Kết quả |
+|---|---|---|---|
+| GET | `/api/reports/dashboard` | `overdueLimit=20`, từ 1 đến 100 | Toàn bộ thẻ KPI, biểu đồ ngày/khu vực và danh sách đầu các đại lý quá hạn |
+| GET | `/api/reports/dashboard/overdue-dealers` | `page=0` không âm, `size=20` từ 1 đến 100 | Page đại lý quá hạn, cho phép tra cứu toàn bộ danh sách |
+
+Yêu cầu Bearer JWT và quyền **DASHBOARD_VIEW** trong ma trận DB; ROLE_ADMIN luôn được phép. Đây là quyền xem số liệu **toàn công ty**, gồm cả công nợ và kho, không phải quyền xem dữ liệu cá nhân. REPORT_SALES/REPORT_INVENTORY/REPORT_FINANCE hoặc tên vai trò riêng lẻ không thay thế quyền này. Hai endpoint cùng kiểm tra quyền.
+
+Đối với DB mới, quyền được khởi tạo cho SALES_MANAGER và ADMIN. Với ma trận DB đã cấu hình, giữ nguyên các lựa chọn hiện có: ADMIN phải cấp DASHBOARD_VIEW từ màn hình quản trị quyền. Không tự cấp lại quyền đã bị thu hồi. Quyền được nạp theo request từ cơ chế JWT/ma trận hiện có; thu hồi có hiệu lực ngay với token cũ. Khi kiểm tra nhiều vai trò, phải chắc chắn không có vai trò khác đang cấp quyền.
+
+### Response tổng quan
+
+Dùng envelope `ApiResponse` hiện có, `data` gồm:
+
+| Trường | Nội dung |
+|---|---|
+| `date`, `month` | Ngày và tháng hiện tại của dashboard, dạng YYYY-MM-DD và YYYY-MM |
+| `generatedAt`, `timezone` | Thời điểm tạo response có offset; mặc định Asia/Ho_Chi_Minh |
+| `metrics.todaySales` | Doanh số đơn ghi nhận trong ngày |
+| `metrics.monthSales` | Doanh số từ đầu tháng đến hết ngày hiện tại |
+| `metrics.pendingApprovalOrders` | Tổng đơn PENDING_APPROVAL trong toàn bộ backlog, không giới hạn tháng |
+| `metrics.pendingExportOrders` | Tổng đơn APPROVED/RECORDED/PICKING/PROCESSING chưa xuất, không giới hạn tháng |
+| `metrics.overdueDebt` | Tổng tiền thực sự quá hạn còn chưa thanh toán của tất cả đại lý; không chỉ tổng của danh sách đầu |
+| `metrics.belowMinimumSkus` | Số SKU khác nhau thiếu tồn tối thiểu ở ít nhất một kho hoạt động |
+| `dailySales[]` | `{date,sales}`, đủ mọi ngày trong tháng, ngày trống và ngày tương lai bằng 0 |
+| `territorySales[]` | `{territoryId,territoryName,sales}`, doanh số tháng theo khu vực, giảm dần theo tiền |
+| `overdueDealers[]` | Danh sách đầu theo `overdueLimit`, xếp giảm dần theo overdueAmount, trùng số tiền thì dealerId tăng dần |
+| `totalOverdueDealers` | Tổng số đại lý còn tiền quá hạn để frontend biết có thể xem thêm |
+
+Mỗi đại lý quá hạn gồm `dealerId`, `dealerCode`, `dealerName`, `territoryId`, `territoryName`, `currentDebt`, `overdueAmount`, `maxOverdueDays`. `currentDebt` là toàn bộ tiền chưa trả, có thể lớn hơn phần đã quá hạn. API phân trang trả cùng kiểu dòng trong Spring Page (`content`, `totalElements`, `totalPages`, ...). Trang vượt cuối vẫn trả đúng totalElements.
+
+### Quy tắc số liệu
+
+- Doanh số dùng `Order.totalAmount` sau chiết khấu, ngày ghi nhận `COALESCE(recordedAt,createdAt)`, và cùng tập trạng thái ghi nợ hiện có: APPROVED, RECORDED, PICKING, PROCESSING, EXPORTED, SHIPPED, DELIVERED, CLOSED, COMPLETED. Không cộng DRAFT, PENDING_APPROVAL, CANCELLED, REJECTED, EXPIRED. Đây là doanh số đơn đã ghi nhận, không phải tiền thu hoặc chỉ giá trị hóa đơn.
+- Khoảng ngày dùng cận đầu bao gồm, cận cuối không bao gồm; tháng hiện tại tính đến trước 00:00 ngày mai. Đơn tương lai không vào doanh số. Biểu đồ khu vực dùng địa bàn hiện tại của đại lý; đơn chưa gắn khu vực được gom vào `territoryId=null`, tên `Chưa phân khu vực`, để không mất doanh số. Không join dòng đơn nên không nhân đôi tổng tiền.
+- Khoản thanh toán lấy từ sổ `debt_payments` hiện có trên branch. SQL dùng running SUM theo đại lý, thứ tự ngày ghi nhận và ID, phân bổ tiền đã trả theo FIFO trước khi tính phần quá hạn. Đến đúng ngày hạn chưa tính quá hạn. maxDebtDays=0 nghĩa là không áp thời hạn nợ. Không lấy số tiền hoặc trạng thái từ cờ debtFlagged đã lưu; dữ liệu mới được tính trực tiếp.
+- Bao gồm cả đại lý ngừng hoạt động nếu vẫn còn nợ quá hạn. Đại lý đã trả đủ hoặc trả dư không còn trong danh sách. S8-05 không tự tạo bút toán hay sửa sổ công nợ. Các tính năng tài chính chưa được merge vào branch này không được tự nhập từ branch khác.
+- Tồn dưới tối thiểu dùng đúng biểu thức của StockLedgerRepository: tồn khả dụng = max(0, tồn thực - giữ chỗ), chỉ so khi có cấu hình minimum và đơn vị khớp. Kho/SKU phải đang hoạt động. SKU thiếu ở nhiều kho chỉ đếm một lần. Chưa có dòng tồn được xem là 0; chưa cấu hình mức tối thiểu không xem là thiếu; bằng mức tối thiểu không xem là thiếu. Không cộng hàng đang chuyển vào tồn khả dụng.
+- Clock riêng cho dashboard, mặc định Việt Nam, có thể cấu hình `app.dashboard.zone`; kiểm thử cố định clock để kiểm tra ranh giới ngày/tháng và năm nhuận.
+
+### Hiệu năng và tính nhất quán
+
+Một request tổng quan thực hiện **5 truy vấn tổng hợp DB** cho dữ liệu nghiệp vụ (ngoài truy vấn xác thực/phân quyền): theo ngày, khu vực, backlog, SKU thiếu và công nợ. Không gọi service công nợ từng đại lý, không tải entity graph hay toàn bộ đơn vào Java. FIFO chạy bằng window functions và derived tables; SQL dành cho MySQL 8+.
+
+Response được dựng trong read-only transaction REPEATABLE_READ để các phần dùng cùng snapshot trên MySQL. Không cache response nên dữ liệu được đọc lại ở mỗi request, không cache quyền.
+
+Bài đo tích hợp qua MockMvc HTTP/JWT/DB với **10.000 đơn, 1.000 đại lý, 1.000 SKU có mức tối thiểu**: 3 request đầy đủ, gồm request đầu sau khi nạp dữ liệu, thời gian lớn nhất ở lần chạy hồi quy **210 ms**, đều dưới 2.000 ms. Bài đo xác minh cả tiền quá hạn > 0 và các KPI để tránh đo một response rỗng. Đây là bằng chứng trên H2 MySQL mode tại máy kiểm thử; chưa đo MySQL thật, mạng hoặc thời gian render frontend.
+
+### Lỗi và frontend
+
+401 nếu chưa xác thực; 403 nếu thiếu hoặc bị thu hồi DASHBOARD_VIEW; 400 khi page/size/overdueLimit ngoài giới hạn hoặc không phải số nguyên. Không cung cấp endpoint ghi dữ liệu.
+
+Frontend đã nối (24/10/2026): **Báo cáo → Dashboard điều hành**, `/reports/dashboard`, lối tắt ở Tổng quan → Công việc. Trang riêng dùng DASHBOARD_VIEW/ADMIN ở menu, guard và API; không khóa trang Tổng quan chung hoặc màn Hạn mức công nợ bằng quyền dashboard. Một request tổng quan gồm sáu KPI/hai biểu đồ/trang đầu đại lý; endpoint phân trang chỉ gọi khi đổi trang/cỡ trang. Thu hồi quyền xóa dữ liệu, bỏ phản hồi trễ và chuyển trang lỗi 403 trên phiên JWT hiện tại. Không đổi hợp đồng hoặc code backend.
+
+Chrome trang/script thật với HTTP fixtures riêng đo mở trang đến hiển thị **205 ms**; bài API chậm trên 2 giây hiển thị cảnh báo. Hồi quy backend 24/10 với 10.000 đơn/1.000 đại lý/1.000 SKU: tối đa **355 ms**. Hai phép đo độc lập, chưa chứng minh SLA end-to-end dưới 2 giây trên MySQL/mạng thật. Xem `docs/FRONTEND_ROUTES.md` và `status.md` để biết đầy đủ phạm vi kiểm thử.
+
+Kiểm thử: DashboardIntegrationTest (8 ca), RolePermissionConfigTest, PermissionRevocationTest, DebtRiskSecurityTest, DealerDebtServiceTest, DebtRiskIntegrationTest; tổng **53 tests passed**, 0 failure/error/skip ở kết quả cuối từng bộ. Assertion audit tiền cũ được sửa để không phụ thuộc dấu phân cách locale; không thay đổi nghiệp vụ thanh toán.
+
+```text
+mvn -q "-Dtest=DashboardIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,DebtRiskSecurityTest,DealerDebtServiceTest,DebtRiskIntegrationTest" test
+```
+
+## S7-05 — Ghi nhận khoản thu theo tuyến và đối chiếu tiền nộp
+
+Base URL: `/api/finance/cash-collections`. Tất cả API yêu cầu Bearer access token.
+
+### Quyền và phạm vi dữ liệu
+
+| Quyền từ ma trận DB | Thao tác |
+|---|---|
+| `COLLECTION_CREATE` | Ghi thu tại cửa hàng do chính nhân viên đang đăng nhập phụ trách; xem khoản thu/biên lai và đối chiếu của chính mình |
+| `COLLECTION_CONFIRM` | Xem khoản thu/biên lai toàn bộ nhân viên; xác nhận đã nhận đủ tiền |
+| `COLLECTION_RECONCILE` | Xem khoản thu/biên lai và báo cáo toàn bộ nhân viên |
+| `ROLE_ADMIN` | Toàn quyền API; quy tắc không tự xác nhận khoản thu của chính mình vẫn áp dụng |
+
+Mỗi request nạp quyền qua cơ chế JWT/ma trận DB hiện có. Không fallback theo vai trò SALES/ACCOUNTANT. Thu hồi quyền có hiệu lực ở request kế tiếp với cùng JWT. Người có nhiều vai trò nhận hợp quyền: để kiểm tra thu hồi phải bỏ quyền từ tất cả vai trò liên quan.
+
+DB mới khởi tạo quyền: SALES được CREATE, ACCOUNTANT được CONFIRM + RECONCILE, SALES_MANAGER được RECONCILE. **DB đã có cấu hình giữ nguyên ma trận**: ADMIN cần cấp các quyền mới ở màn hình quản trị quyền; không tự thêm lại quyền đã bị thu hồi. Danh mục quyền trong màn hình hiện tại được tải động từ backend.
+
+### Endpoints
+
+| Method | Path | Input | Output |
+|---|---|---|---|
+| POST | `/` (không cần dấu `/` cuối) | multipart: `data` là JSON, `receipt` là file | 201, khoản thu ở trạng thái `PENDING` |
+| GET | `/` | `from`, `to` bắt buộc YYYY-MM-DD; `employeeId` tùy chọn; `page=0`, `size=20` | Page khoản thu mới nhất trước; size giới hạn 1–100 |
+| GET | `/{id}` | ID khoản thu | Chi tiết khoản thu |
+| GET | `/{id}/receipt` | ID khoản thu | Bytes JPEG/PNG, `Cache-Control: no-store`, yêu cầu quyền và kiểm tra chủ sở hữu |
+| POST | `/{id}/confirm` | Không có body | Xác nhận kế toán đã nhận đủ tiền, chuyển `PENDING` → `RECEIVED` |
+| GET | `/reconciliation` | `from`, `to`, `employeeId` tùy chọn | Mảng tổng hợp theo nhân viên và ngày thu |
+| GET | `/dealers` | `keyword` tùy chọn (tối đa 150 ký tự), `page=0`, `size=20` (1–100) | Page cửa hàng đang hoạt động có thể ghi thu; chỉ `COLLECTION_CREATE` hoặc ADMIN |
+
+Picker `/dealers` chỉ trả `id`, `code`, `name`, `routeName`, sắp xếp tên rồi ID. Nhân viên chỉ thấy cửa hàng được giao cho chính mình, kể cả khi có thêm quyền CONFIRM/RECONCILE; ADMIN xem mọi cửa hàng đang hoạt động. Không cần quyền CUSTOMER_VIEW/ORDER_VIEW và không nhận tham số đổi nhân viên để vượt phạm vi. Ngừng giao dịch hoặc bàn giao cửa hàng sau khi tải picker vẫn được kiểm tra lại khi POST ghi thu.
+
+Ví dụ phần `data` (Content-Type `application/json`):
+
+```json
+{"dealerId":12,"amount":250000.00,"collectionDate":"2026-10-23","note":"Thu tiền tại cửa hàng"}
+```
+
+- `dealerId`: ID dương, cửa hàng đang hoạt động và do người ghi thu phụ trách; ADMIN được ghi ngoài phạm vi phụ trách.
+- `amount`: bắt buộc > 0, tối đa 17 chữ số phần nguyên, 2 chữ số thập phân; dùng BigDecimal.
+- `collectionDate`: bắt buộc, không ở tương lai. Service kiểm tra theo Asia/Ho_Chi_Minh.
+- `note`: tùy chọn, tối đa 500 ký tự.
+- `receipt`: bắt buộc, tối đa 5 MiB; nội dung thực phải giải mã được bằng JPEG/PNG, tối đa 20 megapixel. Không tin tên file hoặc MIME do client khai báo.
+- Nhân viên ghi thu lấy từ danh tính JWT, không nhận employeeId/status/receivedBy từ client khi tạo.
+- `routeName`: lưu snapshot tên địa bàn (`Dealer.territory`) của cửa hàng tại thời điểm thu. Dự án chưa có entity tuyến riêng. Phân công cửa hàng thay đổi không đổi lịch sử khoản thu.
+- Biên lai và dữ liệu khoản thu lưu trong DB; Hibernate tạo bảng `cash_collections` theo cơ chế `ddl-auto=update` hiện tại.
+
+Các response JSON dùng envelope `ApiResponse` hiện có. Chi tiết gồm `id`, `dealerId`, `dealerName`, `employeeId`, `employeeName`, `routeName`, `amount`, `collectionDate`, `note`, `status`, `createdAt`, `receivedAt`, `receivedBy`, `receiptUrl`. Ảnh chỉ trả qua endpoint riêng đã xác thực.
+
+Ví dụ `data` đối chiếu:
+
+```json
+[{"employeeId":8,"employeeName":"Nguyễn Văn A","date":"2026-10-23","collected":350000.00,"received":250000.00,"pending":100000.00,"count":2}]
+```
+
+`received` là tiền thuộc các khoản thu đã được kế toán xác nhận, được nhóm theo **ngày thu gốc**, không phải ngày kế toán nhận tiền. `pending = collected - received`. Khoảng ngày tối đa chênh lệch 366 ngày, from <= to. Không truyền employeeId: nhân viên chỉ thấy mình, người có quyền đối chiếu thấy tất cả. Ngày không có khoản thu không có dòng tổng hợp. Tổng được tính bằng truy vấn GROUP BY trong DB.
+
+### Kiểm soát ghi nhận và mã lỗi
+
+- Khoản thu không có API sửa/xóa. CREATE và CONFIRM_RECEIVED ghi audit trong transaction, lưu người và thời điểm thao tác.
+- Xác nhận nhận đủ toàn bộ khoản thu một lần. Không tự xác nhận khoản thu của chính mình. Khóa dòng DB ngăn hai request xác nhận đồng thời; chỉ một request thành công.
+- 400: dữ liệu/ảnh không hợp lệ, thiếu multipart part, thiếu hoặc sai tham số lọc.
+- 401: chưa xác thực. 403: thiếu quyền, cửa hàng ngoài phạm vi, xem dữ liệu người khác hoặc tự xác nhận.
+- 404: không tìm thấy cửa hàng/khoản thu. 409: khoản thu đã được xác nhận.
+- Request vượt giới hạn multipart chung dùng xử lý lỗi upload hiện tại (giới hạn toàn ứng dụng 20 MB/file, 21 MB/request); S7-05 kiểm tra thêm ngưỡng ảnh 5 MiB.
+
+Phạm vi S7-05 là đối chiếu khoản thu với tiền nhân viên nộp. Không tự tạo DebtPayment hoặc đối trừ hóa đơn/công nợ S7-02; không hỗ trợ nộp một phần. Frontend tại **Tài chính → Thu tiền theo tuyến**, `/cash-collections`: ghi thu multipart kèm ảnh, xem chi tiết/biên lai có xác thực, xác nhận nhận đủ và đối chiếu nhân viên/ngày. `COLLECTION_CONFIRM` đơn lẻ không truy cập `/reconciliation`; chỉ CREATE hoặc RECONCILE được xem bảng này. Gửi tiền dưới dạng chuỗi thập phân để không mất chữ số khi qua JavaScript; backend nhận BigDecimal và vẫn kiểm tra giới hạn như trên.
+
+Kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,FinanceControllerTest,DebtRiskSecurityTest" test` — 43 tests passed (9 test tích hợp S7-05, gồm picker độc lập quyền và phạm vi cửa hàng); DB kiểm thử H2 MySQL mode, chưa chạy MySQL thực tế.
+
+---
+
+## S7-07 — Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn (23/10/2026)
+
+Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứu công nợ của chính mình qua Cổng Đại lý (`/api/portal/**`), để biết còn nợ bao nhiêu, còn được lấy hàng bao nhiêu, xem danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái, và xem/tải lại hóa đơn đã phát hành.
+
+### 1. Nguyên tắc nghiệp vụ cốt lõi
+
+1. **Hiển thị tổng còn nợ và hạn mức còn lại**:
+   - `currentDebt`: Tổng công nợ còn lại hiện tại của đại lý (tính từ tổng giá trị các hóa đơn hiệu lực `adjustedTotalAmount` cộng các đơn hàng ghi sổ chưa xuất hóa đơn `uninvoicedOrderDebt`, trừ đi tổng số tiền đã thu `totalPaid` theo nguyên tắc không tính trùng lặp).
+   - `debtLimit`: Hạn mức công nợ tối đa được cấp cho đại lý.
+   - `remainingLimit`: Phần hạn mức còn lại (`debtLimit - currentDebt`).
+   - `availableOrderLimit`: Hạn mức còn được lấy hàng thực tế (`0` nếu đại lý đang bị khoá giao dịch hoặc bị chặn do quá hạn công nợ `isBlocked = true`, ngược lại bằng `max(0, remainingLimit)`).
+2. **Danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái**:
+   - Mỗi hóa đơn (`InvoiceResponse`) trả về:
+     - `totalAmount` (tổng tiền hóa đơn gốc), `adjustedTotalAmount` (tổng tiền sau điều chỉnh), `paidAmount` (số tiền đã thanh toán phân bổ FIFO), `remainingAmount` (số tiền còn nợ của hóa đơn).
+     - `dueDate`: Hạn thanh toán của hóa đơn (mặc định = `invoiceDate + dealer.maxDebtDays`).
+     - `status` & `statusLabel`: Trạng thái phát hành hóa đơn (`ISSUED` - Đã phát hành, `ADJUSTED` - Đã điều chỉnh, `CANCELLED` - Đã hủy).
+     - `paymentStatus` & `paymentStatusLabel`: Trạng thái thanh toán công nợ của hóa đơn theo phân bổ FIFO:
+       - `UNPAID` ("Chưa thanh toán")
+       - `PARTIALLY_PAID` ("Thanh toán một phần")
+       - `PAID` ("Đã thanh toán")
+       - `OVERDUE` ("Quá hạn thanh toán")
+       - `CANCELLED` ("Đã hủy")
+     - `isOverdue`, `overdueDays`, `daysUntilDue`: Cờ quá hạn, số ngày quá hạn hoặc số ngày còn lại đến hạn thanh toán.
+3. **Xem và tải lại hóa đơn đã phát hành**:
+   - Đại lý xem chi tiết hóa đơn đã phát hành (`GET /api/portal/invoices/{id}`), xem bản in HTML (`GET /api/portal/invoices/{id}/print-preview`), tải lại file PDF hóa đơn (`GET /api/portal/invoices/{id}/pdf`) và tải lại file PDF chứng từ điều chỉnh (`GET /api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf`).
+4. **Cách ly dữ liệu cấp dòng (Row-Level Security) & Ma trận phân quyền DB**:
+   - Đại lý chỉ được xem công nợ, lịch sử thanh toán và xem/tải hóa đơn của **chính đại lý mình**. Mọi nỗ lực truyền `dealerId` của đại lý khác hoặc truy cập `invoiceId` của đại lý khác đều bị chặn với `403 Forbidden`.
+   - Quyền truy cập được kiểm soát chặt chẽ từ ma trận phân quyền DB (`RolePermissionConfig`):
+     - `FINANCE_VIEW_DEBT`: Xem tổng quan công nợ và lịch sử thanh toán (`GET /api/portal/debt/summary`, `GET /api/portal/debt/payments`, `GET /api/portal/debt`).
+     - `INVOICE_VIEW`: Xem danh sách, chi tiết, bản in HTML và tải lại PDF hóa đơn (`GET /api/portal/invoices/**`, `GET /api/portal/debt/invoices/**`).
+     - Thu hồi quyền trên ma trận lập tức trả về `403 Forbidden` trên phiên JWT hiện tại mà không có bất kỳ role-based fallback nào. `ROLE_ADMIN` luôn có toàn quyền.
+
+### 2. Danh sách Endpoints (`/api/portal`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/portal/debt` | `ORDER_VIEW` hoặc `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Tra cứu thông tin công nợ, hạn mức còn lại, hạn mức còn được lấy hàng và danh sách hóa đơn của đại lý |
+| `GET` | `/api/portal/debt/summary` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem tổng quan công nợ, tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, thống kê hóa đơn và lịch sử thanh toán |
+| `GET` | `/api/portal/debt/payments` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem lịch sử các đợt thanh toán công nợ của chính đại lý |
+| `GET` | `/api/portal/invoices` (alias `/api/portal/debt/invoices`) | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách hóa đơn phân trang kèm số tiền, hạn thanh toán, trạng thái (`status`, `paymentStatus`, `startDate`, `endDate`, `keyword`, `page`, `size`) |
+| `GET` | `/api/portal/invoices/{id}` (alias `/api/portal/debt/invoices/{id}`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem chi tiết hóa đơn đã phát hành của chính đại lý |
+| `GET` | `/api/portal/invoices/{id}/pdf` (alias `/api/portal/debt/invoices/{id}/pdf`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem hoặc tải lại file PDF hóa đơn đã phát hành của chính đại lý (`application/pdf`) |
+| `GET` | `/api/portal/invoices/{id}/print-preview` (alias `/api/portal/debt/invoices/{id}/print-preview`) | `INVOICE_VIEW` hoặc `ADMIN` | Xem bản in HTML hóa đơn đã phát hành của chính đại lý (`text/html;charset=UTF-8`) |
+| `GET` | `/api/portal/invoices/{id}/adjustments` | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách chứng từ điều chỉnh của hóa đơn thuộc đại lý |
+| `GET` | `/api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf` | `INVOICE_VIEW` hoặc `ADMIN` | Tải lại file PDF chứng từ điều chỉnh của hóa đơn thuộc đại lý (`application/pdf`) |
+
+### 3. Payload mẫu (`GET /api/portal/debt/summary`)
+
+```json
+{
+  "success": true,
+  "message": "Tổng quan công nợ và hạn mức của đại lý",
+  "data": {
+    "dealerId": 100,
+    "dealerCode": "DL-001",
+    "dealerName": "Đại lý Minh Phát",
+    "currentDebt": 13000000.00,
+    "debtLimit": 50000000.00,
+    "remainingLimit": 37000000.00,
+    "availableOrderLimit": 37000000.00,
+    "totalInvoicedAmount": 25000000.00,
+    "uninvoicedOrderDebt": 0.00,
+    "totalPaid": 12000000.00,
+    "totalInvoiceCount": 2,
+    "unpaidInvoiceCount": 1,
+    "overdueInvoiceCount": 0,
+    "paidInvoiceCount": 1,
+    "maxDebtDays": 30,
+    "hasOverdueDebt": false,
+    "overdueAmount": 0.00,
+    "maxOverdueDays": 0,
+    "isBlocked": false,
+    "invoices": [
+      {
+        "id": 2,
+        "invoiceNumber": "00000002",
+        "invoiceCode": "HD-00000002",
+        "invoiceDate": "2026-10-18T09:00:00",
+        "dueDate": "2026-11-17",
+        "status": "ISSUED",
+        "statusLabel": "Đã phát hành",
+        "totalAmount": 15000000.00,
+        "adjustedTotalAmount": 15000000.00,
+        "paidAmount": 2000000.00,
+        "remainingAmount": 13000000.00,
+        "paymentStatus": "PARTIALLY_PAID",
+        "paymentStatusLabel": "Thanh toán một phần",
+        "isOverdue": false,
+        "overdueDays": 0,
+        "daysUntilDue": 25
+      }
+    ],
+    "payments": [
+      {
+        "id": 10,
+        "paymentCode": "PT-20261023-0001",
+        "amount": 12000000.00,
+        "paymentDate": "2026-10-23",
+        "paymentMethod": "CHUYEN_KHOAN",
+        "referenceCode": "UNC-S707-001"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## S8-10 — Sổ chi tiết công nợ một đại lý, PDF và Excel
+
+### Endpoints và quyền
+
+| Method | URL | Tham số bắt buộc | Kết quả |
+|---|---|---|---|
+| GET | `/api/finance/debt/{dealerId}/statement` | `from`, `to` dạng YYYY-MM-DD | JSON ApiResponse chứa toàn bộ sổ trong kỳ và số dư đầu/cuối kỳ |
+| GET | `/api/finance/debt/{dealerId}/statement/export` | `from`, `to`, `format=pdf` hoặc `format=xlsx` | Tệp PDF hoặc XLSX thực, không có envelope JSON |
+
+Yêu cầu Bearer JWT và **FINANCE_VIEW_DEBT** từ ma trận DB. ADMIN luôn có quyền; FINANCE_MANAGE hoặc vai trò ACCOUNTANT đơn lẻ không thay thế quyền bị thiếu. Service và controller đều kiểm tra quyền. Thu hồi quyền có hiệu lực ở request kế tiếp với cùng token, trên JSON và cả hai định dạng xuất.
+
+Phạm vi dữ liệu giữ quy tắc công nợ hiện tại: nhân viên SALES không có vai trò tài chính/quản lý rộng hơn chỉ xem đại lý được giao; tài khoản có ROLE_DEALER chỉ xem đại lý liên kết. Dealer-only vẫn chịu scope filter cổng đại lý hiện có. Vai trò chỉ thu hẹp phạm vi, không cấp quyền thay ma trận. ADMIN được bỏ qua hạn chế phạm vi. Không thêm quyền mới hay tự thay đổi ma trận đã lưu.
+
+Ví dụ:
+
+```text
+GET /api/finance/debt/12/statement?from=2026-10-01&to=2026-10-31
+GET /api/finance/debt/12/statement/export?from=2026-10-01&to=2026-10-31&format=pdf
+GET /api/finance/debt/12/statement/export?from=2026-10-01&to=2026-10-31&format=xlsx
+```
+
+### Số liệu và thứ tự
+
+Một sổ hợp nhất các nguồn đang có trên branch:
+
+| sourceType | Nguồn | Ngày phát sinh | Số tiền có dấu |
+|---|---|---|---|
+| ORDER | Đơn đang thuộc trạng thái ghi nợ | recordedAt, fallback createdAt | totalAmount |
+| PAYMENT | debt_payments | paymentDate lúc 00:00 (dữ liệu gốc chỉ lưu ngày) | -amount |
+| INVOICE_ADJUSTMENT | Điều chỉnh INCREASE/DECREASE/CANCEL có tiền khác 0 | adjustmentDate | adjustmentAmount đã có dấu trong DB |
+
+Tập trạng thái đơn: APPROVED, RECORDED, PICKING, PROCESSING, EXPORTED, SHIPPED, DELIVERED, CLOSED, COMPLETED. Không cộng đơn nháp/chờ duyệt/hủy/từ chối/hết hạn. Hóa đơn gốc **không được cộng thêm một lần nữa** vì tiền nợ đã ghi từ đơn. Điều chỉnh INFORMATION và điều chỉnh không có tiền không phải dòng tăng/giảm công nợ. Khoản thu âm nếu có là bút toán tăng trở lại theo đúng dấu số tiền.
+
+- Số dư đầu kỳ = tổng các phát sinh có ngày trước 00:00 ngày from.
+- Kỳ lọc bao gồm cả from và to: >= from 00:00 và < (to+1 ngày) 00:00.
+- Dòng sắp theo thời điểm, rồi loại nguồn ORDER → PAYMENT → INVOICE_ADJUSTMENT, rồi ID tăng dần để ổn định khi trùng thời điểm.
+- Phát sinh tăng/giảm luôn không âm. Số dư từng dòng = số dư trước + tăng - giảm.
+- Số dư cuối kỳ = đầu kỳ + tổng tăng - tổng giảm. **Không cắt số dư âm về 0**: âm phản ánh thanh toán dư/credit, cần được giữ để đối chiếu.
+- Kỳ không có dòng vẫn trả đúng đầu kỳ/cuối kỳ, không tạo dòng giả. Dữ liệu đại lý khác không được đưa vào sổ.
+- Dùng BigDecimal và số tiền chính xác từ DB. JSON giữ biểu diễn số thập phân; client tài chính cần tránh ép tiền lớn sang số dấu phẩy động không chính xác.
+
+Sổ là đối chiếu từ chứng từ **hiện còn trong DB và các trạng thái hiện tại**, không tái dựng lịch sử đã xóa hoặc lịch sử đổi trạng thái không được lưu. Không sửa đơn, hóa đơn, phiếu thu hoặc tạo phát sinh mới khi xuất. Phần sổ bao gồm điều chỉnh hóa đơn và giữ số dư có dấu; có thể khác API tổng hợp công nợ cũ trên branch vốn chỉ lấy tổng đơn trừ thu tiền và cắt âm về 0. S8-10 không thay đổi hành vi API tổng hợp cũ.
+
+### JSON data
+
+Các trường: `dealerId`, `dealerCode`, `dealerName`, `from`, `to`, `openingBalance`, `totalIncrease`, `totalDecrease`, `closingBalance`, `entries`.
+
+Mỗi entry gồm `occurredAt`, `sourceType`, `sourceId`, `documentCode`, `description`, `increase`, `decrease`, `balance`. Source type/ID và mã chứng từ dùng để truy vết bản ghi gốc. Không đọc dữ liệu từ localStorage.
+
+### Tệp xuất
+
+Cả hai định dạng dùng cùng DTO/snapshot sổ, gồm thông tin đại lý, kỳ lọc, số dư đầu kỳ, toàn bộ dòng và tổng cuối kỳ. Cột: **Ngày phát sinh | Số chứng từ | Diễn giải | Phát sinh tăng | Phát sinh giảm | Số dư lũy kế**. Đơn vị VND, hiển thị hai chữ số thập phân.
+
+- PDF: A4 ngang, nhúng phông Arial Unicode từ resource dự án; bảng lặp tiêu đề ở trang sau và có số trang. Hỗ trợ tiếng Việt, diễn giải xuống dòng và sổ nhiều trang.
+- Excel: sheet `Chi tiết công nợ`, cố định phần đầu, dòng tiêu đề lặp khi in. Mã/diễn giải là ô text, không thực thi chuỗi bắt đầu bằng dấu `=` như công thức. Tiền có <=15 chữ số có nghĩa ghi Number; tiền lớn hơn khả năng chính xác của Excel được ghi nguyên văn dạng text để không làm sai số dư.
+- Content-Type: `application/pdf` hoặc `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+- Content-Disposition: attachment, filename UTF-8. Ví dụ `So-cong-no_DL-A_2026-10-01_2026-10-31.pdf` và `.xlsx`. Mã đại lý được làm sạch để không chèn đường dẫn/header.
+- Cache-Control: no-store. CORS expose Content-Disposition để frontend lấy tên file.
+- Dùng SXSSF 100 dòng cho workbook, dọn tệp tạm trước khi đóng kể cả khi có lỗi. PDF/XLSX được hoàn tất trước khi trả response, không trả nửa tệp.
+
+### Giới hạn và lỗi
+
+dealerId phải dương; from <= to, hỗ trợ năm 1000–9998 phù hợp khoảng ngày SQL. Không giới hạn số năm một kỳ một cách tùy ý. Mặc định tối đa **20.000 dòng trong kỳ**, cấu hình `app.debt-statement.max-rows` từ 1 đến 100.000. Truy vấn lấy maxRows+1 để phát hiện vượt, trả 400 yêu cầu thu hẹp ngày, **không âm thầm cắt dòng**. Phát sinh trước kỳ vẫn tính đầy đủ vào openingBalance bằng SUM riêng.
+
+Các truy vấn theo cùng dealerId, trong read-only REPEATABLE_READ transaction để opening và dòng kỳ khớp snapshot trên MySQL. Không gọi API riêng từng chứng từ hoặc tải entity graph để tính số dư.
+
+- 400: sai/thiếu ngày, dealerId không hợp lệ, from > to, format không hỗ trợ hoặc vượt số dòng.
+- 401: chưa xác thực. 403: thiếu quyền hoặc ngoài phạm vi đại lý.
+- 404: đại lý không tồn tại. 500: lỗi tạo tệp/hệ thống, không trả nội dung lỗi nội bộ.
+
+### Kết nối và kiểm thử
+
+Chỉ backend; frontend chưa có luồng gọi API sổ chi tiết hoặc tải hai định dạng này. Quyền FINANCE_VIEW_DEBT đã có trong ma trận quản trị và menu công nợ hiện có, nhưng chưa nghiệm thu ẩn/hiện nút xuất S8-10 cho đến khi frontend triển khai.
+
+**44/44 tests qua**, 0 failure/error/skip: DealerDebtStatementIntegrationTest (10), FinanceControllerTest (13), DebtRiskSecurityTest (6), PermissionRevocationTest (1), RolePermissionConfigTest (14). Kiểm thử có dữ liệu đầu kỳ, các ngày biên, loại trừ dòng không ghi nợ, điều chỉnh/hủy/thu âm, số dư âm, không cộng trùng hóa đơn, cách ly đại lý, quyền với JWT cũ, Excel tiền lớn, PDF nhiều trang và giới hạn không xuất thiếu. Đã render và xem toàn bộ 3 trang PDF kiểm thử bằng Poppler: tiếng Việt, lặp header, số trang và số dư hiển thị đúng. DB H2 MySQL mode; chưa kiểm thử MySQL hoặc giao diện thực tế.
+
+```text
+mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test
+```
+
+
+---
+
+## S8-01 — Lập phiếu trả hàng từ đại lý và nhập lại kho (Backend — 23/10/2026)
+
+Hỗ trợ Nhân viên kinh doanh lập phiếu trả hàng từ đại lý gắn với hoá đơn gốc và Quản lý kho xác nhận nhận hàng để nhập lại kho theo đúng quy trình.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-01)
+
+1. **Chọn hoá đơn gốc, chọn dòng hàng và số lượng trả, bắt buộc chọn lý do trả**:
+   - Phiếu trả hàng bắt buộc gắn với `invoiceId` (hoá đơn gốc đang hiệu lực `ISSUED` hoặc `ADJUSTED`; chặn hoá đơn `CANCELLED`).
+   - Mỗi dòng trả hàng (`items`) tham chiếu tới `invoiceItemId` hoặc `productId` thuộc hoá đơn gốc, số lượng trả dương (`quantity > 0`) và **bắt buộc có lý do trả (`returnReason`)**.
+2. **Số lượng trả không vượt số lượng đã giao trừ phần đã trả trước đó**:
+   - Với từng dòng hoá đơn gốc, hệ thống tính:
+     - `deliveredQuantity`: Số lượng đã giao / lập hoá đơn (`InvoiceItem.invoicedQuantity`).
+     - `alreadyReturnedQuantity`: Tổng số lượng đã lập phiếu trả trước đó ở trạng thái `PENDING` hoặc `CONFIRMED` (không tính phiếu `CANCELLED`).
+     - `remainingReturnableQuantity = deliveredQuantity - alreadyReturnedQuantity`.
+   - Nếu số lượng trả (kể cả cộng dồn các dòng cùng `invoiceItemId` trong một request) vượt `remainingReturnableQuantity`, hệ thống chặn với `400 Bad Request`.
+   - Khi lập phiếu trả, hệ thống dùng khoá bi quan (`PESSIMISTIC_WRITE`) trên hoá đơn gốc để chống vượt số lượng trả dưới tải đồng thời.
+3. **Hàng trả về nhập lại đúng lô nếu SKU có quản lý lô; hàng hỏng nhập vào kho hàng lỗi**:
+   - **SKU quản lý lô (`Product.manageLot = true`)**: Bắt buộc cung cấp `lotNumber` (hoặc tự động kế thừa từ phiếu xuất kho gốc nếu có). Khi xác nhận nhận hàng, hệ thống kiểm tra và nhập lại đúng lô trong `WarehouseLotInventory` (nếu lô chưa tồn tại tại kho đích như kho hàng lỗi thì bắt buộc có `expiryDate` hoặc kế thừa HSD từ lô gốc).
+   - **Phân loại hàng tốt / hàng hỏng (`damaged` / `condition`)**:
+     - Hàng tốt (`damaged = false`, `condition = GOOD`): Nhập về kho thường (`warehouseId` chỉ định hoặc kho của đơn hàng gốc). Chặn nếu chọn kho hàng lỗi cho hàng tốt.
+     - Hàng hỏng (`damaged = true` hoặc `condition = DAMAGED`/`DEFECTIVE` hoặc lý do trả thuộc nhóm hàng hỏng/lỗi): Bắt buộc định tuyến vào **kho hàng lỗi** (`Warehouse.defective = true`). Nếu request truyền kho thường cho dòng hàng hỏng sẽ bị chặn `400 Bad Request`; nếu không truyền kho riêng, hệ thống tự động chọn kho hàng lỗi đang hoạt động (hoặc khởi tạo kho hàng lỗi mặc định `KHO-HANG-LOI`).
+4. **Phiếu trả phải được Quản lý kho xác nhận nhận hàng mới cộng tồn**:
+   - Khi Nhân viên kinh doanh lập phiếu (`POST /api/dealer-returns`), phiếu ở trạng thái `PENDING` (`Chờ kho xác nhận`) — **tuyệt đối chưa cộng tồn kho** (`WarehouseInventory` và `WarehouseLotInventory` giữ nguyên).
+   - Chỉ khi người dùng có quyền `WAREHOUSE_APPROVE` (Quản lý kho) hoặc `ROLE_ADMIN` gọi `POST /api/dealer-returns/{id}/confirm`, phiếu mới chuyển sang `CONFIRMED` (`Đã nhập lại kho`), cộng tồn kho vật lý (`WarehouseInventory.baseQuantity`), cộng tồn theo lô (`WarehouseLotInventory.quantity`), hiển thị trên Thẻ kho (`DEALER_RETURN`), và ghi `AuditLog`.
+5. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Lập phiếu trả hàng: Bắt buộc quyền `ORDER_CREATE` (hoặc `ROLE_ADMIN`). Nhân viên kinh doanh chỉ được lập phiếu cho đại lý mình phụ trách hoặc hoá đơn/đơn hàng mình tạo.
+   - Xác nhận nhận hàng trả và cộng tồn: Bắt buộc quyền `WAREHOUSE_APPROVE` (hoặc `ROLE_ADMIN`) và kho nhận hàng phải nằm trong phạm vi kho được phân công.
+   - Xem phiếu trả / tra cứu hoá đơn đủ điều kiện trả: Bắt buộc một trong các quyền `ORDER_VIEW`, `ORDER_CREATE`, `INVOICE_VIEW`, `WAREHOUSE_VIEW`, `WAREHOUSE_APPROVE`, `WAREHOUSE_IMPORT` (hoặc `ROLE_ADMIN`).
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay ở request kế tiếp trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/dealer-returns`, `/api/warehouse/dealer-returns`, `/api/returns`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/dealer-returns/options` | Quyền xem/tạo phiếu trả hoặc kho | Danh mục lý do trả hàng chuẩn, kho thường, kho hàng lỗi, trạng thái và cờ quyền `canCreate`, `canConfirm` |
+| `GET` | `/api/dealer-returns/eligible-invoices` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách hoá đơn gốc đủ điều kiện trả hàng kèm từng dòng hàng và số lượng còn được trả |
+| `GET` | `/api/dealer-returns/eligible-invoices/{invoiceId}` | Quyền xem/tạo phiếu trả hoặc kho | Chi tiết một hoá đơn gốc kèm số lượng đã giao, đã trả và còn được trả của từng dòng |
+| `POST` | `/api/dealer-returns` | `ORDER_CREATE` hoặc `ROLE_ADMIN` | Lập phiếu trả hàng từ đại lý ở trạng thái `PENDING` (chưa cộng tồn kho) |
+| `POST` | `/api/dealer-returns/{id}/confirm` | `WAREHOUSE_APPROVE` hoặc `ROLE_ADMIN` | Quản lý kho xác nhận đã nhận hàng trả, chuyển sang `CONFIRMED` và cộng tồn kho / tồn lô |
+| `POST` | `/api/dealer-returns/{id}/cancel` | `ORDER_CREATE`, `ORDER_CANCEL`, hoặc `WAREHOUSE_APPROVE` | Huỷ phiếu trả hàng đang ở trạng thái `PENDING` kèm lý do bắt buộc |
+| `GET` | `/api/dealer-returns/{id}` | Quyền xem/tạo phiếu trả hoặc kho | Xem chi tiết phiếu trả hàng |
+| `GET` | `/api/dealer-returns` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách phiếu trả hàng phân trang (`dealerId`, `invoiceId`, `warehouseId`, `status`, `keyword`, `startDate`, `endDate`, `page`, `size`) |
+
+
+---
+
+## S8-01 — Lập phiếu trả hàng từ đại lý và nhập lại kho (Backend — 23/10/2026)
+
+Hỗ trợ Nhân viên kinh doanh lập phiếu trả hàng từ đại lý gắn với hoá đơn gốc và Quản lý kho xác nhận nhận hàng để nhập lại kho theo đúng quy trình.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-01)
+
+1. **Chọn hoá đơn gốc, chọn dòng hàng và số lượng trả, bắt buộc chọn lý do trả**:
+   - Phiếu trả hàng bắt buộc gắn với `invoiceId` (hoá đơn gốc đang hiệu lực `ISSUED` hoặc `ADJUSTED`; chặn hoá đơn `CANCELLED`).
+   - Mỗi dòng trả hàng (`items`) tham chiếu tới `invoiceItemId` hoặc `productId` thuộc hoá đơn gốc, số lượng trả dương (`quantity > 0`) và **bắt buộc có lý do trả (`returnReason`)**.
+2. **Số lượng trả không vượt số lượng đã giao trừ phần đã trả trước đó**:
+   - Với từng dòng hoá đơn gốc, hệ thống tính:
+     - `deliveredQuantity`: Số lượng đã giao / lập hoá đơn (`InvoiceItem.invoicedQuantity`).
+     - `alreadyReturnedQuantity`: Tổng số lượng đã lập phiếu trả trước đó ở trạng thái `PENDING` hoặc `CONFIRMED` (không tính phiếu `CANCELLED`).
+     - `remainingReturnableQuantity = deliveredQuantity - alreadyReturnedQuantity`.
+   - Nếu số lượng trả (kể cả cộng dồn các dòng cùng `invoiceItemId` trong một request) vượt `remainingReturnableQuantity`, hệ thống chặn với `400 Bad Request`.
+   - Khi lập phiếu trả, hệ thống dùng khoá bi quan (`PESSIMISTIC_WRITE`) trên hoá đơn gốc để chống vượt số lượng trả dưới tải đồng thời.
+3. **Hàng trả về nhập lại đúng lô nếu SKU có quản lý lô; hàng hỏng nhập vào kho hàng lỗi**:
+   - **SKU quản lý lô (`Product.manageLot = true`)**: Bắt buộc cung cấp `lotNumber` (hoặc tự động kế thừa từ phiếu xuất kho gốc nếu có). Khi xác nhận nhận hàng, hệ thống kiểm tra và nhập lại đúng lô trong `WarehouseLotInventory` (nếu lô chưa tồn tại tại kho đích như kho hàng lỗi thì bắt buộc có `expiryDate` hoặc kế thừa HSD từ lô gốc).
+   - **Phân loại hàng tốt / hàng hỏng (`damaged` / `condition`)**:
+     - Hàng tốt (`damaged = false`, `condition = GOOD`): Nhập về kho thường (`warehouseId` chỉ định hoặc kho của đơn hàng gốc). Chặn nếu chọn kho hàng lỗi cho hàng tốt.
+     - Hàng hỏng (`damaged = true` hoặc `condition = DAMAGED`/`DEFECTIVE` hoặc lý do trả thuộc nhóm hàng hỏng/lỗi): Bắt buộc định tuyến vào **kho hàng lỗi** (`Warehouse.defective = true`). Nếu request truyền kho thường cho dòng hàng hỏng sẽ bị chặn `400 Bad Request`; nếu không truyền kho riêng, hệ thống tự động chọn kho hàng lỗi đang hoạt động (hoặc khởi tạo kho hàng lỗi mặc định `KHO-HANG-LOI`).
+4. **Phiếu trả phải được Quản lý kho xác nhận nhận hàng mới cộng tồn**:
+   - Khi Nhân viên kinh doanh lập phiếu (`POST /api/dealer-returns`), phiếu ở trạng thái `PENDING` (`Chờ kho xác nhận`) — **tuyệt đối chưa cộng tồn kho** (`WarehouseInventory` và `WarehouseLotInventory` giữ nguyên).
+   - Chỉ khi người dùng có quyền `WAREHOUSE_APPROVE` (Quản lý kho) hoặc `ROLE_ADMIN` gọi `POST /api/dealer-returns/{id}/confirm`, phiếu mới chuyển sang `CONFIRMED` (`Đã nhập lại kho`), cộng tồn kho vật lý (`WarehouseInventory.baseQuantity`), cộng tồn theo lô (`WarehouseLotInventory.quantity`), hiển thị trên Thẻ kho (`DEALER_RETURN`), và ghi `AuditLog`.
+5. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Lập phiếu trả hàng: Bắt buộc quyền `ORDER_CREATE` (hoặc `ROLE_ADMIN`). Nhân viên kinh doanh chỉ được lập phiếu cho đại lý mình phụ trách hoặc hoá đơn/đơn hàng mình tạo.
+   - Xác nhận nhận hàng trả và cộng tồn: Bắt buộc quyền `WAREHOUSE_APPROVE` (hoặc `ROLE_ADMIN`) và kho nhận hàng phải nằm trong phạm vi kho được phân công.
+   - Xem phiếu trả / tra cứu hoá đơn đủ điều kiện trả: Bắt buộc một trong các quyền `ORDER_VIEW`, `ORDER_CREATE`, `INVOICE_VIEW`, `WAREHOUSE_VIEW`, `WAREHOUSE_APPROVE`, `WAREHOUSE_IMPORT` (hoặc `ROLE_ADMIN`).
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay ở request kế tiếp trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/dealer-returns`, `/api/warehouse/dealer-returns`, `/api/returns`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/dealer-returns/options` | Quyền xem/tạo phiếu trả hoặc kho | Danh mục lý do trả hàng chuẩn, kho thường, kho hàng lỗi, trạng thái và cờ quyền `canCreate`, `canConfirm` |
+| `GET` | `/api/dealer-returns/eligible-invoices` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách hoá đơn gốc đủ điều kiện trả hàng kèm từng dòng hàng và số lượng còn được trả |
+| `GET` | `/api/dealer-returns/eligible-invoices/{invoiceId}` | Quyền xem/tạo phiếu trả hoặc kho | Chi tiết một hoá đơn gốc kèm số lượng đã giao, đã trả và còn được trả của từng dòng |
+| `POST` | `/api/dealer-returns` | `ORDER_CREATE` hoặc `ROLE_ADMIN` | Lập phiếu trả hàng từ đại lý ở trạng thái `PENDING` (chưa cộng tồn kho) |
+| `POST` | `/api/dealer-returns/{id}/confirm` | `WAREHOUSE_APPROVE` hoặc `ROLE_ADMIN` | Quản lý kho xác nhận đã nhận hàng trả, chuyển sang `CONFIRMED` và cộng tồn kho / tồn lô |
+| `POST` | `/api/dealer-returns/{id}/cancel` | `ORDER_CREATE`, `ORDER_CANCEL`, hoặc `WAREHOUSE_APPROVE` | Huỷ phiếu trả hàng đang ở trạng thái `PENDING` kèm lý do bắt buộc |
+| `GET` | `/api/dealer-returns/{id}` | Quyền xem/tạo phiếu trả hoặc kho | Xem chi tiết phiếu trả hàng |
+| `GET` | `/api/dealer-returns` | Quyền xem/tạo phiếu trả hoặc kho | Danh sách phiếu trả hàng phân trang (`dealerId`, `invoiceId`, `warehouseId`, `status`, `keyword`, `startDate`, `endDate`, `page`, `size`) |
+
+
+---
+
+## S8-04 — Đặt chỉ tiêu doanh số theo tháng và theo dõi tiến độ theo thời gian thực (Backend — 23/10/2026)
+
+Hỗ trợ Quản lý kinh doanh đặt chỉ tiêu doanh số theo tháng cho từng nhân viên và từng khu vực, theo dõi tiến độ thực đạt theo thời gian thực ngay giữa tháng, tự động khoá chỉ tiêu đã qua kỳ, và yêu cầu lý do kèm nhật ký khi chỉnh sửa chỉ tiêu đã khoá.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-04)
+
+1. **Đặt chỉ tiêu theo tháng cho từng nhân viên và từng khu vực**:
+   - Hỗ trợ 3 loại phạm vi (`SalesTargetScopeType`):
+     - `EMPLOYEE`: Chỉ tiêu tháng cho từng nhân viên kinh doanh (`userId != null`, `territoryId == null`).
+     - `TERRITORY`: Chỉ tiêu tháng cho từng khu vực (`userId == null`, `territoryId != null`).
+     - `EMPLOYEE_TERRITORY`: Chỉ tiêu tháng cho nhân viên tại một khu vực cụ thể (`userId != null`, `territoryId != null`).
+   - Ràng buộc duy nhất theo khoá chuẩn `scopeKey` (`YYYY-MM:U:<userId|ALL>:T:<territoryId|ALL>`), hỗ trợ đặt đơn lẻ (`POST /api/sales-targets`) hoặc đặt/cập nhật hàng loạt (`POST /api/sales-targets/batch`).
+2. **Nhân viên xem được tiến độ của chính mình theo thời gian thực**:
+   - Doanh số thực đạt (`actualAmount`) được tổng hợp trực tiếp theo thời gian thực từ các đơn hàng hợp lệ trong kỳ (`OrderStatus.debtBearingStatuses()`: `APPROVED`, `RECORDED`, `PICKING`, `PROCESSING`, `EXPORTED`, `SHIPPED`, `DELIVERED`, `CLOSED`, `COMPLETED`) theo mốc `COALESCE(recordedAt, createdAt)`.
+   - Tính toán đầy đủ các chỉ số tiến độ ngay giữa tháng (Mid-month Pacing):
+     - `completionRate` / `progressPercent`: Tỷ lệ hoàn thành mục tiêu (%).
+     - `remainingAmount` & `overachievedAmount`: Số tiền còn thiếu hoặc vượt chỉ tiêu.
+     - `expectedAmountToDate`: Mức doanh số chuẩn cần đạt tính đến ngày hiện tại trong tháng.
+     - `pacingVarianceAmount`: Chênh lệch giữa thực đạt hiện tại và mức chuẩn giữa tháng (`actualAmount - expectedAmountToDate`).
+     - `requiredDailyRunRate`: Doanh số bình quân mỗi ngày cần đạt trong những ngày còn lại của tháng để về đích.
+     - `progressStatus`: `ACHIEVED`, `ON_TRACK`, `BEHIND`, `AT_RISK`, `NOT_STARTED`.
+3. **Chỉ tiêu đã qua kỳ thì khoá lại, sửa phải có lý do và được ghi nhật ký**:
+   - Chỉ tiêu thuộc kỳ trước kỳ hiện tại (`YearMonth < YearMonth.now()`) tự động có hiệu lực khoá (`locked = true`, `pastPeriod = true`). Tác vụ định kỳ `SalesTargetLockScheduler` và API `POST /api/sales-targets/lock-past-periods` tự động chốt khoá trong DB.
+   - Khi cập nhật (`PUT /api/sales-targets/{id}` hoặc `POST /api/sales-targets/batch`) một chỉ tiêu đã qua kỳ hoặc đã bị khoá (`locked = true`), **bắt buộc phải truyền `reason` không rỗng** (nếu thiếu trả về `400 Bad Request`).
+   - Mọi thao tác tạo, sửa, sửa chỉ tiêu đã khoá (`UPDATE_LOCKED_TARGET`), khoá, xoá đều lưu vào `AuditLog` (`entityType = "SALES_TARGET"`) kèm giá trị cũ (`oldValue`), giá trị mới (`newValue`), lý do (`reason`), người thực hiện (`username`) và thời gian (`createdAt`), tra cứu qua `GET /api/sales-targets/{id}/audit-logs`.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Đặt / sửa / khoá / xoá chỉ tiêu: Bắt buộc quyền `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Xem chỉ tiêu, tiến độ cá nhân, báo cáo tổng hợp, lịch sử chỉnh sửa: Bắt buộc quyền `REPORT_SALES` hoặc `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Nhân viên kinh doanh (`ROLE_SALES` thuần tuý, không có `ORDER_APPROVE`) chỉ được xem chỉ tiêu và tiến độ của chính mình (`userId == currentUser.id`) và chỉ tiêu khu vực thuộc địa bàn được phân công; truy cập chỉ tiêu của nhân viên khác trả về `403 Forbidden`.
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay lập tức trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/sales-targets`, `/api/reports/sales-targets`, `/api/manager/sales-targets`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/sales-targets/options` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh mục nhân viên KD, khu vực, loại phạm vi, trạng thái tiến độ và cờ quyền `canView`, `canManage` |
+| `GET` | `/api/sales-targets/my-progress` (alias `/me`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Nhân viên xem tiến độ thực đạt của chính mình theo thời gian thực ngay giữa tháng kèm bóc tách theo khu vực |
+| `GET` | `/api/sales-targets/summary` (alias `/progress`, `/dashboard`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp chỉ tiêu & tiến độ theo nhân viên và theo khu vực trong kỳ |
+| `GET` | `/api/sales-targets` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Tra cứu danh sách chỉ tiêu doanh số (`year`, `month`, `period`, `userId`, `territoryId`, `scopeType`, `locked`, `progressStatus`, `keyword`) |
+| `GET` | `/api/sales-targets/{id}` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Chi tiết một chỉ tiêu doanh số kèm tiến độ thực tế và nhật ký chỉnh sửa |
+| `GET` | `/api/sales-targets/{id}/audit-logs` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh sách nhật ký tạo/sửa/khoá của một chỉ tiêu doanh số |
+| `POST` | `/api/sales-targets` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt mới chỉ tiêu doanh số tháng cho nhân viên hoặc khu vực |
+| `POST` | `/api/sales-targets/batch` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt hoặc cập nhật hàng loạt chỉ tiêu doanh số trong kỳ |
+| `PUT` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Cập nhật chỉ tiêu doanh số (nếu đã qua kỳ hoặc đã khoá, bắt buộc có `reason` và ghi nhật ký `AuditLog`) |
+| `POST` | `/api/sales-targets/{id}/lock` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá thủ công một chỉ tiêu doanh số kèm lý do |
+| `POST` | `/api/sales-targets/lock-past-periods` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá toàn bộ các chỉ tiêu đã qua kỳ nhưng chưa gắn cờ khoá trong DB |
+| `DELETE` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Xoá chỉ tiêu chưa khoá thuộc kỳ hiện tại hoặc tương lai |
+
+---
+
+## S8-04 — Đặt chỉ tiêu doanh số theo tháng và theo dõi tiến độ theo thời gian thực (Backend — 23/10/2026)
+
+Hỗ trợ Quản lý kinh doanh đặt chỉ tiêu doanh số theo tháng cho từng nhân viên và từng khu vực, theo dõi tiến độ thực đạt theo thời gian thực ngay giữa tháng, tự động khoá chỉ tiêu đã qua kỳ, và yêu cầu lý do kèm nhật ký khi chỉnh sửa chỉ tiêu đã khoá.
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-04)
+
+1. **Đặt chỉ tiêu theo tháng cho từng nhân viên và từng khu vực**:
+   - Hỗ trợ 3 loại phạm vi (`SalesTargetScopeType`):
+     - `EMPLOYEE`: Chỉ tiêu tháng cho từng nhân viên kinh doanh (`userId != null`, `territoryId == null`).
+     - `TERRITORY`: Chỉ tiêu tháng cho từng khu vực (`userId == null`, `territoryId != null`).
+     - `EMPLOYEE_TERRITORY`: Chỉ tiêu tháng cho nhân viên tại một khu vực cụ thể (`userId != null`, `territoryId != null`).
+   - Ràng buộc duy nhất theo khoá chuẩn `scopeKey` (`YYYY-MM:U:<userId|ALL>:T:<territoryId|ALL>`), hỗ trợ đặt đơn lẻ (`POST /api/sales-targets`) hoặc đặt/cập nhật hàng loạt (`POST /api/sales-targets/batch`).
+2. **Nhân viên xem được tiến độ của chính mình theo thời gian thực**:
+   - Doanh số thực đạt (`actualAmount`) được tổng hợp trực tiếp theo thời gian thực từ các đơn hàng hợp lệ trong kỳ (`OrderStatus.debtBearingStatuses()`: `APPROVED`, `RECORDED`, `PICKING`, `PROCESSING`, `EXPORTED`, `SHIPPED`, `DELIVERED`, `CLOSED`, `COMPLETED`) theo mốc `COALESCE(recordedAt, createdAt)`.
+   - Tính toán đầy đủ các chỉ số tiến độ ngay giữa tháng (Mid-month Pacing):
+     - `completionRate` / `progressPercent`: Tỷ lệ hoàn thành mục tiêu (%).
+     - `remainingAmount` & `overachievedAmount`: Số tiền còn thiếu hoặc vượt chỉ tiêu.
+     - `expectedAmountToDate`: Mức doanh số chuẩn cần đạt tính đến ngày hiện tại trong tháng.
+     - `pacingVarianceAmount`: Chênh lệch giữa thực đạt hiện tại và mức chuẩn giữa tháng (`actualAmount - expectedAmountToDate`).
+     - `requiredDailyRunRate`: Doanh số bình quân mỗi ngày cần đạt trong những ngày còn lại của tháng để về đích.
+     - `progressStatus`: `ACHIEVED`, `ON_TRACK`, `BEHIND`, `AT_RISK`, `NOT_STARTED`.
+3. **Chỉ tiêu đã qua kỳ thì khoá lại, sửa phải có lý do và được ghi nhật ký**:
+   - Chỉ tiêu thuộc kỳ trước kỳ hiện tại (`YearMonth < YearMonth.now()`) tự động có hiệu lực khoá (`locked = true`, `pastPeriod = true`). Tác vụ định kỳ `SalesTargetLockScheduler` và API `POST /api/sales-targets/lock-past-periods` tự động chốt khoá trong DB.
+   - Khi cập nhật (`PUT /api/sales-targets/{id}` hoặc `POST /api/sales-targets/batch`) một chỉ tiêu đã qua kỳ hoặc đã bị khoá (`locked = true`), **bắt buộc phải truyền `reason` không rỗng** (nếu thiếu trả về `400 Bad Request`).
+   - Mọi thao tác tạo, sửa, sửa chỉ tiêu đã khoá (`UPDATE_LOCKED_TARGET`), khoá, xoá đều lưu vào `AuditLog` (`entityType = "SALES_TARGET"`) kèm giá trị cũ (`oldValue`), giá trị mới (`newValue`), lý do (`reason`), người thực hiện (`username`) và thời gian (`createdAt`), tra cứu qua `GET /api/sales-targets/{id}/audit-logs`.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu (RLS)**:
+   - Đặt / sửa / khoá / xoá chỉ tiêu: Bắt buộc quyền `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Xem chỉ tiêu, tiến độ cá nhân, báo cáo tổng hợp, lịch sử chỉnh sửa: Bắt buộc quyền `REPORT_SALES` hoặc `ORDER_APPROVE` (hoặc `ROLE_ADMIN`).
+   - Nhân viên kinh doanh (`ROLE_SALES` thuần tuý, không có `ORDER_APPROVE`) chỉ được xem chỉ tiêu và tiến độ của chính mình (`userId == currentUser.id`) và chỉ tiêu khu vực thuộc địa bàn được phân công; truy cập chỉ tiêu của nhân viên khác trả về `403 Forbidden`.
+   - Không dùng role-based fallback; thu hồi quyền trên ma trận DB có hiệu lực ngay lập tức trên cùng JWT.
+
+### 2. Danh sách Endpoints (`/api/sales-targets`, `/api/reports/sales-targets`, `/api/manager/sales-targets`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/sales-targets/options` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh mục nhân viên KD, khu vực, loại phạm vi, trạng thái tiến độ và cờ quyền `canView`, `canManage` |
+| `GET` | `/api/sales-targets/my-progress` (alias `/me`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Nhân viên xem tiến độ thực đạt của chính mình theo thời gian thực ngay giữa tháng kèm bóc tách theo khu vực |
+| `GET` | `/api/sales-targets/summary` (alias `/progress`, `/dashboard`) | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp chỉ tiêu & tiến độ theo nhân viên và theo khu vực trong kỳ |
+| `GET` | `/api/sales-targets` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Tra cứu danh sách chỉ tiêu doanh số (`year`, `month`, `period`, `userId`, `territoryId`, `scopeType`, `locked`, `progressStatus`, `keyword`) |
+| `GET` | `/api/sales-targets/{id}` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Chi tiết một chỉ tiêu doanh số kèm tiến độ thực tế và nhật ký chỉnh sửa |
+| `GET` | `/api/sales-targets/{id}/audit-logs` | `REPORT_SALES` hoặc `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Danh sách nhật ký tạo/sửa/khoá của một chỉ tiêu doanh số |
+| `POST` | `/api/sales-targets` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt mới chỉ tiêu doanh số tháng cho nhân viên hoặc khu vực |
+| `POST` | `/api/sales-targets/batch` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Đặt hoặc cập nhật hàng loạt chỉ tiêu doanh số trong kỳ |
+| `PUT` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Cập nhật chỉ tiêu doanh số (nếu đã qua kỳ hoặc đã khoá, bắt buộc có `reason` và ghi nhật ký `AuditLog`) |
+| `POST` | `/api/sales-targets/{id}/lock` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá thủ công một chỉ tiêu doanh số kèm lý do |
+| `POST` | `/api/sales-targets/lock-past-periods` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Khoá toàn bộ các chỉ tiêu đã qua kỳ nhưng chưa gắn cờ khoá trong DB |
+| `DELETE` | `/api/sales-targets/{id}` | `ORDER_APPROVE` hoặc `ROLE_ADMIN` | Xoá chỉ tiêu chưa khoá thuộc kỳ hiện tại hoặc tương lai |
+
+
+---
+
+## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend — 24/10/2026)
+
+Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và theo từng nhóm hàng, tính hệ số vòng quay và số ngày tồn bình quân (Days Inventory Outstanding / Average Days in Inventory) của từng SKU, chỉ ra mặt hàng chậm luân chuyển đang chôn vốn, và xuất toàn bộ báo cáo ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-07)
+
+1. **Giá trị tồn theo kho và theo nhóm hàng**:
+   - Đơn giá vốn quy chuẩn của từng SKU: `unitCost = COALESCE(costPrice > 0, price > 0, 0)`.
+   - Giá trị tồn kho cuối kỳ của SKU tại kho: `inventoryValue = closingQuantity * unitCost`.
+   - Tổng hợp đầy đủ theo 3 chiều:
+     - **Theo kho (`warehouseValuations` / `/by-warehouse`)**: Tổng số SKU có tồn, số SKU chậm luân chuyển, tồn đầu kỳ, nhập trong kỳ, xuất trong kỳ, tồn thực tế cuối kỳ (`physicalQuantity`), tồn đang giữ chỗ (`reservedQuantity`), tồn khả dụng (`availableQuantity`), giá trị tồn kho (`inventoryValue`), tỷ trọng giá trị tồn (`valueSharePercent`), giá trị hàng chậm luân chuyển đang chôn vốn (`slowMovingValue`), hệ số vòng quay và số ngày tồn bình quân của kho.
+     - **Theo nhóm hàng (`categoryValuations` / `/by-category`)**: Tổng hợp tồn lượng, giá trị tồn, tỷ trọng giá trị, số SKU và giá trị vốn bị chôn ở hàng chậm luân chuyển theo từng nhóm hàng (hỗ trợ lọc cả cây nhóm hàng cha – con).
+     - **Theo cặp Kho × Nhóm hàng (`warehouseCategoryValuations` / `/by-warehouse-category`)**: Bóc tách ma trận giá trị tồn và giá trị chôn vốn theo từng kho kết hợp từng nhóm hàng.
+2. **Số ngày tồn bình quân của từng SKU, chỉ ra hàng chậm luân chuyển đang chôn vốn**:
+   - Tồn kho bình quân trong kỳ (`periodDays`, mặc định `30` ngày):
+     - `averageInventoryQuantity = (openingQuantity + closingQuantity) / 2`
+   - Khi có phát sinh xuất kho trong kỳ (`outboundQuantity > 0`):
+     - Hệ số vòng quay trong kỳ: `turnoverRate = outboundQuantity / averageInventoryQuantity`
+     - Hệ số vòng quay quy đổi năm: `annualizedTurnoverRate = turnoverRate * 365 / periodDays`
+     - **Số ngày tồn bình quân (`averageDaysInInventory` / DIO)**: `averageDaysInInventory = (averageInventoryQuantity * periodDays) / outboundQuantity`
+   - **Phát hiện hàng chậm luân chuyển đang chôn vốn (`slowMoving = true`)**:
+     - Khi SKU còn tồn kho cuối kỳ (`closingQuantity > 0`) và thuộc một trong hai trường hợp:
+       1. `outboundQuantity == 0` trong suốt kỳ phân tích $\rightarrow$ phân loại `DEAD_STOCK` (*Tồn đọng không xuất*).
+       2. `averageDaysInInventory >= slowMovingThresholdDays` (mặc định `60` ngày) $\rightarrow$ phân loại `SLOW_MOVING` (*Chậm luân chuyển*).
+     - Giá trị vốn bị chôn của SKU: `tiedUpCapitalValue = inventoryValue` (nếu `slowMoving == true`, ngược lại `0`).
+     - Cung cấp danh sách chuyên biệt `slowMovingItems` (và endpoint `/slow-moving`) sắp xếp giảm dần theo `tiedUpCapitalValue` kèm thuyết minh nguyên nhân (`slowMovingReason`) và số ngày kể từ lần xuất kho gần nhất (`daysSinceLastOutbound`).
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Giá trị tồn theo kho` (Tổng quan KPI + Bảng giá trị tồn theo kho + Bảng giá trị tồn theo Kho × Nhóm hàng).
+     - Sheet 2: `Giá trị tồn theo nhóm hàng`.
+     - Sheet 3: `Vòng quay & Số ngày tồn SKU`.
+     - Sheet 4: `Hàng chậm luân chuyển` (Danh sách SKU đang chôn vốn).
+   - Tự động làm sạch ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+4. **Ma trận phân quyền DB & Phạm vi kho**:
+   - Bắt buộc có quyền `REPORT_INVENTORY` (hoặc `ROLE_ADMIN`) được đọc trực tiếp từ ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: nếu thu hồi `REPORT_INVENTORY` khỏi `ROLE_WAREHOUSE_MANAGER`, mọi request kế tiếp trên cùng JWT lập tức trả `403 Forbidden`.
+   - Nếu tài khoản được gán danh sách kho cụ thể (`user.warehouses`), báo cáo tự động giới hạn trong các kho được phân công và trả `403 Forbidden` nếu truyền `warehouseId` ngoài phạm vi.
+
+### 2. Danh sách Endpoints (`/api/reports/inventory-turnover`, `/api/reports/inventory`, `/api/warehouse/reports/inventory-turnover`, `/api/warehouse/inventory-turnover`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/inventory-turnover/options` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Bộ lọc kho trong phạm vi phân quyền, nhóm hàng, các ngưỡng mặc định và danh mục trạng thái luân chuyển |
+| `GET` | `/api/reports/inventory-turnover` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp giá trị tồn theo kho, theo nhóm hàng, theo kho × nhóm hàng, vòng quay từng SKU và danh sách hàng chậm luân chuyển |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse` (alias `/warehouses`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng kho |
+| `GET` | `/api/reports/inventory-turnover/by-category` (alias `/categories`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse-category` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho chi tiết theo cặp Kho × Nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
+| `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
+| `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
+---
+
+## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend — 24/10/2026)
+
+Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và theo từng nhóm hàng, tính hệ số vòng quay và số ngày tồn bình quân (Days Inventory Outstanding / Average Days in Inventory) của từng SKU, chỉ ra mặt hàng chậm luân chuyển đang chôn vốn, và xuất toàn bộ báo cáo ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-07)
+
+1. **Giá trị tồn theo kho và theo nhóm hàng**:
+   - Đơn giá vốn quy chuẩn của từng SKU: `unitCost = COALESCE(costPrice > 0, price > 0, 0)`.
+   - Giá trị tồn kho cuối kỳ của SKU tại kho: `inventoryValue = closingQuantity * unitCost`.
+   - Tổng hợp đầy đủ theo 3 chiều:
+     - **Theo kho (`warehouseValuations` / `/by-warehouse`)**: Tổng số SKU có tồn, số SKU chậm luân chuyển, tồn đầu kỳ, nhập trong kỳ, xuất trong kỳ, tồn thực tế cuối kỳ (`physicalQuantity`), tồn đang giữ chỗ (`reservedQuantity`), tồn khả dụng (`availableQuantity`), giá trị tồn kho (`inventoryValue`), tỷ trọng giá trị tồn (`valueSharePercent`), giá trị hàng chậm luân chuyển đang chôn vốn (`slowMovingValue`), hệ số vòng quay và số ngày tồn bình quân của kho.
+     - **Theo nhóm hàng (`categoryValuations` / `/by-category`)**: Tổng hợp tồn lượng, giá trị tồn, tỷ trọng giá trị, số SKU và giá trị vốn bị chôn ở hàng chậm luân chuyển theo từng nhóm hàng (hỗ trợ lọc cả cây nhóm hàng cha – con).
+     - **Theo cặp Kho × Nhóm hàng (`warehouseCategoryValuations` / `/by-warehouse-category`)**: Bóc tách ma trận giá trị tồn và giá trị chôn vốn theo từng kho kết hợp từng nhóm hàng.
+2. **Số ngày tồn bình quân của từng SKU, chỉ ra hàng chậm luân chuyển đang chôn vốn**:
+   - Tồn kho bình quân trong kỳ (`periodDays`, mặc định `30` ngày):
+     - `averageInventoryQuantity = (openingQuantity + closingQuantity) / 2`
+   - Khi có phát sinh xuất kho trong kỳ (`outboundQuantity > 0`):
+     - Hệ số vòng quay trong kỳ: `turnoverRate = outboundQuantity / averageInventoryQuantity`
+     - Hệ số vòng quay quy đổi năm: `annualizedTurnoverRate = turnoverRate * 365 / periodDays`
+     - **Số ngày tồn bình quân (`averageDaysInInventory` / DIO)**: `averageDaysInInventory = (averageInventoryQuantity * periodDays) / outboundQuantity`
+   - **Phát hiện hàng chậm luân chuyển đang chôn vốn (`slowMoving = true`)**:
+     - Khi SKU còn tồn kho cuối kỳ (`closingQuantity > 0`) và thuộc một trong hai trường hợp:
+       1. `outboundQuantity == 0` trong suốt kỳ phân tích $\rightarrow$ phân loại `DEAD_STOCK` (*Tồn đọng không xuất*).
+       2. `averageDaysInInventory >= slowMovingThresholdDays` (mặc định `60` ngày) $\rightarrow$ phân loại `SLOW_MOVING` (*Chậm luân chuyển*).
+     - Giá trị vốn bị chôn của SKU: `tiedUpCapitalValue = inventoryValue` (nếu `slowMoving == true`, ngược lại `0`).
+     - Cung cấp danh sách chuyên biệt `slowMovingItems` (và endpoint `/slow-moving`) sắp xếp giảm dần theo `tiedUpCapitalValue` kèm thuyết minh nguyên nhân (`slowMovingReason`) và số ngày kể từ lần xuất kho gần nhất (`daysSinceLastOutbound`).
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Giá trị tồn theo kho` (Tổng quan KPI + Bảng giá trị tồn theo kho + Bảng giá trị tồn theo Kho × Nhóm hàng).
+     - Sheet 2: `Giá trị tồn theo nhóm hàng`.
+     - Sheet 3: `Vòng quay & Số ngày tồn SKU`.
+     - Sheet 4: `Hàng chậm luân chuyển` (Danh sách SKU đang chôn vốn).
+   - Tự động làm sạch ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+4. **Ma trận phân quyền DB & Phạm vi kho**:
+   - Bắt buộc có quyền `REPORT_INVENTORY` (hoặc `ROLE_ADMIN`) được đọc trực tiếp từ ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: nếu thu hồi `REPORT_INVENTORY` khỏi `ROLE_WAREHOUSE_MANAGER`, mọi request kế tiếp trên cùng JWT lập tức trả `403 Forbidden`.
+   - Nếu tài khoản được gán danh sách kho cụ thể (`user.warehouses`), báo cáo tự động giới hạn trong các kho được phân công và trả `403 Forbidden` nếu truyền `warehouseId` ngoài phạm vi.
+
+### 2. Danh sách Endpoints (`/api/reports/inventory-turnover`, `/api/reports/inventory`, `/api/warehouse/reports/inventory-turnover`, `/api/warehouse/inventory-turnover`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/inventory-turnover/options` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Bộ lọc kho trong phạm vi phân quyền, nhóm hàng, các ngưỡng mặc định và danh mục trạng thái luân chuyển |
+| `GET` | `/api/reports/inventory-turnover` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp giá trị tồn theo kho, theo nhóm hàng, theo kho × nhóm hàng, vòng quay từng SKU và danh sách hàng chậm luân chuyển |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse` (alias `/warehouses`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng kho |
+| `GET` | `/api/reports/inventory-turnover/by-category` (alias `/categories`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho, giá trị chôn vốn và số ngày tồn bình quân theo từng nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/by-warehouse-category` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Giá trị tồn kho chi tiết theo cặp Kho × Nhóm hàng |
+| `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
+| `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
+| `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |

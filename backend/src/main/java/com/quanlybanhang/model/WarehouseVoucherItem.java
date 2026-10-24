@@ -27,6 +27,9 @@ public class WarehouseVoucherItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "shipment_order_item_id")
+    private Long shipmentOrderItemId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "voucher_id", nullable = false)
     @JsonIgnore
@@ -91,6 +94,30 @@ public class WarehouseVoucherItem {
     @Column(name = "manufacturing_date")
     private LocalDate manufacturingDate;
 
+    /**
+     * Số lô hệ thống gợi ý theo FEFO (S6-04).
+     */
+    @Column(name = "suggested_lot_number", length = 50)
+    private String suggestedLotNumber;
+
+    /**
+     * Lý do thủ kho chọn lô khác với lô gợi ý FEFO (S6-04).
+     */
+    @Column(name = "override_reason", length = 255)
+    private String overrideReason;
+
     @Column(length = 255)
     private String note;
+
+    /**
+     * Xác nhận ghi đè xuất lô đã quá hạn (S6-01).
+     */
+    @Column(name = "override_expired_lot")
+    private Boolean overrideExpiredLot;
+
+    /**
+     * Lý do ghi đè xuất lô đã quá hạn (S6-01).
+     */
+    @Column(name = "expired_lot_override_reason", length = 500)
+    private String expiredLotOverrideReason;
 }

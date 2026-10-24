@@ -27,6 +27,12 @@ public class WarehouseInventory {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Monotonic snapshot token, including movements that return stock to its old quantity. */
+    @Version
+    @Column(name = "version", nullable = false, columnDefinition = "bigint default 0")
+    @Builder.Default
+    private Long version = 0L;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "warehouse_id", nullable = false)
     private Warehouse warehouse;

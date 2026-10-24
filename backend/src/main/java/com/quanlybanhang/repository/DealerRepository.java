@@ -44,6 +44,10 @@ public interface DealerRepository extends JpaRepository<Dealer, Long> {
 
     List<Dealer> findByCustomerGroupAndActiveTrue(CustomerGroup customerGroup);
 
+    List<Dealer> findByDebtFlaggedTrueOrderByDebtFlaggedAtDesc();
+
+    long countByDebtFlaggedTrue();
+
     @Query("SELECT d FROM Dealer d WHERE " +
            "(:keyword IS NULL OR :keyword = '' OR LOWER(d.code) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(d.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(d.taxCode) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(d.phone) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
            "AND (:customerGroup IS NULL OR d.customerGroup = :customerGroup) " +

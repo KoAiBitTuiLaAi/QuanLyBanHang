@@ -72,11 +72,11 @@ const paged = (data,url) => {const page=Number(url.searchParams.get('page')||0),
     await page.locator('#min-quantity').fill('-1');const writes=calls.filter(c=>c.method==='PUT').length;await page.locator('#min-save').click();
     assert.equal(await page.locator('#min-quantity').evaluate(e=>e.validity.valid),false);assert.equal(calls.filter(c=>c.method==='PUT').length,writes);
     await page.locator('#min-quantity').fill('0');await page.locator('#min-save').click();
-    await page.waitForFunction(()=>!document.querySelector('#min-dialog').open && document.querySelector('#min-rows td:nth-child(5)').textContent==='0');
+    await page.waitForFunction(()=>!document.querySelector('#min-dialog').open && document.querySelector('#min-rows td:nth-child(5)')?.textContent==='0');
     await page.locator('[data-edit]').click();await page.locator('#min-clear').click();
     await page.waitForFunction(()=>!document.querySelector('#min-dialog').open && document.querySelector('#min-rows').textContent.includes('Chưa khai báo'));
     await page.locator('[data-edit]').click();await page.locator('#min-quantity').fill('8');await page.locator('#min-save').click();
-    await page.waitForFunction(()=>!document.querySelector('#min-dialog').open && document.querySelector('#min-rows td:nth-child(5)').textContent==='8');
+    await page.waitForFunction(()=>!document.querySelector('#min-dialog').open && document.querySelector('#min-rows td:nth-child(5)')?.textContent==='8');
     await page.waitForFunction(()=>document.querySelectorAll('.toast').length===0);
     for(const width of [1920,1440,1024,768,390,320]){
       await page.setViewportSize({width,height:1000});

@@ -11,6 +11,13 @@ import java.util.Optional;
 @Repository
 public interface WarehouseVoucherRepository extends JpaRepository<WarehouseVoucher, Long> {
 
+    List<WarehouseVoucher> findByShipmentOrderIdOrderByIdAsc(Long orderId);
+    Optional<WarehouseVoucher> findByShipmentRequestKey(String key);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select v from WarehouseVoucher v where v.id = :id")
+    Optional<WarehouseVoucher> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") Long id);
+
     Optional<WarehouseVoucher> findByVoucherCode(String voucherCode);
 
     boolean existsByVoucherCode(String voucherCode);

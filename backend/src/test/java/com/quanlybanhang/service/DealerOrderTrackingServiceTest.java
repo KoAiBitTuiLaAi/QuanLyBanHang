@@ -73,6 +73,8 @@ class DealerOrderTrackingServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(orderRepository.findByIdForUpdate(org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(call -> orderRepository.findById(call.getArgument(0)));
         orderService.setUserRepository(userRepository);
 
         dealerMinhPhat = Dealer.builder()

@@ -8,6 +8,8 @@
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
+  max-width: calc(100vw - 48px);
+  min-width: 0;
 }
 
 .toast {
@@ -22,13 +24,13 @@
   pointer-events: auto;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
   opacity: 0;
-  transform: translateX(40px);
+  transform: translateY(-12px);
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 .toast--visible {
   opacity: 1;
-  transform: translateX(0);
+  transform: translateY(0);
 }
 
 .toast--exit {
@@ -38,7 +40,7 @@
 @keyframes toast-exit {
   to {
     opacity: 0;
-    transform: translateX(40px) scale(0.95);
+    transform: translateY(-12px) scale(0.95);
   }
 }
 
@@ -61,6 +63,7 @@
 
 .toast__message {
   line-height: 1.4;
+  min-width: 0;
 }
 
 /* ── Mobile toast position ── */
@@ -70,6 +73,7 @@
     bottom: 24px;
     right: 16px;
     left: 16px;
+    max-width: calc(100vw - 32px);
   }
 
   .toast {

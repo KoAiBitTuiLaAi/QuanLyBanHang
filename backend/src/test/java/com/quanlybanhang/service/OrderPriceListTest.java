@@ -43,6 +43,9 @@ class OrderPriceListTest {
     private OrderRepository orderRepository;
 
     @Mock
+    private com.quanlybanhang.repository.UserRepository userRepository;
+
+    @Mock
     private ProductRepository productRepository;
 
     @Mock
@@ -83,6 +86,11 @@ class OrderPriceListTest {
 
     @BeforeEach
     void setUp() {
+        orderService.setUserRepository(userRepository);
+        org.mockito.Mockito.lenient().when(userRepository.findByUsername(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(call -> Optional.of(User.builder().id(99L).username(call.getArgument(0)).build()));
+        org.mockito.Mockito.lenient().when(orderRepository.findByIdForUpdate(org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(call -> orderRepository.findById(call.getArgument(0)));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
                 new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("manager01", "",
                         List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ORDER_APPROVE"))));

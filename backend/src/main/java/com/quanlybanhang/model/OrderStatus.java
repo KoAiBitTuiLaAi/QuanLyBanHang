@@ -35,7 +35,9 @@ public enum OrderStatus {
     CANCELLED("Huỷ", -1, false, false, "Đơn hàng đã bị huỷ"),
 
     /** Nhánh Từ chối: Quản lý từ chối đơn hàng khi ở trạng thái Chờ duyệt */
-    REJECTED("Từ chối duyệt", -2, false, false, "Đơn hàng bị từ chối duyệt");
+    REJECTED("Từ chối duyệt", -2, false, false, "Đơn hàng bị từ chối duyệt"),
+
+    EXPIRED("Hết hạn giữ chỗ", -3, false, false, "Đơn hàng quá hạn giữ chỗ, tồn đã được nhả");
 
     private final String displayName;
     private final int stepOrder;

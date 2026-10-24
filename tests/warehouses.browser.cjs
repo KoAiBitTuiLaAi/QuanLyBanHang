@@ -118,6 +118,7 @@ const token = 'test.' + Buffer.from(JSON.stringify({ exp: Date.now() / 1000 + 36
     await page.locator('#wh-location-type').selectOption('');
     await page.locator('#wh-add-location:not([disabled])').click();
     await page.locator('#wh-edit-name').fill('Kệ có mã tự sinh');
+    await page.locator('#wh-edit-picking-sequence').fill('7');
     assert.equal(await page.locator('#wh-edit-code').getAttribute('required'), null);
     assert.match(await page.locator('#wh-code-help').innerText(), /Để trống/);
     await page.screenshot({ path: path.join(output, 'location-auto-code.png') });
@@ -125,9 +126,11 @@ const token = 'test.' + Buffer.from(JSON.stringify({ exp: Date.now() / 1000 + 36
     await page.waitForFunction(() => !document.querySelector('#wh-dialog').open);
     await page.locator('#wh-location-rows').getByText('Kệ có mã tự sinh', { exact: true }).waitFor();
     const auto = locations.find(l => l.name === 'Kệ có mã tự sinh');
+    assert.equal(auto.pickingSequence, 7);
     assert.equal(calls.findLast(c => c.method === 'POST' && c.endpoint.endsWith('/locations')).body.code, '');
     await page.locator('#wh-location-rows').getByText(auto.code, { exact: true }).waitFor();
     await page.locator(`[data-action="edit-location"][data-id="${auto.id}"]`).click();
+    assert.equal(await page.locator('#wh-edit-picking-sequence').inputValue(), '7');
     await page.locator('#wh-dialog').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#wh-edit-code').inputValue(), auto.code);
     const oldCode = auto.code;

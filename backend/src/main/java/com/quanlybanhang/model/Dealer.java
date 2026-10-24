@@ -99,6 +99,52 @@ public class Dealer {
     private Integer maxDebtDays = 0;
 
     /**
+     * Cờ cảnh báo rủi ro công nợ tự động (S7-04):
+     * true = Đại lý bị gắn cờ tự động khi vượt hạn mức tiền hoặc có khoản nợ quá hạn
+     * false = Bình thường
+     */
+    @Column(name = "debt_flagged", nullable = false)
+    @Builder.Default
+    private Boolean debtFlagged = false;
+
+    /**
+     * Loại vi phạm dẫn đến gắn cờ tự động (S7-04).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "debt_flag_type", length = 30)
+    @Builder.Default
+    private DebtFlagType debtFlagType = DebtFlagType.NONE;
+
+    /**
+     * Lý do gắn cờ tự động chi tiết (S7-04).
+     */
+    @Column(name = "debt_flag_reason", length = 1000)
+    private String debtFlagReason;
+
+    /**
+     * Thời điểm đại lý bị gắn cờ công nợ gần nhất (S7-04).
+     */
+    @Column(name = "debt_flagged_at")
+    private LocalDateTime debtFlaggedAt;
+
+    /**
+     * Thời điểm hệ thống đánh giá lại công nợ gần nhất (S7-04).
+     */
+    @Column(name = "last_debt_evaluated_at")
+    private LocalDateTime lastDebtEvaluatedAt;
+
+    /**
+     * Cấu hình hành vi riêng cho đại lý khi bị gắn cờ (S7-04):
+     * DEFAULT: áp dụng cấu hình chung của hệ thống.
+     * BLOCK: luôn chặn tạo đơn mới.
+     * REQUIRE_APPROVAL: luôn chuyển sang cần duyệt.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "debt_action_config", length = 30)
+    @Builder.Default
+    private DebtFlagAction debtActionConfig = DebtFlagAction.DEFAULT;
+
+    /**
      * Nhóm khách hàng của đại lý (mặc định là Đại lý cấp 1 - DAI_LY_CAP_1).
      * Quyết định bảng giá được áp dụng (S3-03, S2-10).
      */
@@ -144,6 +190,15 @@ public class Dealer {
         }
         if (locked == null) {
             locked = false;
+        }
+        if (debtFlagged == null) {
+            debtFlagged = false;
+        }
+        if (debtFlagType == null) {
+            debtFlagType = DebtFlagType.NONE;
+        }
+        if (debtActionConfig == null) {
+            debtActionConfig = DebtFlagAction.DEFAULT;
         }
     }
 

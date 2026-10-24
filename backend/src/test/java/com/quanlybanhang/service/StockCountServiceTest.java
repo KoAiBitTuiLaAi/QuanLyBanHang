@@ -33,9 +33,6 @@ class StockCountServiceTest {
     private WarehouseStockCountRepository stockCounts;
 
     @Mock
-    private WarehouseStockCountItemRepository stockCountItems;
-
-    @Mock
     private WarehouseRepository warehouses;
 
     @Mock
@@ -111,11 +108,11 @@ class StockCountServiceTest {
     @Test
     @DisplayName("Tạo phiếu kiểm kê theo kho: chốt số tồn sổ tại thời điểm tạo")
     void create_AllProductsInWarehouse_SnapshotsBookQuantity() {
-        when(warehouses.findById(1L)).thenReturn(Optional.of(khoChinh));
+        when(warehouses.findByIdForUpdate(1L)).thenReturn(Optional.of(khoChinh));
         when(products.findByActiveTrueOrderByNameAsc()).thenReturn(List.of(biaTiger, biaHeineken, cocacola));
-        when(inventories.findByWarehouseIdAndProductId(1L, 101L)).thenReturn(Optional.of(invTiger));
-        when(inventories.findByWarehouseIdAndProductId(1L, 102L)).thenReturn(Optional.of(invHeineken));
-        when(inventories.findByWarehouseIdAndProductId(1L, 201L)).thenReturn(Optional.empty()); // chưa có tồn => tồn sổ 0
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 101L)).thenReturn(Optional.of(invTiger));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 102L)).thenReturn(Optional.of(invHeineken));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 201L)).thenReturn(Optional.empty()); // chưa có tồn => tồn sổ 0
         when(stockCounts.save(any(WarehouseStockCount.class))).thenAnswer(i -> {
             WarehouseStockCount sc = i.getArgument(0);
             sc.setId(1L);
@@ -153,11 +150,11 @@ class StockCountServiceTest {
     @Test
     @DisplayName("Tạo phiếu kiểm kê theo nhóm hàng: chỉ lấy sản phẩm thuộc nhóm hàng đó")
     void create_ByCategory_OnlyIncludesCategoryProducts() {
-        when(warehouses.findById(1L)).thenReturn(Optional.of(khoChinh));
+        when(warehouses.findByIdForUpdate(1L)).thenReturn(Optional.of(khoChinh));
         when(categories.findById(10L)).thenReturn(Optional.of(catBia));
         when(products.findByCategoryId(10L)).thenReturn(List.of(biaTiger, biaHeineken));
-        when(inventories.findByWarehouseIdAndProductId(1L, 101L)).thenReturn(Optional.of(invTiger));
-        when(inventories.findByWarehouseIdAndProductId(1L, 102L)).thenReturn(Optional.of(invHeineken));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 101L)).thenReturn(Optional.of(invTiger));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 102L)).thenReturn(Optional.of(invHeineken));
         when(stockCounts.save(any(WarehouseStockCount.class))).thenAnswer(i -> {
             WarehouseStockCount sc = i.getArgument(0);
             sc.setId(2L);
@@ -181,7 +178,7 @@ class StockCountServiceTest {
     @DisplayName("Tạo phiếu kiểm kê trên kho đã ngừng hoạt động -> lỗi IllegalArgumentException")
     void create_InactiveWarehouse_ThrowsException() {
         khoChinh.setActive(false);
-        when(warehouses.findById(1L)).thenReturn(Optional.of(khoChinh));
+        when(warehouses.findByIdForUpdate(1L)).thenReturn(Optional.of(khoChinh));
 
         StockCountCreateRequest req = StockCountCreateRequest.builder().warehouseId(1L).build();
         assertThatThrownBy(() -> stockCountService.create(req, "admin"))
@@ -218,7 +215,7 @@ class StockCountServiceTest {
         sc.addItem(item1);
         sc.addItem(item2);
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
         when(stockCounts.save(any(WarehouseStockCount.class))).thenAnswer(i -> i.getArgument(0));
 
         // Tiger đếm thực tế 95 (thiếu 5 => difference = -5)
@@ -255,7 +252,7 @@ class StockCountServiceTest {
                 .build();
         sc.addItem(WarehouseStockCountItem.builder().id(11L).stockCount(sc).product(biaTiger).baseUnit("lon").bookQuantity(new BigDecimal("100")).build());
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
 
         StockCountUpdateItemsRequest req = StockCountUpdateItemsRequest.builder()
                 .items(List.of(StockCountItemUpdateRequest.builder().productId(101L).actualQuantity(new BigDecimal("-1")).build()))
@@ -299,11 +296,12 @@ class StockCountServiceTest {
         sc.addItem(item1);
         sc.addItem(item2);
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
-        when(inventories.findByWarehouseIdAndProductId(1L, 101L)).thenReturn(Optional.of(invTiger));
-        when(inventories.findByWarehouseIdAndProductId(1L, 102L)).thenReturn(Optional.of(invHeineken));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 101L)).thenReturn(Optional.of(invTiger));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 102L)).thenReturn(Optional.of(invHeineken));
         when(stockCounts.save(any(WarehouseStockCount.class))).thenAnswer(i -> i.getArgument(0));
 
+        markSnapshots(sc);
         StockCountCompleteRequest req = StockCountCompleteRequest.builder()
                 .reason("Cân đối kho sau kiểm kê định kỳ tháng 10")
                 .build();
@@ -339,7 +337,7 @@ class StockCountServiceTest {
                 .status(StockCountStatus.DRAFT)
                 .build();
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
 
         StockCountCompleteRequest req = StockCountCompleteRequest.builder()
                 .reason("   ") // rỗng
@@ -369,7 +367,7 @@ class StockCountServiceTest {
                 .actualQuantity(null) // chưa đếm
                 .build());
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
 
         StockCountCompleteRequest req = StockCountCompleteRequest.builder()
                 .reason("Chốt khi chưa đếm hết")
@@ -392,7 +390,7 @@ class StockCountServiceTest {
 
         assertThatThrownBy(() -> stockCountService.complete(1L, req, "staff"))
                 .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("Chỉ Quản lý kho mới được chốt phiếu kiểm kê");
+                .hasMessageContaining("Bạn cần quyền WAREHOUSE_ADJUST");
     }
 
     @Test
@@ -420,10 +418,11 @@ class StockCountServiceTest {
                 .differenceQuantity(BigDecimal.ZERO)
                 .build());
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
-        when(inventories.findByWarehouseIdAndProductId(1L, 101L)).thenReturn(Optional.of(invTiger));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 101L)).thenReturn(Optional.of(invTiger));
         when(stockCounts.save(any())).thenAnswer(i -> i.getArgument(0));
 
+        markSnapshots(sc);
         StockCountCompleteRequest req = StockCountCompleteRequest.builder()
                 .reason("Quản lý kho chốt kiểm kê")
                 .build();
@@ -457,7 +456,7 @@ class StockCountServiceTest {
                 .status(StockCountStatus.DRAFT)
                 .build();
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
         when(stockCounts.save(any())).thenAnswer(i -> i.getArgument(0));
 
         StockCountResponse res = stockCountService.cancel(1L, new StockCountCancelRequest("Hủy do chọn nhầm kho"), "admin");
@@ -477,10 +476,90 @@ class StockCountServiceTest {
                 .status(StockCountStatus.COMPLETED)
                 .build();
 
-        when(stockCounts.findById(1L)).thenReturn(Optional.of(sc));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
 
         assertThatThrownBy(() -> stockCountService.cancel(1L, new StockCountCancelRequest("Thử hủy"), "admin"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Chỉ được hủy phiếu kiểm kê ở trạng thái mới tạo");
+    }
+
+    @Test
+    void complete_ChangedVersionEvenWithSameQuantity_RejectsBeforeWriting() {
+        WarehouseStockCount sc = countedDraft();
+        markSnapshots(sc);
+        invTiger.setVersion(2L);
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 101L)).thenReturn(Optional.of(invTiger));
+
+        assertThatThrownBy(() -> stockCountService.complete(1L,
+                new StockCountCompleteRequest("recount", null), "admin"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("hủy phiếu");
+        verify(inventories, never()).save(any());
+        verifyNoInteractions(audit);
+    }
+
+    @Test
+    void complete_BelowReserved_RejectsWithoutInventoryOrAuditWrites() {
+        WarehouseStockCount sc = countedDraft();
+        markSnapshots(sc);
+        invTiger.setReservedQuantity(new BigDecimal("96"));
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 101L)).thenReturn(Optional.of(invTiger));
+
+        assertThatThrownBy(() -> stockCountService.complete(1L,
+                new StockCountCompleteRequest("recount", null), "admin"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("giữ chỗ");
+        assertThat(invTiger.getBaseQuantity()).isEqualByComparingTo("100");
+        verify(inventories, never()).save(any());
+        verifyNoInteractions(audit);
+    }
+
+    @Test
+    void updateItems_ZeroIsCountedAndNullRestoresUncountedState() {
+        WarehouseStockCount sc = countedDraft();
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
+        when(stockCounts.save(any())).thenAnswer(i -> i.getArgument(0));
+        var zero = new StockCountUpdateItemsRequest(List.of(new StockCountItemUpdateRequest(101L, BigDecimal.ZERO, null)), null);
+        StockCountResponse counted = stockCountService.updateItems(1L, zero, "admin");
+        assertThat(counted.getUncountedItems()).isZero();
+        assertThat(counted.getItems().get(0).getDifferenceQuantity()).isEqualByComparingTo("-100");
+        var cleared = new StockCountUpdateItemsRequest(List.of(new StockCountItemUpdateRequest(101L, null, null)), null);
+        StockCountResponse uncounted = stockCountService.updateItems(1L, cleared, "admin");
+        assertThat(uncounted.getUncountedItems()).isEqualTo(1);
+        assertThat(uncounted.getItems().get(0).getDifferenceQuantity()).isNull();
+    }
+
+    @Test
+    void complete_AdjustPermissionOnViewerRole_IsSufficient() {
+        setSecurityContext("viewer", "ROLE_VIEWER", "WAREHOUSE_ADJUST");
+        when(users.findByUsername("viewer")).thenReturn(Optional.of(User.builder()
+                .username("viewer").warehouses(Set.of(khoChinh)).build()));
+        WarehouseStockCount sc = countedDraft();
+        markSnapshots(sc);
+        when(stockCounts.findByIdForUpdate(1L)).thenReturn(Optional.of(sc));
+        when(inventories.findByWarehouseIdAndProductIdForUpdate(1L, 101L)).thenReturn(Optional.of(invTiger));
+        when(stockCounts.save(any())).thenAnswer(i -> i.getArgument(0));
+        assertThat(stockCountService.complete(1L, new StockCountCompleteRequest("recount", null), "viewer").getStatus())
+                .isEqualTo(StockCountStatus.COMPLETED);
+    }
+
+    private WarehouseStockCount countedDraft() {
+        WarehouseStockCount sc = WarehouseStockCount.builder().id(1L).code("PKK-HARDEN")
+                .warehouse(khoChinh).build();
+        WarehouseStockCountItem item = WarehouseStockCountItem.builder().product(biaTiger).baseUnit("lon")
+                .bookQuantity(new BigDecimal("100")).actualQuantity(new BigDecimal("95")).build();
+        item.calculateDifference();
+        sc.addItem(item);
+        return sc;
+    }
+
+    private void markSnapshots(WarehouseStockCount sc) {
+        when(warehouses.findByIdForUpdate(1L)).thenReturn(Optional.of(khoChinh));
+        for (WarehouseStockCountItem item : sc.getItems()) {
+            WarehouseInventory inv = item.getProduct().getId().equals(101L) ? invTiger : invHeineken;
+            item.setSnapshotCaptured(true);
+            item.setSnapshotInventoryId(inv.getId());
+            item.setSnapshotInventoryVersion(inv.getVersion());
+        }
     }
 }

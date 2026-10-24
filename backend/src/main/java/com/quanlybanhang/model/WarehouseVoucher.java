@@ -27,6 +27,21 @@ public class WarehouseVoucher {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    @Column(nullable = false, columnDefinition = "bigint default 0")
+    @Builder.Default
+    private Long version = 0L;
+
+    /** S6-05 links; nullable for existing standalone warehouse documents. */
+    @Column(name = "shipment_order_id")
+    private Long shipmentOrderId;
+
+    @Column(name = "shipment_request_key", length = 36, unique = true)
+    private String shipmentRequestKey;
+
+    @Column(name = "shipment_request_hash", length = 64)
+    private String shipmentRequestHash;
+
     @Column(name = "voucher_code", nullable = false, length = 50, unique = true)
     private String voucherCode;
 
@@ -72,6 +87,18 @@ public class WarehouseVoucher {
      */
     @Column(name = "adjustment_reason", length = 500)
     private String adjustmentReason;
+
+    /**
+     * Xác nhận ghi đè xuất lô đã quá hạn bởi Quản lý kho (S6-01).
+     */
+    @Column(name = "override_expired_lot")
+    private Boolean overrideExpiredLot;
+
+    /**
+     * Lý do ghi đè xuất lô đã quá hạn (S6-01).
+     */
+    @Column(name = "expired_lot_override_reason", length = 500)
+    private String expiredLotOverrideReason;
 
     @Column(length = 500)
     private String note;

@@ -64,6 +64,9 @@ class WarehouseServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock private SupplierRepository supplierRepository;
+    @Mock private WarehouseLotInventoryRepository lotInventoryRepository;
+
     @InjectMocks
     private WarehouseServiceImpl warehouseService;
 
@@ -104,9 +107,17 @@ class WarehouseServiceTest {
         verifyNoInteractions(warehouseRepository, inventoryRepository, voucherRepository);
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void clearAuth() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+
     @BeforeEach
     void setUp() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("admin", "", java.util.List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
         khoHcm = Warehouse.builder().id(1L).code("KHO-HCM").name("Kho HCM").build();
+        lenient().when(warehouseRepository.findByIdForUpdate(1L)).thenAnswer(i -> Optional.of(khoHcm));
+        lenient().when(supplierRepository.findById(5L)).thenReturn(Optional.of(Supplier.builder().id(5L).name("Supplier").active(true).build()));
         biaHeineken = Product.builder()
                 .id(10L)
                 .code("SP-KEN330")
@@ -162,7 +173,7 @@ class WarehouseServiceTest {
     void importGoods_ByCarton_LedgerRecordsInCans() {
         WarehouseVoucherRequest request = WarehouseVoucherRequest.builder()
                 .warehouseId(1L)
-                .voucherCode("PNK-001")
+                .voucherCode("PNK-001").supplierId(5L).documentNumber("DOC-001").voucherDate(LocalDateTime.now())
                 .note("Nhập hàng theo thùng")
                 .items(List.of(WarehouseVoucherItemRequest.builder()
                         .productId(10L)
@@ -183,7 +194,7 @@ class WarehouseServiceTest {
                 .baseUnit("lon")
                 .build();
 
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.of(inventory));
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.of(inventory));
         when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         WarehouseVoucherResponse response = warehouseService.importGoods(request, "thukho01");
@@ -230,7 +241,7 @@ class WarehouseServiceTest {
                 .baseUnit("lon")
                 .build();
 
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.of(inventory));
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.of(inventory));
         when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         WarehouseVoucherResponse response = warehouseService.exportGoods(request, "thukho01");
@@ -266,7 +277,7 @@ class WarehouseServiceTest {
                 .baseUnit("lon")
                 .build();
 
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.of(inventory));
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.of(inventory));
 
         assertThatThrownBy(() -> warehouseService.exportGoods(request, "thukho01"))
                 .isInstanceOf(IllegalArgumentException.class)

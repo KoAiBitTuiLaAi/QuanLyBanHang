@@ -83,6 +83,7 @@ async function createDealerOrdersEnvironment(options = {}) {
 
   const apiCalls = [];
   const submittedPayloads = [];
+  const windowListeners = {};
 
   const context = vm.createContext({
     document: {
@@ -94,6 +95,8 @@ async function createDealerOrdersEnvironment(options = {}) {
     },
     window: {
       location: { href: "/dealer-orders", pathname: "/dealer-orders", search },
+      addEventListener: (type, callback) => { (windowListeners[type] ||= []).push(callback); },
+      dispatchEvent: (event) => { for (const callback of windowListeners[event.type] || []) callback(event); },
     },
     location: { href: "/dealer-orders", pathname: "/dealer-orders", search: "" },
     sessionStorage: {
@@ -120,6 +123,7 @@ async function createDealerOrdersEnvironment(options = {}) {
     JSON,
     RegExp,
     URLSearchParams,
+    AbortController,
     Boolean,
     CSS: { escape: (s) => s },
     setTimeout,
@@ -148,7 +152,7 @@ async function createDealerOrdersEnvironment(options = {}) {
             json: async () => ({
               success: true,
               message: "Đặt lại đơn hàng thành công",
-              data: { id: 999, orderCode: "DH-REORDER-999" },
+              data: { order: { id: 999, orderCode: "DH-REORDER-999" }, excludedItems: [], warnings: [] },
             }),
           };
         }
@@ -158,6 +162,19 @@ async function createDealerOrdersEnvironment(options = {}) {
             status: 200,
             json: async () => ({ success: true, data: orders }),
           };
+        }
+        if (url.endsWith('/reorder-preview')) {
+          const availableItems = [], discontinuedItems = [];
+          const prices = new Map((effectivePriceList?.items || []).map(item => [item.productId, item.sellingPrice]));
+          for (const item of orderDetail?.items || []) {
+            const product = catalogProducts.find(product => product.id === item.productId || product.code === item.productCode);
+            if (!product || product.active === false || product.status === 'INACTIVE') discontinuedItems.push(item);
+            else availableItems.push({ ...item, sourceItemId: item.id, currentPrice: prices.get(product.id) ?? product.price ?? 0 });
+          }
+          return { ok: true, status: 200, json: async () => ({ success: true, data: {
+            sourceOrderId: orderDetail?.id, sourceOrderCode: orderDetail?.orderCode, deliveryPointId: orderDetail?.deliveryPointId,
+            availableItems, discontinuedItems, defaultExpectedDeliveryDate: '2026-10-25', canReorder: availableItems.length > 0,
+          } }) };
         }
         if (url.startsWith("/portal/orders/") || url.startsWith("/orders/")) {
           return {
@@ -203,6 +220,7 @@ async function createDealerOrdersEnvironment(options = {}) {
   const scriptPath = path.join(__dirname, "../frontend/js/dealer-orders.js");
   const code = fs.readFileSync(scriptPath, "utf8");
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/js/dealer-portal-context.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/js/dealer-delivery-tracking.js'), 'utf8'), context);
   vm.runInContext(code, context);
 
   // Chờ loadOrders hoàn tất
@@ -241,17 +259,42 @@ test('Admin theo dõi và đặt lại đơn với ngữ cảnh đại lý xuyê
     closest: selector => selector === '[data-reorder-id]' ? { dataset: { reorderId: '55' } } : null,
   } });
   await new Promise(resolve => setTimeout(resolve, 20));
-  assert.ok(env.apiCalls.some(call => call.url === '/portal/orders/55?dealerId=10'));
-  assert.ok(env.apiCalls.some(call => call.url === '/portal/catalog?dealerId=10'));
+  assert.ok(env.apiCalls.some(call => call.url === '/portal/orders/55/reorder-preview?dealerId=10'));
+  assert.ok(!env.apiCalls.some(call => call.url.startsWith('/portal/catalog')));
   env.element('reorder-delivery-date').value = '2026-10-25';
   for (const listener of env.element('btn-confirm-reorder').listeners.click) await listener();
-  assert.ok(env.apiCalls.some(call => call.options.method === 'POST' && call.url === '/portal/orders?dealerId=10'));
+  assert.ok(env.apiCalls.some(call => call.options.method === 'POST' && call.url === '/portal/orders/55/reorder?dealerId=10'));
 });
 
-test('Thu hồi PRODUCT_VIEW ẩn nút đặt lại vì không còn quyền tra giá hiện hành', async () => {
+test('Đặt lại dùng API chuyên biệt, không đòi PRODUCT_VIEW ngoài ORDER_VIEW và ORDER_CREATE', async () => {
   const env = await createDealerOrdersEnvironment({ currentUser: { roles: ['ROLE_DEALER'],
     permissions: ['ORDER_VIEW', 'ORDER_CREATE'] }, orders: [{ id: 1, status: 'COMPLETED' }] });
+  assert.ok(env.element('dealer-orders-body').innerHTML.includes('dealer-order-reorder-btn'));
+});
+
+test('Thu hồi ORDER_CREATE đóng form đang mở, chặn submit và cấp lại khôi phục nút', async () => {
+  const currentUser = { roles: ['ROLE_DEALER'], permissions: ['ORDER_VIEW', 'ORDER_CREATE'] };
+  const order = { id: 55, orderCode: 'DH55', status: 'EXPORTED', items: [{ id: 1, productId: 101, unit: 'lon', quantity: 2 }] };
+  const env = await createDealerOrdersEnvironment({ currentUser, orders: [order], orderDetail: order,
+    catalogProducts: [{ id: 101, unit: 'lon', price: 10 }] });
+  env.element('dealer-orders-body').dispatchEvent({ type: 'click', target: {
+    closest: selector => selector === '[data-reorder-id]' ? { dataset: { reorderId: '55' } } : null,
+  } });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(env.element('dealer-reorder-modal').hidden, false);
+  currentUser.permissions = ['ORDER_VIEW'];
+  env.context.window.dispatchEvent({ type: 'auth:permissions-changed' });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(env.element('dealer-reorder-modal').hidden, true);
+  assert.equal(env.element('btn-confirm-reorder').disabled, true);
   assert.ok(!env.element('dealer-orders-body').innerHTML.includes('dealer-order-reorder-btn'));
+  for (const listener of env.element('btn-confirm-reorder').listeners.click) await listener();
+  assert.equal(env.submittedPayloads.length, 0);
+  assert.match(env.element('dealer-orders-body').innerHTML, /Đã xuất kho/);
+  currentUser.permissions.push('ORDER_CREATE');
+  env.context.window.dispatchEvent({ type: 'auth:permissions-changed' });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(env.element('dealer-orders-body').innerHTML.includes('dealer-order-reorder-btn'));
 });
 
 test("S5-02: Quyền ORDER_CREATE được liên kết với nút Đặt lại đơn hàng", async () => {
@@ -444,7 +487,7 @@ test("S5-02: Cho phép đặt lại toàn bộ hoặc một phần dòng hàng v
   assert.equal(payload.items[0].productId, 101);
   assert.equal(payload.items[0].quantity, 10);
   assert.equal(payload.items[0].price, undefined);
-  assert.ok(env.apiCalls.filter(call => call.options.method === 'POST').every(call => call.url === '/portal/orders'));
+  assert.ok(env.apiCalls.filter(call => call.options.method === 'POST').every(call => /^\/portal\/orders\/\d+\/reorder$/.test(call.url)));
   assert.ok(env.apiCalls.every(call => call.url.startsWith('/portal/')));
 });
 

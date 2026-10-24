@@ -18,6 +18,8 @@
     <description>Backend API cho hệ thống Quản Lý Bán Hàng</description>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <jjwt.version>0.12.5</jjwt.version>
         <lombok.version>1.18.48</lombok.version>
@@ -153,7 +155,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>-Dnet.bytebuddy.experimental=true -XX:+EnableDynamicAgentLoading -Xmx512m</argLine>
+                    <argLine>-Dfile.encoding=UTF-8 -Dnet.bytebuddy.experimental=true -XX:+EnableDynamicAgentLoading -Xmx512m</argLine>
                 </configuration>
             </plugin>
             <plugin>

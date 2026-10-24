@@ -187,6 +187,17 @@
                 <svg viewBox="0 0 24 24" width="16" height="16"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                 <span>Tồn kho</span>
               </button>
+              <button
+                class="nav-tab"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-stocktake"
+                id="tab-stocktake"
+                data-tab="stocktake"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <span>Kiểm kê kho</span>
+              </button>
             </nav>
           </div>
 
@@ -307,19 +318,29 @@
                 <div class="form-field">
                   <label for="receipt-warehouse">Kho thực hiện</label>
                   <select id="receipt-warehouse">
-                  <option value="">Đang tải danh sách kho…</option>
-                </select>
+                    <option value="">Đang tải danh sách kho…</option>
+                  </select>
                   <p id="warehouse-configuration-message" hidden>Chưa có kho đang hoạt động. Liên hệ quản trị viên để cấu hình kho thực tế trước khi ghi phiếu.</p>
                 </div>
 
                 <div class="form-field">
-                  <label for="receipt-partner" id="label-receipt-partner">Nhà cung cấp / Đối tác</label>
-                  <input type="text" id="receipt-partner" placeholder="VD: Nhà máy Bia Heineken VN..." />
+                  <label for="receipt-supplier-select" id="label-receipt-supplier">Nhà cung cấp</label>
+                  <div class="supplier-picker-wrap">
+                    <select id="receipt-supplier-select">
+                      <option value="">-- Chọn Nhà cung cấp --</option>
+                    </select>
+                    <input type="text" id="receipt-partner" placeholder="Hoặc nhập tên đối tác / chi nhánh..." />
+                  </div>
+                </div>
+
+                <div class="form-field">
+                  <label for="receipt-doc-number">Số chứng từ / Hóa đơn giao hàng</label>
+                  <input type="text" id="receipt-doc-number" maxlength="100" placeholder="VD: HĐ-88219 / PXK-NCC-042" />
                 </div>
 
                 <div class="form-field form-field--span2">
                   <label for="receipt-notes">Ghi chú nghiệp vụ kho</label>
-                  <input type="text" id="receipt-notes" placeholder="Nhập theo lệnh điều phối số... lô hàng kèm phiếu kiểm đếm" />
+                  <input type="text" id="receipt-notes" maxlength="500" placeholder="Nhập theo lệnh điều phối số... lô hàng kèm phiếu kiểm đếm" />
                 </div>
               </div>
 
@@ -329,7 +350,7 @@
                   <h3>Chi tiết mặt hàng & Quy đổi ghi sổ</h3>
                   <span class="live-calc-hint">
                     <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    Hệ thống sẽ chốt <strong>hệ số quy đổi</strong> tại thời điểm bấm ghi sổ.
+                    Hệ thống tự động quy về đơn vị cơ sở và chốt <strong>hệ số quy đổi</strong> tại thời điểm ghi sổ.
                   </span>
                 </div>
 
@@ -337,12 +358,14 @@
                   <table class="line-items-table" id="line-items-table">
                     <thead>
                       <tr>
-                        <th style="width: 28%">Sản phẩm / SKU</th>
-                        <th style="width: 18%">Đơn vị gọi hàng</th>
-                        <th style="width: 14%">Số lượng nhập/xuất</th>
-                        <th style="width: 16%">Tỷ lệ quy đổi áp dụng</th>
-                        <th style="width: 18%">Số lượng cơ sở ghi sổ</th>
-                        <th style="width: 6%"></th>
+                        <th style="width: 24%">Sản phẩm / SKU</th>
+                        <th style="width: 15%">Đơn vị tính</th>
+                        <th style="width: 11%">Số lượng</th>
+                        <th style="width: 14%">Số lô (Lot)</th>
+                        <th style="width: 13%">Ngày sản xuất / Hạn sử dụng</th>
+                        <th style="width: 11%">Tỷ lệ quy đổi</th>
+                        <th style="width: 14%">Cơ sở ghi sổ</th>
+                        <th style="width: 4%"></th>
                       </tr>
                     </thead>
                     <tbody id="line-items-body">
@@ -379,14 +402,18 @@
                 <div class="receipt-policy-notice">
                   <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                   <span>
-                    Khi bấm <strong>Ghi sổ kho</strong>, số lượng sẽ được quy về đơn vị cơ sở và khóa cố định hệ số quy đổi.
+                    <strong>Quy định kho:</strong> Phiếu nháp cho phép sửa và không thay đổi tồn kho. Khi <strong>Xác nhận ghi sổ</strong>, tồn kho thực tế được cộng ngay; phiếu đã ghi sổ bị khóa cố định, không được sửa đổi (chỉ được lập phiếu điều chỉnh).
                   </span>
                 </div>
                 <div class="action-buttons">
                   <button type="button" class="btn btn--secondary" id="btn-reset-receipt">Làm mới form</button>
+                  <button type="button" class="btn btn--outline" id="btn-save-draft-receipt">
+                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    <span>Lưu bản nháp</span>
+                  </button>
                   <button type="button" class="btn btn--primary btn--lg" id="btn-save-receipt">
-                    <svg viewBox="0 0 24 24" width="18" height="18"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                    <span>Lưu & Ghi sổ kho</span>
+                    <svg viewBox="0 0 24 24" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Xác nhận ghi sổ kho</span>
                   </button>
                 </div>
               </div>
@@ -511,6 +538,187 @@
                   <!-- Rendered via JS -->
                 </tbody>
               </table>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════
+               PANEL 5: KIỂM KÊ KHO & GHI NHẬN CHÊNH LỆCH (S5-08)
+               ══════════════════════════════════════════════════ -->
+          <section
+            class="tab-panel"
+            id="panel-stocktake"
+            role="tabpanel"
+            aria-labelledby="tab-stocktake"
+            hidden
+          >
+            <!-- Toolbar khởi tạo & lọc kiểm kê -->
+            <h2 class="section-title">Kiểm kê kho &amp; Chênh lệch</h2>
+            <div class="panel-toolbar stocktake-toolbar">
+              <div class="filter-group">
+                <label for="stocktake-scope-filter" class="form-label-inline">Phạm vi kiểm kê:</label>
+                <select id="stocktake-scope-filter" aria-label="Phạm vi kiểm kê">
+                  <option value="ALL">Toàn bộ mặt hàng trong kho</option>
+                  <!-- Populated dynamically with categories -->
+                </select>
+              </div>
+
+              <div class="toolbar-actions">
+                <button class="btn btn--primary btn--sm" id="btn-start-stocktake">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <span>Tạo phiếu kiểm kê mới</span>
+                </button>
+                <button type="button" class="btn btn--secondary btn--sm" id="btn-reload-stocktake">Tải lại kiểm kê</button>
+                <button class="btn btn--secondary btn--sm" id="btn-toggle-stocktake-history">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span id="btn-stocktake-history-text">Ẩn lịch sử kiểm kê</span>
+                </button>
+              </div>
+            </div>
+
+            <p id="stocktake-message" class="stocktake-message" role="status" aria-live="polite" hidden></p>
+
+            <!-- Workspace: Phiếu kiểm kê đang thực hiện -->
+            <div id="stocktake-active-card" class="stocktake-card" hidden>
+              <div class="stocktake-card__header">
+                <div class="stocktake-card__meta">
+                  <div class="stocktake-code-badge" id="stocktake-voucher-code">—</div>
+                  <span class="stocktake-scope-badge" id="stocktake-scope-badge">Toàn bộ kho</span>
+                  <span class="badge badge--pill badge--draft" id="stocktake-status-badge">Đang kiểm đếm</span>
+                </div>
+                <div class="stocktake-card__info">
+                  <span>Kho: <strong id="stocktake-warehouse-name">—</strong></span>
+                  <span>Ngày chốt sổ: <strong id="stocktake-frozen-date">—</strong></span>
+                  <span>Người tạo: <strong id="stocktake-created-by">—</strong></span>
+                </div>
+              </div>
+
+              <!-- Metric Strip tóm tắt kết quả kiểm kê -->
+              <div class="stocktake-metrics">
+                <div class="stocktake-metric-item">
+                  <span class="stocktake-metric-label">Tổng mặt hàng</span>
+                  <strong class="stocktake-metric-val" id="st-metric-total">0</strong>
+                </div>
+                <div class="stocktake-metric-item stocktake-metric-item--match">
+                  <span class="stocktake-metric-label">Khớp thực tế</span>
+                  <strong class="stocktake-metric-val" id="st-metric-match">0</strong>
+                </div>
+                <div class="stocktake-metric-item stocktake-metric-item--surplus">
+                  <span class="stocktake-metric-label">Thừa hàng (+ lệch)</span>
+                  <strong class="stocktake-metric-val" id="st-metric-surplus">0</strong>
+                </div>
+                <div class="stocktake-metric-item stocktake-metric-item--deficit">
+                  <span class="stocktake-metric-label">Thiếu hàng (- lệch)</span>
+                  <strong class="stocktake-metric-val" id="st-metric-deficit">0</strong>
+                </div>
+                <div class="stocktake-metric-item">
+                  <span class="stocktake-metric-label">Chưa kiểm đếm</span>
+                  <strong class="stocktake-metric-val" id="st-metric-uncounted">0</strong>
+                </div>
+              </div>
+
+              <!-- Bảng kiểm đếm mặt hàng -->
+              <div class="table-container">
+                <table class="data-table stocktake-table" id="stocktake-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px">#</th>
+                      <th>Sản phẩm / SKU</th>
+                      <th>Nhóm hàng</th>
+                      <th>Đơn vị cơ sở</th>
+                      <th style="text-align: right">Tồn sổ sách (Chốt)</th>
+                      <th style="text-align: right; width: 150px">Thực tế đếm</th>
+                      <th style="text-align: right; width: 140px">Chênh lệch</th>
+                      <th>Ghi chú lý do lệch</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stocktake-table-body">
+                    <!-- Populated via JS -->
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Khu vực Chốt kiểm kê & Điều chỉnh kho -->
+              <div class="stocktake-footer">
+                <div class="stocktake-reason-box">
+                  <label for="stocktake-note">Ghi chú phiếu kiểm kê</label>
+                  <input type="text" id="stocktake-note" maxlength="500" autocomplete="off" />
+                </div>
+                <div class="stocktake-reason-box">
+                  <label for="stocktake-adjustment-reason">
+                    Lý do kiểm kê & điều chỉnh tồn kho <span class="req">*</span>
+                    <small class="text-muted">(Bắt buộc nhập khi chốt phiếu để phục vụ kiểm toán và điều chỉnh sổ sách)</small>
+                  </label>
+                  <input
+                    type="text"
+                    id="stocktake-adjustment-reason"
+                    placeholder="VD: Kiểm kê định kỳ tháng 10/2026, bù trừ hư hỏng hao hụt..."
+                    maxlength="500"
+                    autocomplete="off"
+                  />
+                  <div class="stocktake-permission-hint" id="stocktake-role-hint" hidden>
+                    <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span>Cần quyền WAREHOUSE_ADJUST và quyền chốt phiếu từ máy chủ để cập nhật tồn kho.</span>
+                  </div>
+                </div>
+
+                <div class="stocktake-reason-box">
+                  <label for="stocktake-cancel-reason">Lý do hủy phiếu (tùy chọn)</label>
+                  <input type="text" id="stocktake-cancel-reason" maxlength="500" autocomplete="off" />
+                </div>
+                <div class="stocktake-actions">
+                  <button type="button" class="btn btn--secondary" id="btn-cancel-stocktake">Hủy phiếu kiểm kê</button>
+                  <button type="button" class="btn btn--secondary" id="btn-save-draft-stocktake">
+                    <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    <span>Lưu nháp tiến độ</span>
+                  </button>
+                  <button type="button" class="btn btn--primary" id="btn-confirm-stocktake">
+                    <svg viewBox="0 0 24 24" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Chốt kiểm kê & Cân bằng kho</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Empty State khi chưa có phiếu kiểm kê đang mở -->
+            <div id="stocktake-empty-state" class="empty-state-box">
+              <div class="empty-icon">
+                <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" fill="none" stroke-width="1.5">
+                  <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                </svg>
+              </div>
+              <h3>Chưa có phiếu kiểm kê nào đang mở</h3>
+              <p>Chọn phạm vi kiểm kê (toàn kho hoặc theo nhóm hàng) rồi nhấn <strong>"Tạo phiếu kiểm kê mới"</strong> để hệ thống chốt số tồn sổ và bắt đầu kiểm đếm.</p>
+            </div>
+
+            <!-- Lịch sử các phiếu kiểm kê trước đó -->
+            <div id="stocktake-history-section" class="stocktake-history-wrap">
+              <div class="history-header">
+                <h3>Lịch sử phiếu kiểm kê</h3>
+              </div>
+              <div class="table-container">
+                <table class="data-table" id="stocktake-history-table">
+                  <thead>
+                    <tr>
+                      <th>Mã phiếu</th>
+                      <th>Ngày lập</th>
+                      <th>Kho</th>
+                      <th>Phạm vi</th>
+                      <th>Người lập</th>
+                      <th>Lý do điều chỉnh</th>
+                      <th>Trạng thái</th>
+                      <th class="th-actions">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stocktake-history-body">
+                    <!-- Populated via JS -->
+                  </tbody>
+                </table>
+              </div>
+              <div class="stocktake-pagination" aria-label="Phân trang lịch sử kiểm kê">
+                <button type="button" class="btn btn--secondary btn--sm" id="stocktake-history-prev" disabled>Trang trước</button>
+                <span id="stocktake-history-page" aria-live="polite">Trang 0 / 0</span>
+                <button type="button" class="btn btn--secondary btn--sm" id="stocktake-history-next" disabled>Trang sau</button>
+              </div>
             </div>
           </section>
         </main>
@@ -648,7 +856,8 @@
     <script src="/js/vendor/xlsx.full.min.js"></script>
     <script src="/js/auth.js"></script>
     <script src="/js/menu-config.js"></script>
-<script src="/js/app-navigation.js"></script>
+    <script src="/js/app-navigation.js"></script>
+    <script src="/js/warehouse-stocktake.js"></script>
     <script src="/js/warehouse-units.js"></script>
   </body>
 </html>

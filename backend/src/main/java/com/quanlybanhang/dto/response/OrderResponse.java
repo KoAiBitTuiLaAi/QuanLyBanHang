@@ -38,6 +38,7 @@ public class OrderResponse {
     private String priceListCode;
     private String status;
     private String statusDisplayName;
+    private Boolean backordered;
     private Boolean canCancel;
     private Boolean isExported;
     private Boolean inventoryReserved;
@@ -104,6 +105,9 @@ public class OrderResponse {
 
     /** Ngày thực tế giao hàng (S5-01). */
     private LocalDate actualDeliveryDate;
+
+    /** Matrix permission, warehouse scope and lifecycle capability for delivery editing. */
+    private Boolean canUpdateDelivery;
 
     /** Ghi chú giao hàng tổng thể (S5-01). */
     private String deliveryNote;
