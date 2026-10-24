@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Yêu cầu phát hành hóa đơn bán hàng từ các phiếu giao (S7-01).
+ * Yêu cầu phát hành hóa đơn bán hàng từ các phiếu giao (S7-01, S7-07).
  * Hỗ trợ gộp nhiều phiếu giao của cùng một đại lý trong kỳ thành 1 hóa đơn.
  */
 @Getter
@@ -43,4 +43,3 @@ public class CreateInvoiceRequest {
      */
     private String note;
 }
-

@@ -34,6 +34,7 @@ public class WarehouseLocationResponse {
     private String parentLocationName;
 
     private String description;
+    private Integer pickingSequence;
     private Boolean active;
 
     /** Tên hiển thị đầy đủ, vd: "Khu A > Kệ 01" */

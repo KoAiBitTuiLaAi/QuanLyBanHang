@@ -42,7 +42,8 @@ public class LotSuggestionResponse {
     private List<SuggestedLotInfo> availableLots;
 
     /**
-     * True nếu có ít nhất 1 lô đủ số lượng hoặc tổng tồn đáp ứng yêu cầu.
+     * True nếu có ít nhất một lô còn hạn, có HSD và đủ toàn bộ số lượng yêu cầu.
+     * Không tự phân bổ yêu cầu qua nhiều lô.
      */
     private Boolean hasSufficientStock;
 

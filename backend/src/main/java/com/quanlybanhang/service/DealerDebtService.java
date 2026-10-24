@@ -66,10 +66,42 @@ public interface DealerDebtService {
     DebtEvaluationSummaryResponse evaluateAllDealersDebt();
 
     /**
-     * Ghi nhận thu tiền / thanh toán công nợ của đại lý (S7-04).
-     * Sau khi ghi nhận thu tiền thành công, hệ thống tự động chạy lại tác vụ đánh giá công nợ của đại lý.
+     * Ghi nhận thu tiền / thanh toán công nợ và đối trừ vào hoá đơn (S7-02, S7-04).
+     * Cho phép chọn đối trừ vào hoá đơn cụ thể hoặc tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO).
+     * Không cho thu vượt tổng công nợ còn lại.
      */
     DebtPaymentResponse recordPayment(DebtPaymentRequest request, String username);
+
+    /**
+     * Lập bút toán điều chỉnh cho một phiếu thu đã ghi nhận (S7-02).
+     * Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh.
+     */
+    DebtPaymentResponse adjustPayment(Long paymentId, com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest request, String username);
+
+    /**
+     * Lấy chi tiết phiếu thu tiền / bút toán điều chỉnh kèm danh sách đối trừ (S7-02).
+     */
+    DebtPaymentResponse getPaymentById(Long paymentId);
+
+    /**
+     * Lấy danh sách hoá đơn và tình trạng thanh toán của đại lý để biết chính xác đại lý còn nợ hoá đơn nào (S7-02).
+     */
+    List<DealerInvoiceResponse> getDealerInvoices(Long dealerId, String paymentStatusFilter);
+
+    /**
+     * Lấy danh sách các hoá đơn còn nợ của đại lý sắp xếp từ cũ nhất đến mới nhất (S7-02).
+     */
+    List<DealerInvoiceResponse> getDealerUnpaidInvoices(Long dealerId);
+
+    /**
+     * Xem trước đối trừ tự động theo nguyên tắc hoá đơn cũ nhất trước (S7-02).
+     */
+    PaymentAllocationPreviewResponse previewPaymentAllocation(Long dealerId, BigDecimal amount);
+
+    /**
+     * Lấy lịch sử các lần đối trừ vào một hoá đơn / đơn hàng cụ thể (S7-02).
+     */
+    List<DebtPaymentAllocationResponse> getOrderSettlements(Long orderId);
 
     /**
      * Lấy danh sách lịch sử các lần thu tiền của đại lý (S7-04).

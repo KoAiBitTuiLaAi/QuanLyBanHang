@@ -286,4 +286,116 @@ class FinanceControllerTest {
 
         assertEquals(true, response.isSuccess());
     }
+
+    @Test
+    @DisplayName("S7-02: API chi tiet phieu thu tien va phan bo")
+    void getDebtPaymentDetail_callsService() {
+        com.quanlybanhang.dto.response.DebtPaymentResponse detail = com.quanlybanhang.dto.response.DebtPaymentResponse.builder()
+                .id(10L)
+                .paymentCode("PT-20261022-0001")
+                .amount(new BigDecimal("5000000"))
+                .build();
+        when(dealerDebtService.getPaymentById(10L)).thenReturn(detail);
+
+        ApiResponse response = financeController.getDebtPaymentDetail(10L);
+
+        assertEquals(true, response.isSuccess());
+        assertEquals(detail, response.getData());
+    }
+
+    @Test
+    @DisplayName("S7-02: API lap but toan dieu chinh tra ve HTTP 201 Created")
+    void adjustDebtPayment_returnsCreated() {
+        com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest req = com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest.builder()
+                .reason("Nhap nham phieu thu")
+                .adjustmentType("REVERSAL")
+                .build();
+        com.quanlybanhang.dto.response.DebtPaymentResponse adjRes = com.quanlybanhang.dto.response.DebtPaymentResponse.builder()
+                .paymentCode("BTDC-20261022-0001")
+                .amount(new BigDecimal("-5000000"))
+                .paymentType("ADJUSTMENT")
+                .build();
+        when(authentication.getName()).thenReturn("accountant1");
+        when(dealerDebtService.adjustPayment(10L, req, "accountant1")).thenReturn(adjRes);
+
+        var responseEntity = financeController.adjustDebtPayment(10L, req, authentication);
+
+        assertEquals(org.springframework.http.HttpStatus.CREATED, responseEntity.getStatusCode());
+        assertEquals(true, responseEntity.getBody().isSuccess());
+        assertEquals(adjRes, responseEntity.getBody().getData());
+    }
+
+    @Test
+    @DisplayName("S7-02: Chan xoa phieu thu da ghi nhan -> nem ResponseStatusException 400 Bad Request")
+    void deleteDebtPayment_throwsBadRequestException() {
+        org.springframework.web.server.ResponseStatusException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> financeController.deleteDebtPayment(10L));
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Đã ghi nhận thanh toán thì không được xoá, chỉ lập bút toán điều chỉnh.", ex.getReason());
+    }
+
+    @Test
+    @DisplayName("S7-02: API danh sach hoa don cong no cua dai ly")
+    void getDealerInvoices_callsService() {
+        com.quanlybanhang.dto.response.DealerInvoiceResponse inv = com.quanlybanhang.dto.response.DealerInvoiceResponse.builder()
+                .orderId(101L)
+                .orderCode("DH-001")
+                .paymentStatus("PARTIALLY_PAID")
+                .build();
+        when(dealerDebtService.getDealerInvoices(1L, "UNPAID")).thenReturn(List.of(inv));
+
+        ApiResponse response = financeController.getDealerInvoices(1L, "UNPAID");
+
+        assertEquals(true, response.isSuccess());
+        assertEquals(1, ((List<?>) response.getData()).size());
+    }
+
+    @Test
+    @DisplayName("S7-02: API danh sach hoa don con no cua dai ly")
+    void getDealerUnpaidInvoices_callsService() {
+        com.quanlybanhang.dto.response.DealerInvoiceResponse inv = com.quanlybanhang.dto.response.DealerInvoiceResponse.builder()
+                .orderId(102L)
+                .orderCode("DH-002")
+                .paymentStatus("UNPAID")
+                .build();
+        when(dealerDebtService.getDealerUnpaidInvoices(1L)).thenReturn(List.of(inv));
+
+        ApiResponse response = financeController.getDealerUnpaidInvoices(1L);
+
+        assertEquals(true, response.isSuccess());
+        assertEquals(1, ((List<?>) response.getData()).size());
+    }
+
+    @Test
+    @DisplayName("S7-02: API xem truoc doi tru theo FIFO")
+    void previewDebtPaymentAllocation_callsService() {
+        com.quanlybanhang.dto.response.PaymentAllocationPreviewResponse preview = com.quanlybanhang.dto.response.PaymentAllocationPreviewResponse.builder()
+                .dealerId(1L)
+                .paymentAmount(new BigDecimal("5000000"))
+                .totalAllocated(new BigDecimal("5000000"))
+                .build();
+        when(dealerDebtService.previewPaymentAllocation(1L, new BigDecimal("5000000"))).thenReturn(preview);
+
+        ApiResponse response = financeController.previewDebtPaymentAllocation(1L, new BigDecimal("5000000"));
+
+        assertEquals(true, response.isSuccess());
+        assertEquals(preview, response.getData());
+    }
+
+    @Test
+    @DisplayName("S7-02: API lich su doi tru cua hoa don")
+    void getOrderSettlements_callsService() {
+        com.quanlybanhang.dto.response.DebtPaymentAllocationResponse alloc = com.quanlybanhang.dto.response.DebtPaymentAllocationResponse.builder()
+                .id(1L)
+                .orderId(101L)
+                .allocatedAmount(new BigDecimal("2000000"))
+                .build();
+        when(dealerDebtService.getOrderSettlements(101L)).thenReturn(List.of(alloc));
+
+        ApiResponse response = financeController.getOrderSettlements(101L);
+
+        assertEquals(true, response.isSuccess());
+        assertEquals(1, ((List<?>) response.getData()).size());
+    }
 }

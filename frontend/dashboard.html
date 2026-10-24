@@ -142,45 +142,241 @@
           <section class="debt-limits" id="debt-limits-view" aria-labelledby="debt-limits-title" hidden>
             <div class="debt-limits__heading">
               <div>
-                <h1 id="debt-limits-title">Hạn mức công nợ</h1>
-                <p>Khai báo hạn mức tiền và số ngày nợ tối đa của từng đại lý.</p>
+                <h1 id="debt-limits-title">Kiểm soát rủi ro &amp; Hạn mức công nợ</h1>
+                <p>Cảnh báo tự động, khoá bán hoặc chuyển cần duyệt khi đại lý vượt hạn mức hoặc quá hạn (S7-04), khai báo hạn mức (S3-05).</p>
               </div>
-              <button class="btn btn--secondary" id="reload-debt-limits" type="button">Tải lại</button>
+              <div class="debt-limits__header-actions">
+                <button class="btn btn--secondary" id="reload-debt-limits" type="button">Tải lại</button>
+                <button class="btn btn--secondary" id="btn-trigger-evaluate-all" type="button" hidden>Đánh giá lại toàn bộ</button>
+                <button class="btn btn--primary" id="btn-open-payment-modal" type="button" hidden>Ghi nhận thu tiền</button>
+              </div>
             </div>
             <div class="debt-limits__notice" role="note">
-              <strong>Kiểm soát hạn mức trước khi giao hàng</strong>
-              <p>Mỗi thay đổi hạn mức đều yêu cầu lý do và được ghi vào nhật ký thao tác để đối chiếu.</p>
+              <strong>Hệ thống tự động đánh giá và chặn rủi ro công nợ</strong>
+              <p>Đại lý vượt hạn mức tiền hoặc có khoản nợ quá số ngày cho phép sẽ tự động bị gắn cờ vi phạm. Đơn mới của đại lý bị gắn cờ sẽ bị chặn (Khoá bán) hoặc chuyển sang cần duyệt theo cấu hình. Tác vụ đánh giá lại chạy định kỳ và chạy lại sau mỗi lần ghi nhận thu tiền.</p>
             </div>
-            <p class="debt-limits__access" id="debt-limits-readonly" hidden>Bạn có quyền tra cứu. Quản trị viên, Kế toán và Quản lý kinh doanh được mở form khai báo.</p>
-            <form class="debt-limits__filters" id="debt-limits-filters">
-              <label for="debt-limit-search">Tìm đại lý
-                <input id="debt-limit-search" type="search" placeholder="Tên hoặc ID đại lý" />
-              </label>
-              <label for="debt-limit-filter">Hạn mức tiền
-                <select id="debt-limit-filter">
-                  <option value="all">Tất cả</option>
-                  <option value="positive">Có hạn mức tiền lớn hơn 0</option>
-                  <option value="zero">Hạn mức tiền bằng 0</option>
-                </select>
-              </label>
-              <button class="btn btn--secondary" id="reset-debt-limit-filters" type="button">Đặt lại</button>
-            </form>
-            <div class="debt-limits__panel">
-              <p class="debt-limits__summary" id="debt-limits-summary" role="status" aria-live="polite">Đang tải danh sách đại lý…</p>
-              <div class="debt-limits__table-wrap" tabindex="0" role="region" aria-label="Hạn mức công nợ của đại lý">
-                <table class="debt-limits__table">
-                  <thead><tr>
-                    <th scope="col">Đại lý</th><th scope="col">Hạn mức tiền tối đa</th>
-                    <th scope="col">Số ngày nợ tối đa</th><th scope="col">Khai báo</th>
-                  </tr></thead>
-                  <tbody id="debt-limits-rows"></tbody>
-                </table>
+            <p class="debt-limits__access" id="debt-limits-readonly" hidden>Bạn có quyền tra cứu. Quản trị viên, Kế toán và Quản lý kinh doanh được mở form khai báo và quản lý cấu hình.</p>
+
+            <nav class="debt-tabs" aria-label="Phân hệ công nợ" role="tablist">
+              <button class="debt-tab debt-tab--active" id="tab-btn-alerts" role="tab" aria-selected="true" aria-controls="debt-pane-alerts" type="button">
+                Cảnh báo &amp; Khoá bán <span class="debt-tab__badge" id="debt-flagged-count-badge" hidden>0</span>
+              </button>
+              <button class="debt-tab" id="tab-btn-limits" role="tab" aria-selected="false" aria-controls="debt-pane-limits" type="button">
+                Hạn mức công nợ
+              </button>
+              <button class="debt-tab" id="tab-btn-config" role="tab" aria-selected="false" aria-controls="debt-pane-config" type="button">
+                Cấu hình hệ thống
+              </button>
+              <button class="debt-tab" id="tab-btn-payments" role="tab" aria-selected="false" aria-controls="debt-pane-payments" type="button">
+                Lịch sử thu tiền
+              </button>
+            </nav>
+
+            <!-- Pane 1: Cảnh báo rủi ro & Khoá bán (S7-04) -->
+            <div class="debt-tab-pane" id="debt-pane-alerts" role="tabpanel" aria-labelledby="tab-btn-alerts">
+              <div class="debt-stats-grid" id="debt-stats-grid">
+                <div class="debt-stat-card">
+                  <span class="debt-stat-card__label">Đại lý bị gắn cờ</span>
+                  <span class="debt-stat-card__value debt-stat-card__value--warning" id="stat-flagged-count">0</span>
+                </div>
+                <div class="debt-stat-card">
+                  <span class="debt-stat-card__label">Khoá bán (BLOCK)</span>
+                  <span class="debt-stat-card__value debt-stat-card__value--danger" id="stat-blocked-count">0</span>
+                </div>
+                <div class="debt-stat-card">
+                  <span class="debt-stat-card__label">Chuyển cần duyệt</span>
+                  <span class="debt-stat-card__value debt-stat-card__value--amber" id="stat-approval-count">0</span>
+                </div>
+                <div class="debt-stat-card">
+                  <span class="debt-stat-card__label">Tổng tiền nợ quá hạn</span>
+                  <span class="debt-stat-card__value" id="stat-overdue-total">0 đ</span>
+                </div>
               </div>
-              <nav class="debt-limits__pagination" aria-label="Phân trang hạn mức công nợ">
-                <button class="btn btn--secondary" id="debt-limits-prev" type="button" disabled>Trang trước</button>
-                <span id="debt-limits-page" aria-live="polite"></span>
-                <button class="btn btn--secondary" id="debt-limits-next" type="button" disabled>Trang sau</button>
-              </nav>
+
+              <form class="debt-limits__filters" id="debt-alerts-filters">
+                <label for="debt-alerts-search">Tìm đại lý
+                  <input id="debt-alerts-search" type="search" placeholder="Tên hoặc mã đại lý" />
+                </label>
+                <label for="debt-alerts-flag-type">Loại vi phạm
+                  <select id="debt-alerts-flag-type">
+                    <option value="all">Tất cả vi phạm</option>
+                    <option value="OVERDUE">Quá hạn thanh toán</option>
+                    <option value="DEBT_LIMIT_EXCEEDED">Vượt hạn mức tiền</option>
+                    <option value="BOTH">Quá hạn &amp; Vượt hạn mức</option>
+                  </select>
+                </label>
+                <label for="debt-alerts-action-type">Hành vi áp dụng
+                  <select id="debt-alerts-action-type">
+                    <option value="all">Tất cả hành vi</option>
+                    <option value="BLOCK">Khoá bán (Chặn đơn mới)</option>
+                    <option value="REQUIRE_APPROVAL">Chuyển sang cần duyệt</option>
+                  </select>
+                </label>
+                <button class="btn btn--secondary" id="reset-debt-alerts-filters" type="button">Đặt lại</button>
+              </form>
+
+              <div class="debt-limits__panel">
+                <p class="debt-limits__summary" id="debt-alerts-summary" role="status" aria-live="polite">Đang tải danh sách cảnh báo…</p>
+                <div class="debt-limits__table-wrap" tabindex="0" role="region" aria-label="Danh sách đại lý bị gắn cờ rủi ro công nợ">
+                  <table class="debt-limits__table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Đại lý</th>
+                        <th scope="col">Loại vi phạm</th>
+                        <th scope="col">Công nợ / Hạn mức</th>
+                        <th scope="col">Nợ quá hạn / Số ngày</th>
+                        <th scope="col">Hành vi áp dụng</th>
+                        <th scope="col">Lý do gắn cờ</th>
+                        <th scope="col">Đánh giá gần nhất</th>
+                        <th scope="col">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody id="debt-alerts-rows"></tbody>
+                  </table>
+                </div>
+                <nav class="debt-limits__pagination" aria-label="Phân trang đại lý gắn cờ">
+                  <button class="btn btn--secondary" id="debt-alerts-prev" type="button" disabled>Trang trước</button>
+                  <span id="debt-alerts-page" aria-live="polite"></span>
+                  <button class="btn btn--secondary" id="debt-alerts-next" type="button" disabled>Trang sau</button>
+                </nav>
+              </div>
+            </div>
+
+            <!-- Pane 2: Hạn mức công nợ (S3-05) -->
+            <div class="debt-tab-pane" id="debt-pane-limits" role="tabpanel" aria-labelledby="tab-btn-limits" hidden>
+              <form class="debt-limits__filters" id="debt-limits-filters">
+                <label for="debt-limit-search">Tìm đại lý
+                  <input id="debt-limit-search" type="search" placeholder="Tên hoặc ID đại lý" />
+                </label>
+                <label for="debt-limit-filter">Hạn mức tiền
+                  <select id="debt-limit-filter">
+                    <option value="all">Tất cả</option>
+                    <option value="positive">Có hạn mức tiền lớn hơn 0</option>
+                    <option value="zero">Hạn mức tiền bằng 0</option>
+                  </select>
+                </label>
+                <button class="btn btn--secondary" id="reset-debt-limit-filters" type="button">Đặt lại</button>
+              </form>
+              <div class="debt-limits__panel">
+                <p class="debt-limits__summary" id="debt-limits-summary" role="status" aria-live="polite">Đang tải danh sách đại lý…</p>
+                <div class="debt-limits__table-wrap" tabindex="0" role="region" aria-label="Hạn mức công nợ của đại lý">
+                  <table class="debt-limits__table">
+                    <thead><tr>
+                      <th scope="col">Đại lý</th><th scope="col">Hạn mức tiền tối đa</th>
+                      <th scope="col">Số ngày nợ tối đa</th><th scope="col">Khai báo</th>
+                    </tr></thead>
+                    <tbody id="debt-limits-rows"></tbody>
+                  </table>
+                </div>
+                <nav class="debt-limits__pagination" aria-label="Phân trang hạn mức công nợ">
+                  <button class="btn btn--secondary" id="debt-limits-prev" type="button" disabled>Trang trước</button>
+                  <span id="debt-limits-page" aria-live="polite"></span>
+                  <button class="btn btn--secondary" id="debt-limits-next" type="button" disabled>Trang sau</button>
+                </nav>
+              </div>
+            </div>
+
+            <!-- Pane 3: Cấu hình kiểm soát rủi ro hệ thống (S7-04) -->
+            <div class="debt-tab-pane" id="debt-pane-config" role="tabpanel" aria-labelledby="tab-btn-config" hidden>
+              <div class="debt-config-card">
+                <div class="debt-config-card__header">
+                  <h2>Cấu hình quy tắc cảnh báo &amp; khoá bán toàn hệ thống</h2>
+                  <p>Quy định hành vi xử lý tự động khi đại lý vi phạm hạn mức tiền hoặc có nợ quá hạn.</p>
+                </div>
+                <form id="debt-system-config-form" novalidate>
+                  <div class="debt-config-group">
+                    <label class="debt-checkbox-label">
+                      <input type="checkbox" id="cfg-auto-flag" />
+                      <span><strong>Tự động gắn cờ vi phạm</strong> khi đại lý vượt hạn mức tiền hoặc có khoản nợ quá số ngày cho phép.</span>
+                    </label>
+                  </div>
+
+                  <div class="debt-config-grid">
+                    <div class="form-field">
+                      <label for="cfg-limit-action"><strong>Hành vi khi vượt hạn mức tiền:</strong></label>
+                      <select id="cfg-limit-action">
+                        <option value="BLOCK">Khoá bán (Chặn tạo đơn mới hoàn toàn)</option>
+                        <option value="REQUIRE_APPROVAL">Chuyển sang cần duyệt (Quản lý duyệt đơn)</option>
+                      </select>
+                      <small>Khi tổng đơn mới cộng công nợ hiện tại vượt hạn mức tối đa của đại lý.</small>
+                    </div>
+
+                    <div class="form-field">
+                      <label for="cfg-overdue-action"><strong>Hành vi khi có khoản nợ quá hạn:</strong></label>
+                      <select id="cfg-overdue-action">
+                        <option value="BLOCK">Khoá bán (Chặn tạo đơn mới hoàn toàn)</option>
+                        <option value="REQUIRE_APPROVAL">Chuyển sang cần duyệt (Quản lý duyệt đơn)</option>
+                      </select>
+                      <small>Khi đại lý có đơn hàng quá số ngày nợ tối đa cho phép.</small>
+                    </div>
+
+                    <div class="form-field">
+                      <label for="cfg-default-action"><strong>Hành vi mặc định hệ thống:</strong></label>
+                      <select id="cfg-default-action">
+                        <option value="BLOCK">Khoá bán / Chặn tạo đơn mới</option>
+                        <option value="REQUIRE_APPROVAL">Chuyển sang cần duyệt</option>
+                      </select>
+                      <small>Hành vi mặc định áp dụng chung cho hệ thống.</small>
+                    </div>
+                  </div>
+
+                  <div class="debt-config-meta" id="cfg-meta-info">
+                    <span>Cập nhật gần nhất: <span id="cfg-updated-at">—</span> bởi <span id="cfg-updated-by">—</span></span>
+                  </div>
+
+                  <div class="debt-config-actions">
+                    <p class="debt-limits__access" id="debt-config-readonly" hidden>Bạn chỉ có quyền xem cấu hình. Quản trị viên và Kế toán có quyền sửa cấu hình.</p>
+                    <button class="btn btn--primary" id="btn-save-debt-config" type="submit" disabled>Lưu cấu hình hệ thống</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Pane 4: Lịch sử & Thu tiền công nợ (S7-04) -->
+            <div class="debt-tab-pane" id="debt-pane-payments" role="tabpanel" aria-labelledby="tab-btn-payments" hidden>
+              <div class="debt-payments-header">
+                <div>
+                  <h2>Phiếu thu tiền &amp; Lịch sử thanh toán công nợ</h2>
+                  <p>Ghi nhận thu tiền đại lý. Tác vụ đánh giá lại công nợ sẽ tự động chạy ngay sau khi lưu phiếu để gỡ cờ rủi ro nếu an toàn.</p>
+                </div>
+                <button class="btn btn--primary" id="btn-new-payment" type="button">Lập phiếu thu tiền</button>
+              </div>
+
+              <form class="debt-limits__filters" id="debt-payments-filters">
+                <label for="debt-payments-dealer-filter">Lọc theo đại lý
+                  <select id="debt-payments-dealer-filter">
+                    <option value="">Tất cả đại lý</option>
+                  </select>
+                </label>
+                <button class="btn btn--secondary" id="reset-debt-payments-filters" type="button">Đặt lại</button>
+              </form>
+
+              <div class="debt-limits__panel">
+                <p class="debt-limits__summary" id="debt-payments-summary" role="status" aria-live="polite">Đang tải lịch sử thu tiền…</p>
+                <div class="debt-limits__table-wrap" tabindex="0" role="region" aria-label="Lịch sử thu tiền công nợ">
+                  <table class="debt-limits__table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Mã phiếu</th>
+                        <th scope="col">Đại lý</th>
+                        <th scope="col">Số tiền thu</th>
+                        <th scope="col">Ngày thu</th>
+                        <th scope="col">Phương thức</th>
+                        <th scope="col">Mã chứng từ / TC</th>
+                        <th scope="col">Người lập</th>
+                        <th scope="col">Nợ còn lại</th>
+                        <th scope="col">Trạng thái sau thu</th>
+                      </tr>
+                    </thead>
+                    <tbody id="debt-payments-rows"></tbody>
+                  </table>
+                </div>
+                <nav class="debt-limits__pagination" aria-label="Phân trang lịch sử thu tiền">
+                  <button class="btn btn--secondary" id="debt-payments-prev" type="button" disabled>Trang trước</button>
+                  <span id="debt-payments-page" aria-live="polite"></span>
+                  <button class="btn btn--secondary" id="debt-payments-next" type="button" disabled>Trang sau</button>
+                </nav>
+              </div>
             </div>
           </section>
         </main>
@@ -328,6 +524,100 @@
             <button class="btn btn--secondary" data-close-debt-limit type="button">Hủy</button>
             <button class="btn btn--secondary" type="submit">Kiểm tra khai báo</button>
             <button class="btn btn--primary" id="save-debt-limit" type="button" disabled aria-describedby="debt-limit-save-note">Lưu khai báo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    
+    <!-- ── Dealer Debt Action Modal (S7-04) ── -->
+    <div class="modal-overlay" id="dealer-action-config-modal" hidden>
+      <div class="modal modal--debt-action" role="dialog" aria-labelledby="dealer-action-modal-title">
+        <div class="modal__header">
+          <div>
+            <h2 id="dealer-action-modal-title">Cấu hình hành vi riêng cho đại lý</h2>
+            <p class="debt-limit__dealer" id="dealer-action-modal-dealer"></p>
+          </div>
+          <button class="modal__close" data-close-dealer-action aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <form class="modal__body" id="dealer-action-config-form" novalidate>
+          <div class="form-field">
+            <label for="dealer-action-select"><strong>Hành vi xử lý đơn mới khi bị gắn cờ vi phạm:</strong></label>
+            <select id="dealer-action-select" required>
+              <option value="DEFAULT">Mặc định theo hệ thống</option>
+              <option value="BLOCK">Khoá bán / Chặn tạo đơn mới hoàn toàn</option>
+              <option value="REQUIRE_APPROVAL">Chuyển sang cần duyệt (Quản lý duyệt đơn)</option>
+            </select>
+            <small>Cấu hình này ghi đè hành vi hệ thống cho riêng đại lý đã chọn.</small>
+          </div>
+          <div class="debt-limit__message" id="dealer-action-form-message" role="alert" hidden></div>
+          <div class="modal__actions">
+            <button class="btn btn--secondary" data-close-dealer-action type="button">Hủy</button>
+            <button class="btn btn--primary" id="save-dealer-action" type="submit">Lưu hành vi</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Debt Payment Modal (S7-04) ── -->
+    <div class="modal-overlay" id="debt-payment-modal" hidden>
+      <div class="modal modal--debt-payment" role="dialog" aria-labelledby="debt-payment-modal-title">
+        <div class="modal__header">
+          <div>
+            <h2 id="debt-payment-modal-title">Ghi nhận thu tiền công nợ</h2>
+            <p class="debt-limit__dealer" id="debt-payment-modal-subtitle">Ghi nhận khoản thanh toán từ đại lý và tự động đánh giá lại cờ rủi ro.</p>
+          </div>
+          <button class="modal__close" data-close-debt-payment aria-label="Đóng">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <form class="modal__body" id="debt-payment-form" novalidate>
+          <div class="form-field">
+            <label for="payment-dealer-id">Đại lý thanh toán <span aria-hidden="true">*</span></label>
+            <select id="payment-dealer-id" required>
+              <option value="">-- Chọn đại lý --</option>
+            </select>
+            <small id="payment-dealer-current-debt"></small>
+          </div>
+          <div class="debt-limit-form__grid">
+            <div class="form-field">
+              <label for="payment-amount">Số tiền thu (VND) <span aria-hidden="true">*</span></label>
+              <input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required placeholder="Ví dụ: 10000000" />
+              <small>Nhập số tiền thu thực tế, lớn hơn 0.</small>
+            </div>
+            <div class="form-field">
+              <label for="payment-date">Ngày thu tiền <span aria-hidden="true">*</span></label>
+              <input id="payment-date" type="date" required />
+            </div>
+          </div>
+          <div class="debt-limit-form__grid">
+            <div class="form-field">
+              <label for="payment-method">Phương thức thanh toán</label>
+              <select id="payment-method">
+                <option value="BANK_TRANSFER">Chuyển khoản ngân hàng</option>
+                <option value="CASH">Tiền mặt</option>
+                <option value="OTHER">Khác</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="payment-reference">Mã tham chiếu / Số chứng từ</label>
+              <input id="payment-reference" type="text" placeholder="Ví dụ: UNC-2026-001" />
+            </div>
+          </div>
+          <div class="form-field">
+            <label for="payment-note">Ghi chú</label>
+            <textarea id="payment-note" rows="2" placeholder="Ghi chú thêm về khoản thu tiền này..."></textarea>
+          </div>
+          <div class="debt-limit__notice" role="note">
+            <strong>Cơ chế tự động đánh giá lại sau thu tiền</strong>
+            <p>Sau khi lưu phiếu thu, hệ thống tự động trừ nợ theo thứ tự đơn hàng cũ nhất (FIFO) và lập tức chạy lại tác vụ đánh giá lại công nợ. Nếu đại lý hết nợ quá hạn và trong hạn mức, cờ vi phạm sẽ được tự động gỡ và mở khoá bán ngay.</p>
+          </div>
+          <div class="debt-limit__message" id="debt-payment-form-message" role="alert" hidden></div>
+          <div class="modal__actions">
+            <button class="btn btn--secondary" data-close-debt-payment type="button">Hủy</button>
+            <button class="btn btn--primary" id="save-debt-payment" type="submit">Xác nhận ghi thu tiền</button>
           </div>
         </form>
       </div>

@@ -2,6 +2,7 @@
  * dealer-orders.js — S5-01 Theo dõi trạng thái đơn hàng của đại lý.
  * S5-02: Đặt lại một đơn đã mua trước đây theo bảng giá hiện hành,
  * loại bỏ mặt hàng đã ngừng kinh doanh kèm thông báo, cho phép chọn toàn bộ hoặc một phần dòng hàng.
+ * S6-09: Theo dõi giao hàng chỉ đọc, dựa trên dữ liệu API cổng đại lý sẵn có.
  */
 (async () => {
   if (typeof Auth !== "undefined" && !Auth.requireLogin()) return;
@@ -37,6 +38,9 @@
   let detailVersion = 0;
   let reorderVersion = 0;
   let reorderBusy = false;
+  let detailRequest = null;
+  let selectedDetailId = null;
+  let returnDetailFocus = null;
 
   const statusMap = {
     DRAFT: { label: "Nháp", className: "neutral" },
@@ -169,7 +173,7 @@
         const hasShortage = Boolean(order.hasShortage) || (order.items || []).some((item) => item.isShortage);
         const updated = order.actualDeliveryDate || order.createdAt || order.recordedAt;
         return `<tr>
-          <td><button class="dealer-order-code" type="button" data-order-id="${escapeHtml(order.id)}">${escapeHtml(order.orderCode || `Đơn #${order.id}`)}</button><span class="dealer-order-meta">${order.totalLineItems ?? (order.items || []).length} dòng hàng</span></td>
+          <td><button class="dealer-order-code" type="button" data-order-id="${escapeHtml(order.id)}">${escapeHtml(order.orderCode || `Đơn #${order.id}`)}</button><span class="dealer-order-meta">${escapeHtml(order.totalLineItems ?? (order.items || []).length)} dòng hàng</span></td>
           <td><span class="dealer-order-status dealer-order-status--${info.className}">${escapeHtml(info.label)}</span>${hasShortage ? '<span class="dealer-order-shortage">Có giao thiếu</span>' : ""}</td>
           <td>${escapeHtml(formatDate(order.expectedDeliveryDate))}</td>
           <td class="dealer-order-amount">${escapeHtml(formatCurrency(order.totalAmount))}</td>
@@ -177,6 +181,7 @@
           <td>
             <div class="dealer-orders-actions">
               <button class="dealer-order-detail-btn" type="button" data-order-id="${escapeHtml(order.id)}">Xem chi tiết</button>
+              <button class="dealer-order-detail-btn" type="button" data-track-order-id="${escapeHtml(order.id)}">Theo dõi giao hàng</button>
               ${
                 allowReorder
                   ? `<button class="dealer-order-reorder-btn" type="button" data-reorder-id="${escapeHtml(order.id)}" title="Đặt lại đơn này">
@@ -218,7 +223,7 @@
       const response = await Auth.apiFetch(DealerPortalContext.url('/portal/orders'));
       const payload = await response.json().catch(() => ({}));
       if (version !== ordersVersion || !Auth.hasPermission('ORDER_VIEW')) return;
-      if (!response.ok) throw new Error(payload?.message || "Không thể tải danh sách đơn hàng.");
+      if (!response.ok || payload?.success !== true) throw new Error(payload?.message || "Không thể tải danh sách đơn hàng.");
       state.orders = getOrders(payload);
       renderStats();
       applyFilters();
@@ -241,6 +246,9 @@
   function renderDetail(order) {
     const info = statusInfo(order.status);
     const items = Array.isArray(order.items) ? order.items : [];
+    const hasPositiveShortage = item => item.isShortage === true
+      && ['number', 'string'].includes(typeof item.shortageQuantity)
+      && Number.isFinite(Number(item.shortageQuantity)) && Number(item.shortageQuantity) > 0;
     if ($("dealer-order-detail-title")) {
       $("dealer-order-detail-title").textContent = order.orderCode || `Đơn #${order.id}`;
     }
@@ -253,9 +261,12 @@
           <div class="dealer-order-overview__item"><span class="dealer-order-overview__label">Ngày giao thực tế</span><span class="dealer-order-overview__value">${escapeHtml(formatDate(order.actualDeliveryDate))}</span></div>
           <div class="dealer-order-overview__item"><span class="dealer-order-overview__label">Tổng tiền</span><span class="dealer-order-overview__value">${escapeHtml(formatCurrency(order.totalAmount))}</span></div>
         </div>
+        ${DealerDeliveryTracking.render(order)}
         ${order.deliveryNote || order.note ? `<p class="dealer-order-note"><strong>Ghi chú:</strong> ${escapeHtml(order.deliveryNote || order.note)}</p>` : ""}
-        <div class="dealer-order-items-wrap"><table class="dealer-order-items"><thead><tr><th>Sản phẩm</th><th>Đơn vị</th><th>Đặt</th><th>Thực giao</th><th>Thành tiền</th></tr></thead><tbody>
-          ${items.length ? items.map((item) => `<tr><td><strong>${escapeHtml(item.productName || "Sản phẩm")}</strong><span class="dealer-order-meta">${escapeHtml(item.productCode || "")}</span>${item.deliveryNote ? `<span class="dealer-order-items__missing">${escapeHtml(item.deliveryNote)}</span>` : ""}</td><td>${escapeHtml(item.unit || item.baseUnit || "—")}</td><td>${escapeHtml(formatQuantity(item.quantity))}</td><td>${escapeHtml(formatQuantity(item.deliveredQuantity))}${item.isShortage ? `<span class="dealer-order-items__missing">Thiếu ${escapeHtml(formatQuantity(item.shortageQuantity))}</span>` : ""}</td><td>${escapeHtml(formatCurrency(item.totalAmount))}</td></tr>`).join("") : '<tr><td colspan="5">Đơn hàng chưa có dòng hàng.</td></tr>'}
+        <h3 id="dealer-delivered-lines-title">Số lượng thực giao từng dòng</h3>
+        <p class="dealer-delivery-tracking__lines-note">“Chưa cập nhật” khác với thực giao bằng 0. Chỉ hiển thị số lượng do hệ thống trả về, không lấy số đặt thay cho số thực giao.</p>
+        <div class="dealer-order-items-wrap"><table class="dealer-order-items" aria-labelledby="dealer-delivered-lines-title"><thead><tr><th>Sản phẩm</th><th>Đơn vị</th><th>Đặt</th><th>Thực giao</th><th>Thành tiền</th></tr></thead><tbody>
+          ${items.length ? items.map((item) => `<tr><td><strong>${escapeHtml(item.productName || "Sản phẩm")}</strong><span class="dealer-order-meta">${escapeHtml(item.productCode || "")}</span>${item.deliveryNote ? `<span class="dealer-order-items__missing">${escapeHtml(item.deliveryNote)}</span>` : ""}</td><td>${escapeHtml(item.unit || item.baseUnit || "—")}</td><td>${escapeHtml(DealerDeliveryTracking.quantity(item.quantity))}</td><td>${escapeHtml(DealerDeliveryTracking.quantity(item.deliveredQuantity))}${hasPositiveShortage(item) ? `<span class="dealer-order-items__missing">Thiếu ${escapeHtml(DealerDeliveryTracking.quantity(item.shortageQuantity))}</span>` : ""}</td><td>${escapeHtml(formatCurrency(item.totalAmount))}</td></tr>`).join("") : '<tr><td colspan="5">Chưa có dữ liệu dòng hàng.</td></tr>'}
         </tbody></table></div>
         <div class="dealer-order-total"><span>Tổng cộng</span><strong>${escapeHtml(formatCurrency(order.totalAmount))}</strong></div>`;
     }
@@ -267,35 +278,55 @@
     }
   }
 
-  async function openDetail(id) {
+  async function openDetail(id, focusTracking = false) {
     if (!Auth.hasPermission('ORDER_VIEW')) return;
     const version = ++detailVersion;
+    detailRequest?.abort();
+    detailRequest = new AbortController();
+    selectedDetailId = String(id);
+    state.selectedOrder = null;
+    $('btn-reorder-from-detail').hidden = true;
+    $('btn-refresh-dealer-delivery').hidden = false;
+    $('btn-refresh-dealer-delivery').disabled = true;
+    if ($('dealer-order-detail-modal').hidden) returnDetailFocus = document.activeElement;
     const modal = $("dealer-order-detail-modal");
     if (modal) modal.hidden = false;
+    $('close-dealer-order-detail')?.focus?.({preventScroll:true});
     if ($("dealer-order-detail-title")) $("dealer-order-detail-title").textContent = "Đang tải…";
     if ($("dealer-order-detail-content")) {
-      $("dealer-order-detail-content").innerHTML = '<div class="dealer-orders-loading">Đang tải chi tiết đơn hàng…</div>';
+      $("dealer-order-detail-content").innerHTML = '<div class="dealer-orders-loading" role="status">Đang tải chi tiết đơn hàng…</div>';
     }
     try {
-      const response = await Auth.apiFetch(DealerPortalContext.url(`/portal/orders/${encodeURIComponent(id)}`));
+      const response = await Auth.apiFetch(DealerPortalContext.url(`/portal/orders/${encodeURIComponent(id)}`), {method:'GET',cache:'no-store',signal:detailRequest.signal});
       const payload = await response.json().catch(() => ({}));
       if (version !== detailVersion || !Auth.hasPermission('ORDER_VIEW')) return;
-      if (!response.ok) throw new Error(payload?.message || "Không thể tải chi tiết đơn hàng.");
-      state.selectedOrder = unwrap(payload);
+      if (!response.ok || payload?.success !== true) throw new Error(payload?.message || "Không thể tải chi tiết đơn hàng.");
+      const order = unwrap(payload);
+      if (!order || String(order.id) !== String(id) || (order.items != null && !Array.isArray(order.items))) throw new Error('Chi tiết đơn hàng không hợp lệ.');
+      state.selectedOrder = order;
       renderDetail(state.selectedOrder);
+      if (focusTracking) $('dealer-delivery-tracking-title')?.focus();
     } catch (error) {
-      if (version !== detailVersion) return;
+      if (error.name === 'AbortError' || version !== detailVersion || !Auth.hasPermission('ORDER_VIEW')) return;
       if ($("dealer-order-detail-content")) {
-        $("dealer-order-detail-content").innerHTML = `<div class="dealer-orders-empty">${escapeHtml(error.message || "Không thể tải chi tiết đơn hàng.")}</div>`;
+        $("dealer-order-detail-content").innerHTML = `<div class="dealer-orders-empty" role="alert">${escapeHtml(error.message || "Không thể tải chi tiết đơn hàng.")}</div>`;
       }
+    } finally {
+      if (version === detailVersion) $('btn-refresh-dealer-delivery').disabled = !Auth.hasPermission('ORDER_VIEW');
     }
   }
 
   function closeDetail() {
     detailVersion++;
+    detailRequest?.abort();
+    selectedDetailId = null;
+    $('btn-refresh-dealer-delivery').hidden = true;
+    $('btn-reorder-from-detail').hidden = true;
     if ($("dealer-order-detail-modal")) $("dealer-order-detail-modal").hidden = true;
     if ($("dealer-order-detail-content")) $("dealer-order-detail-content").innerHTML = '';
     state.selectedOrder = null;
+    if (returnDetailFocus?.isConnected) returnDetailFocus.focus();
+    returnDetailFocus = null;
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -619,6 +650,8 @@
 
   // Click handler trên bảng đơn hàng (Xem chi tiết hoặc Đặt lại đơn)
   $("dealer-orders-body")?.addEventListener("click", (event) => {
+    const trackingBtn = event.target.closest('[data-track-order-id]');
+    if (trackingBtn) { openDetail(trackingBtn.dataset.trackOrderId, true); return; }
     const reorderBtn = event.target.closest("[data-reorder-id]");
     if (reorderBtn) {
       openReorderModal(reorderBtn.dataset.reorderId);
@@ -633,6 +666,9 @@
   // Modal Chi tiết đơn hàng
   $("close-dealer-order-detail")?.addEventListener("click", closeDetail);
   $("btn-close-detail-modal")?.addEventListener("click", closeDetail);
+  $('btn-refresh-dealer-delivery')?.addEventListener('click', () => {
+    if (selectedDetailId && Auth.hasPermission('ORDER_VIEW')) openDetail(selectedDetailId);
+  });
   $("dealer-order-detail-modal")?.addEventListener("click", (event) => {
     if (event.target === event.currentTarget) closeDetail();
   });
@@ -737,6 +773,17 @@
   $("btn-confirm-reorder")?.addEventListener("click", submitReorder);
 
   document.addEventListener("keydown", (event) => {
+    const detailModal = $('dealer-order-detail-modal');
+    if (event.key === 'Tab' && detailModal && !detailModal.hidden) {
+      const buttons = [...detailModal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')]
+        .filter(element => element.getClientRects().length > 0);
+      const first = buttons[0], last = buttons.at(-1);
+      if (first && ((event.shiftKey && (document.activeElement === first || !buttons.includes(document.activeElement)))
+        || (!event.shiftKey && document.activeElement === last))) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    }
     if (event.key === "Escape") {
       if ($("dealer-reorder-modal") && !$("dealer-reorder-modal").hidden) {
         closeReorderModal();

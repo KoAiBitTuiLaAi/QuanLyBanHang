@@ -137,6 +137,19 @@ public class OrderItem {
     @Column(name = "delivered_quantity", precision = 15, scale = 4)
     private BigDecimal deliveredQuantity;
 
+    /** Cumulative actual exports, in the frozen order unit. Null denotes pre-S6-05 history. */
+    @Column(name = "exported_quantity", precision = 15, scale = 4)
+    private BigDecimal exportedQuantity;
+
+    public BigDecimal effectiveExportedQuantity() {
+        return exportedQuantity != null ? exportedQuantity
+                : OrderStatus.isExportedOrLater(order == null ? null : order.getStatus()) ? quantity : BigDecimal.ZERO;
+    }
+
+    public BigDecimal remainingExportQuantity() {
+        return quantity.subtract(effectiveExportedQuantity()).max(BigDecimal.ZERO);
+    }
+
     /**
      * Số lượng thực giao quy đổi về đơn vị cơ sở (S5-01).
      */
