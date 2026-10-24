@@ -1,0 +1,22 @@
+/* Shared app-navigation.css owns the outer frame and gutters. */
+.aging-heading,.aging-actions,.aging-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.aging-heading { margin-bottom:18px; }.aging-heading h1 { font-size:1.65rem; margin-bottom:8px; }.aging-page h2 { font-size:1.08rem; margin-bottom:10px; }
+.aging-heading p,.aging-help,.aging-empty { font-size:.84rem; color:var(--ink-600); line-height:1.65; overflow-wrap:anywhere; }
+.aging-panel { min-width:0; background:var(--white); border:1px solid var(--line); border-radius:var(--radius); padding:22px; margin-top:22px; }
+.aging-filters { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto; gap:16px; align-items:end; }
+.aging-filters label { display:grid; gap:8px; font-size:.84rem; min-width:0; }.aging-filters .aging-help { grid-column:1/-1; }
+.aging-page :is(input,select) { min-height:44px; min-width:0; max-width:100%; width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius-sm); color:var(--ink-900); background:var(--white); font:inherit; }
+.aging-page :disabled { cursor:not-allowed; opacity:.6; }.aging-page .btn { min-height:44px; }.aging-inline { display:flex; gap:10px; align-items:center; font-size:.84rem; }.aging-inline select { width:auto; }
+.aging-meta { color:var(--ink-600); font-size:.82rem; line-height:1.65; margin-block:18px; overflow-wrap:anywhere; }
+.aging-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }.aging-metrics>div { min-width:0; background:var(--white); border:1px solid var(--line); border-radius:var(--radius); padding:18px; }
+.aging-metrics dt { color:var(--ink-600); font-size:.84rem; }.aging-metrics dd { margin:12px 0 0; color:var(--danger); font-size:clamp(1.1rem,1.7vw,1.6rem); font-weight:700; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.aging-notice,.aging-error { padding:16px; border-radius:var(--radius-sm); margin-block:16px; font-size:.86rem; line-height:1.7; overflow-wrap:anywhere; }.aging-notice { border:1px solid var(--amber); background:var(--amber-soft); color:var(--ink-900); }.aging-error { background:var(--danger-soft); color:var(--danger); }
+.aging-priority { border-left:4px solid var(--amber); }.aging-priority-row { display:flex; justify-content:space-between; align-items:start; gap:12px; flex-wrap:wrap; padding:14px 0; border-bottom:1px solid var(--line-light); }.aging-priority-row:last-child { border:0; }
+.aging-priority-row strong,.aging-priority-row span { overflow-wrap:anywhere; }.aging-priority-row small { display:block; color:var(--ink-600); margin-top:5px; line-height:1.6; }
+.aging-priority-row button { min-height:44px; color:var(--teal-deep); text-align:left; font-weight:650; }.aging-risk { display:inline-block; font-size:.78rem; font-weight:600; background:var(--amber-soft); border-radius:4px; padding:5px 8px; }
+.aging-scroll { max-width:100%; overflow:auto; border:1px solid var(--line); border-radius:var(--radius-sm); margin-block:14px; }.aging-scroll table { width:100%; border-collapse:collapse; min-width:540px; text-align:left; }.aging-scroll .aging-dealers-table { min-width:840px; }
+.aging-scroll :is(th,td) { padding:12px; border-bottom:1px solid var(--line-light); font-size:.81rem; vertical-align:top; }.aging-scroll th { color:var(--ink-600); background:var(--surface); font-weight:650; white-space:nowrap; }.aging-scroll small { display:block; margin-top:5px; color:var(--ink-600); }.aging-scroll td { overflow-wrap:anywhere; }.aging-money { white-space:nowrap; font-variant-numeric:tabular-nums; text-align:right; }
+.aging-scroll .aging-top-row { background:var(--amber-soft); }.aging-pagination { margin-block:16px; font-size:.82rem; }
+.aging-page :focus-visible { outline:2px solid var(--teal); outline-offset:3px; }
+@media(max-width:768px) { .aging-filters { grid-template-columns:minmax(0,1fr); }.aging-filters button { width:100%; }.aging-metrics { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:480px) { .aging-panel { padding:14px; }.aging-heading h1 { font-size:1.4rem; }.aging-heading>.aging-actions { width:100%; }.aging-heading .aging-actions .btn { flex:1; }.aging-pagination>.aging-actions { width:100%; justify-content:space-between; } }

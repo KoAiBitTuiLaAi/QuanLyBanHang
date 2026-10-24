@@ -8,6 +8,17 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S8-09 aging report uses only REPORT_FINANCE matrix, no accountant fallback',()=>{
+  for(const role of ['ROLE_VIEWER','ROLE_ACCOUNTANT','ROLE_SALES_MANAGER']){
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('debt-aging'));
+    assert.ok(!ids({roles:[role],permissions:['FINANCE_VIEW_DEBT','FINANCE_MANAGE','DASHBOARD_VIEW']}).includes('debt-aging'));
+    assert.ok(ids({roles:[role],permissions:['REPORT_FINANCE']}).includes('debt-aging'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('debt-aging'));
+  assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['REPORT_FINANCE']}).includes('debt-aging'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/reports/debt-aging')).id,'debt-aging');
+});
+
 test('S8-05 dashboard follows DASHBOARD_VIEW without locking the generic landing or debt view', () => {
   for (const role of ['ROLE_VIEWER','ROLE_SALES_MANAGER','ROLE_ACCOUNTANT','ROLE_WAREHOUSE_MANAGER']) {
     assert.ok(!ids({roles:[role],permissions:[]}).includes('operations-dashboard'));
