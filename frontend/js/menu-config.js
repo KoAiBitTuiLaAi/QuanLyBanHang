@@ -296,6 +296,15 @@ const MenuConfig = (() => {
       permissions: ["ORDER_VIEW", "ORDER_CREATE", "INVOICE_VIEW", "WAREHOUSE_VIEW", "WAREHOUSE_APPROVE", "WAREHOUSE_IMPORT"],
     },
     {
+      id: "warehouse-adjustments",
+      section: "Kho hàng",
+      label: "Phiếu điều chỉnh",
+      icon: '<path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+      href: "/warehouse/adjustments",
+      roles: ALL_ROLES,
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_ADJUST", "WAREHOUSE_APPROVE"],
+    },
+    {
       id: "debt-limits",
       section: "Tài chính",
       label: "Hạn mức công nợ",
