@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Theo dõi chuyến giao | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/delivery-trips.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content trips-page">
+  <header class="trips-heading"><div><h1>Theo dõi chuyến giao</h1><p>Hàng đã xuất, tiến độ từng điểm giao và tiền hàng còn thuộc trách nhiệm chuyến.</p></div><button id="trips-refresh" class="btn btn--secondary" type="button">Tải lại</button></header>
+  <p class="trips-note">Màn hình chỉ theo dõi. Giao chưa thành công không tự cộng hàng về kho; chỉ ghi nhận đã trả kho khi có xác nhận từ hệ thống.</p>
+  <p id="trips-error" class="trips-error" role="alert" hidden></p>
+  <section id="trips-workspace">
+    <section class="trips-panel trips-overview" aria-labelledby="trips-overview-title">
+      <div class="trips-heading"><h2 id="trips-overview-title">Tiền hàng còn thuộc trách nhiệm chuyến</h2><span id="trips-updated" role="status"></span></div>
+      <p id="trips-summary-scope" class="trips-muted">Toàn bộ chuyến trong phạm vi kho; không phụ thuộc bộ lọc danh sách bên dưới.</p>
+      <p id="trips-summary-error" class="trips-error" role="alert" hidden></p>
+      <strong id="trips-outstanding-value" class="trips-money">—</strong>
+      <dl class="trips-stats">
+        <div><dt>Chuyến còn hàng</dt><dd id="trips-outstanding-count">—</dd></div>
+        <div><dt>Chuyến đang chạy</dt><dd id="trips-running-count">—</dd></div>
+        <div><dt>Tiền trên chuyến đang chạy</dt><dd id="trips-road-value">—</dd></div>
+        <div><dt>Điểm đã giao / còn lại (đang chạy)</dt><dd id="trips-point-count">—</dd></div>
+        <div><dt>Chuyến quá hạn dự kiến</dt><dd id="trips-overdue-count">—</dd></div>
+      </dl>
+      <div id="trips-closed-alert" class="trips-warning" hidden><p id="trips-closed-text"></p><button id="trips-show-outstanding" class="btn btn--secondary" type="button">Xem mọi chuyến còn hàng</button></div>
+    </section>
+    <section class="trips-panel" aria-labelledby="trips-list-title">
+      <form id="trips-filter" class="trips-filters" role="search">
+        <label>Kho<select id="trips-warehouse"><option value="">Tất cả kho được giao</option></select></label>
+        <label>Trạng thái chuyến<select id="trips-status"><option value="">Tất cả trạng thái</option></select></label>
+        <label>Cảnh báo<select id="trips-overdue"><option value="">Tất cả</option><option value="true">Quá hạn dự kiến</option><option value="false">Không quá hạn</option></select></label>
+        <label>Tìm chuyến / tài xế / biển số<input id="trips-keyword" type="search" maxlength="150"></label>
+        <label class="trips-check"><input id="trips-outstanding" type="checkbox">Chỉ chuyến còn hàng chưa xử lý</label>
+        <div class="trips-actions"><button type="submit" class="btn btn--primary">Lọc</button><button id="trips-reset" type="button" class="btn btn--secondary">Đặt lại</button></div>
+      </form>
+      <header class="trips-heading"><h2 id="trips-list-title">Danh sách chuyến giao</h2><span id="trips-count" role="status"></span></header>
+      <p class="trips-muted">Mặc định chỉ chuyến đang chạy. Chọn tất cả trạng thái để xem cả chuyến đã hoàn tất/hủy nhưng còn hàng chưa xử lý. Điểm còn lại không gồm điểm đã xác nhận trả kho.</p>
+      <div id="trips-list" class="trips-list" aria-live="polite"></div>
+      <footer class="trips-actions trips-pagination"><button id="trips-prev" class="btn btn--secondary" type="button">Trước</button><span id="trips-page"></span><button id="trips-next" class="btn btn--secondary" type="button">Sau</button></footer>
+    </section>
+    <section id="trips-detail" class="trips-panel" aria-labelledby="trips-detail-title" hidden>
+      <header class="trips-heading"><div><h2 id="trips-detail-title" tabindex="-1"></h2><p id="trips-detail-meta"></p></div><div class="trips-actions"><button id="trips-detail-refresh" type="button" class="btn btn--secondary">Tải lại chuyến</button><button id="trips-detail-close" type="button" class="btn btn--secondary">Đóng</button></div></header>
+      <p id="trips-detail-error" class="trips-error" role="alert" hidden></p><div id="trips-detail-body"></div>
+    </section>
+  </section>
+  <p class="trips-muted trips-refresh-note">Tự cập nhật mỗi phút khi đang xem trang; có thể bấm Tải lại bất kỳ lúc nào.</p>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/delivery-trips.js"></script>
+</body></html>

@@ -30,6 +30,9 @@ public class WarehouseResponse {
 
     private Boolean active;
 
+    /** Kho hàng lỗi / hàng hỏng (S8-01) */
+    private Boolean defective;
+
     /** Tổng số vị trí lưu trong kho */
     private Integer locationCount;
 

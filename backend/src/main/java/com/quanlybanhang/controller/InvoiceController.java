@@ -175,6 +175,12 @@ public class InvoiceController {
             @PathVariable Long adjustmentId,
             @RequestParam(defaultValue = "false") boolean download,
             Principal principal) {
+        // A nested document URL must never return an adjustment of a different invoice.
+        boolean belongsToInvoice = invoiceService.getAdjustments(id).stream()
+                .anyMatch(adjustment -> adjustmentId.equals(adjustment.getId()));
+        if (!belongsToInvoice) {
+            throw new IllegalArgumentException("Chứng từ điều chỉnh không thuộc hóa đơn này");
+        }
         String username = principal != null ? principal.getName() : "system";
         byte[] pdfBytes = invoicePdfService.generateAdjustmentPdf(adjustmentId, username);
 

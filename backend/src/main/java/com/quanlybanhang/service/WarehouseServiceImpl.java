@@ -209,6 +209,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .manager(manager)
                 .managerName(managerName)
                 .active(request.getActive() != null ? request.getActive() : true)
+                .defective(Boolean.TRUE.equals(request.getDefective()))
                 .build();
 
         Warehouse saved = warehouseRepository.save(warehouse);
@@ -276,6 +277,9 @@ public class WarehouseServiceImpl implements WarehouseService {
 
         if (request.getActive() != null) {
             warehouse.setActive(request.getActive());
+        }
+        if (request.getDefective() != null) {
+            warehouse.setDefective(request.getDefective());
         }
 
         Warehouse saved = warehouseRepository.save(warehouse);
@@ -1016,10 +1020,21 @@ public class WarehouseServiceImpl implements WarehouseService {
             // Quy đổi về đơn vị cơ sở: baseQuantity = quantity * factor
             BigDecimal baseQty = qty.multiply(factor);
 
+            // Lock physical stock before reading lots. Locked lot reads also see current
+            // values under MySQL REPEATABLE READ, not an earlier transaction snapshot.
+            WarehouseInventory exportInventory = null;
+            List<WarehouseLotInventory> lockedExportLots = null;
+            if (type == WarehouseVoucherType.EXPORT && !isDraft) {
+                exportInventory = inventoryRepository.findByWarehouseIdAndProductIdForUpdate(warehouse.getId(), product.getId())
+                        .orElseThrow(() -> new IllegalArgumentException("Không đủ tồn kho để xuất cho sản phẩm '" + product.getName() + "'"));
+                lockedExportLots = lotInventoryRepository.findByWarehouseIdAndProductIdForUpdate(warehouse.getId(), product.getId());
+            }
+
             // Quản lý số lô và hạn sử dụng (S5-04, S6-01, S6-04)
             boolean isLotManaged = Boolean.TRUE.equals(product.getManageLot())
-                    || type == WarehouseVoucherType.EXPORT && lotInventoryRepository.existsByWarehouseIdAndProductIdAndBaseQuantityGreaterThan(
-                            warehouse.getId(), product.getId(), BigDecimal.ZERO);
+                    || type == WarehouseVoucherType.EXPORT && (lockedExportLots != null
+                        ? lockedExportLots.stream().anyMatch(l -> l.getBaseQuantity() != null && l.getBaseQuantity().signum() > 0)
+                        : lotInventoryRepository.existsByWarehouseIdAndProductIdAndBaseQuantityGreaterThan(warehouse.getId(), product.getId(), BigDecimal.ZERO));
             String effectiveLotNumber = itemReq.getLotNumber() != null ? itemReq.getLotNumber().trim() : null;
             LocalDate effectiveExpiryDate = itemReq.getExpiryDate();
             LocalDate effectiveMfgDate = itemReq.getManufacturingDate();
@@ -1032,7 +1047,11 @@ public class WarehouseServiceImpl implements WarehouseService {
             if (type == WarehouseVoucherType.EXPORT) {
                 if (isLotManaged) {
                     // S6-04: Mặc định gợi ý lô có hạn sử dụng gần nhất còn đủ số lượng (FEFO)
-                    WarehouseLotInventory defaultSuggestedLot = findFefoSuggestedLot(warehouse.getId(), product.getId(), baseQty);
+                    WarehouseLotInventory defaultSuggestedLot = lockedExportLots != null
+                            ? chooseFefoLot(lockedExportLots, baseQty)
+                            : findFefoSuggestedLot(warehouse.getId(), product.getId(), baseQty);
+                    // Never trust a suggested lot supplied by the browser.
+                    suggestedLotNumber = null;
                     if (defaultSuggestedLot != null) {
                         suggestedLotNumber = defaultSuggestedLot.getLotNumber();
                     }
@@ -1049,8 +1068,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                     } else {
                         // Thủ kho đã chọn một lô
                         final String requestedLot = effectiveLotNumber;
-                        WarehouseLotInventory selectedLot = lotInventoryRepository
-                                .findByWarehouseIdAndProductIdAndLotNumber(warehouse.getId(), product.getId(), requestedLot)
+                        WarehouseLotInventory selectedLot = findExportLot(lockedExportLots, warehouse.getId(), product.getId(), requestedLot)
                                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lô '" + requestedLot + "' của sản phẩm '" + product.getName() + "' tại kho '" + warehouse.getName() + "'"));
                         if (selectedLot.getBaseQuantity() == null || selectedLot.getBaseQuantity().compareTo(BigDecimal.ZERO) <= 0) {
                             throw new IllegalArgumentException("Lô '" + requestedLot + "' của sản phẩm '" + product.getName() + "' đã hết hàng trong kho");
@@ -1069,8 +1087,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                         }
                     }
                 } else if (effectiveLotNumber != null && !effectiveLotNumber.isBlank()) {
-                    WarehouseLotInventory selectedLot = lotInventoryRepository
-                            .findByWarehouseIdAndProductIdAndLotNumber(warehouse.getId(), product.getId(), effectiveLotNumber)
+                    WarehouseLotInventory selectedLot = findExportLot(lockedExportLots, warehouse.getId(), product.getId(), effectiveLotNumber)
                             .orElse(null);
                     if (selectedLot != null) {
                         if (effectiveExpiryDate == null) effectiveExpiryDate = selectedLot.getExpiryDate();
@@ -1079,8 +1096,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 }
 
                 if (effectiveLotNumber != null && !effectiveLotNumber.isBlank()) {
-                    WarehouseLotInventory existingLot = lotInventoryRepository
-                            .findByWarehouseIdAndProductIdAndLotNumber(warehouse.getId(), product.getId(), effectiveLotNumber)
+                    WarehouseLotInventory existingLot = findExportLot(lockedExportLots, warehouse.getId(), product.getId(), effectiveLotNumber)
                             .orElse(null);
 
                     if (!isDraft && existingLot != null && existingLot.getBaseQuantity() != null && existingLot.getBaseQuantity().compareTo(baseQty) < 0) {
@@ -1178,7 +1194,7 @@ public class WarehouseServiceImpl implements WarehouseService {
 
             // CHỈ CỘNG TỒN KHO KHI XÁC NHẬN / GHI SỔ, PHIẾU NHÁP KHÔNG ẢNH HƯỞNG TỒN (S5-04)
             if (!isDraft) {
-                WarehouseInventory inventory = inventoryRepository
+                WarehouseInventory inventory = exportInventory != null ? exportInventory : inventoryRepository
                         .findByWarehouseIdAndProductIdForUpdate(warehouse.getId(), product.getId())
                         .orElseGet(() -> WarehouseInventory.builder()
                                 .warehouse(warehouse)
@@ -1214,8 +1230,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 // Cập nhật tồn kho theo lô nếu có lotNumber (S5-04, S6-01, S6-04)
                 if (finalLotNumber != null && !finalLotNumber.isBlank()) {
                     if (type == WarehouseVoucherType.EXPORT) {
-                        WarehouseLotInventory lotInv = lotInventoryRepository
-                                .findByWarehouseIdAndProductIdAndLotNumber(warehouse.getId(), product.getId(), finalLotNumber)
+                        WarehouseLotInventory lotInv = findExportLot(lockedExportLots, warehouse.getId(), product.getId(), finalLotNumber)
                                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lô '" + finalLotNumber + "' của sản phẩm '" + product.getName() + "' trong kho để xuất"));
                         BigDecimal currentLotQty = lotInv.getBaseQuantity() != null ? lotInv.getBaseQuantity() : BigDecimal.ZERO;
                         if (currentLotQty.compareTo(baseQty) < 0) {
@@ -1551,6 +1566,10 @@ public class WarehouseServiceImpl implements WarehouseService {
         requireGrant("WAREHOUSE_ADJUST");
         WarehouseVoucher originalVoucher = voucherRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu kho gốc với ID: " + id));
+
+        if (originalVoucher.getShipmentOrderId() != null) {
+            throw new IllegalArgumentException("Phiếu xuất theo đơn đã xác nhận không sửa/điều chỉnh trực tiếp; dùng nghiệp vụ trả hàng");
+        }
 
         if (!"CONFIRMED".equalsIgnoreCase(originalVoucher.getStatus()) && !"RECORDED".equalsIgnoreCase(originalVoucher.getStatus()) && !"ADJUSTED".equalsIgnoreCase(originalVoucher.getStatus())) {
             throw new IllegalStateException("Chỉ có thể lập phiếu điều chỉnh cho phiếu kho đã xác nhận. Trạng thái hiện tại: " + originalVoucher.getStatus());
@@ -1942,8 +1961,13 @@ public class WarehouseServiceImpl implements WarehouseService {
             throw new IllegalArgumentException("Sản phẩm '" + product.getName() + "' đã ngừng kinh doanh");
         }
 
-        boolean isLotManaged = Boolean.TRUE.equals(product.getManageLot());
-        BigDecimal reqQty = (quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0) ? quantity : BigDecimal.ONE;
+        boolean isLotManaged = Boolean.TRUE.equals(product.getManageLot())
+                || lotInventoryRepository.existsByWarehouseIdAndProductIdAndBaseQuantityGreaterThan(warehouseId, productId, BigDecimal.ZERO);
+        BigDecimal reqQty = quantity != null ? quantity : BigDecimal.ONE;
+        if (reqQty.signum() <= 0 || reqQty.stripTrailingZeros().scale() > 4
+                || reqQty.compareTo(new BigDecimal("99999999999.9999")) > 0) {
+            throw new IllegalArgumentException("Số lượng phải lớn hơn 0, tối đa 11 chữ số nguyên và 4 chữ số thập phân");
+        }
         String reqUnit = (unit != null && !unit.isBlank()) ? unit.trim() : product.getUnit();
         BigDecimal factor = unitConversionService.getConversionFactor(product, reqUnit);
         BigDecimal reqBaseQty = reqQty.multiply(factor);
@@ -2018,10 +2042,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                     .build();
         }).toList();
 
-        WarehouseLotInventory suggestedLot = activeLots.stream()
-                .filter(l -> l.getBaseQuantity() != null && l.getBaseQuantity().compareTo(reqBaseQty) >= 0)
-                .findFirst()
-                .orElse(null);
+        WarehouseLotInventory suggestedLot = chooseFefoLot(activeLots, reqBaseQty);
 
         LotSuggestionResponse.SuggestedLotInfo suggestedInfo = null;
         boolean hasSufficientStock = false;
@@ -2050,7 +2071,8 @@ public class WarehouseServiceImpl implements WarehouseService {
                     .map(WarehouseLotInventory::getBaseQuantity)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             message = "Không có lô đơn lẻ nào còn đủ số lượng yêu cầu (" + reqBaseQty + " " + product.getUnit() +
-                    "). Tổng tồn khả dụng trên " + activeLots.size() + " lô là " + totalStock + " " + product.getUnit() + ".";
+                    ") và còn hạn sử dụng. Tổng tồn vật lý trên " + activeLots.size() + " lô là " + totalStock + " " + product.getUnit() +
+                    ". Hãy giảm số lượng hoặc xuất từng lô; lô quá hạn/thiếu hạn dùng không được tự gợi ý.";
         }
 
         return LotSuggestionResponse.builder()
@@ -2100,6 +2122,16 @@ public class WarehouseServiceImpl implements WarehouseService {
 
     private WarehouseLotInventory findFefoSuggestedLot(Long warehouseId, Long productId, BigDecimal requiredBaseQuantity) {
         List<WarehouseLotInventory> lots = lotInventoryRepository.findByWarehouseIdAndProductId(warehouseId, productId);
+        return chooseFefoLot(lots, requiredBaseQuantity);
+    }
+
+    private Optional<WarehouseLotInventory> findExportLot(List<WarehouseLotInventory> lockedLots, Long warehouseId, Long productId, String lotNumber) {
+        return lockedLots == null
+                ? lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(warehouseId, productId, lotNumber)
+                : lockedLots.stream().filter(l -> Objects.equals(l.getLotNumber(), lotNumber)).findFirst();
+    }
+
+    private WarehouseLotInventory chooseFefoLot(List<WarehouseLotInventory> lots, BigDecimal requiredBaseQuantity) {
         if (lots == null || lots.isEmpty()) {
             return null;
         }
@@ -2130,6 +2162,7 @@ public class WarehouseServiceImpl implements WarehouseService {
         };
 
         return lots.stream()
+                .filter(l -> l.getExpiryDate() != null && !l.getExpiryDate().isBefore(today))
                 .filter(l -> l.getBaseQuantity() != null && l.getBaseQuantity().compareTo(BigDecimal.ZERO) > 0)
                 .filter(l -> requiredBaseQuantity == null || l.getBaseQuantity().compareTo(requiredBaseQuantity) >= 0)
                 .min(fefoComparator)
@@ -2274,6 +2307,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .managerFullName(managerFullName)
                 .managerName(managerName)
                 .active(warehouse.getActive())
+                .defective(warehouse.isDefectiveWarehouse())
                 .locationCount(locCount)
                 .defaultDealerCount(defaultDealerCount)
                 .createdAt(warehouse.getCreatedAt())

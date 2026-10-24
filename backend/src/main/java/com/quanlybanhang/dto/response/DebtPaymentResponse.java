@@ -36,5 +36,20 @@ public class DebtPaymentResponse {
 
     /** Lý do cờ rủi ro sau khi đánh giá lại (nếu còn) */
     private String debtFlagReason;
+
+    /** Loại phiếu: PAYMENT hoặc ADJUSTMENT (S7-02) */
+    private String paymentType;
+
+    /** ID phiếu thu gốc nếu là bút toán điều chỉnh (S7-02) */
+    private Long originalPaymentId;
+
+    /** Mã phiếu thu gốc nếu là bút toán điều chỉnh (S7-02) */
+    private String originalPaymentCode;
+
+    /** Lý do lập bút toán điều chỉnh (S7-02) */
+    private String adjustmentReason;
+
+    /** Danh sách chi tiết đối trừ vào từng hoá đơn (S7-02) */
+    private java.util.List<DebtPaymentAllocationResponse> allocations;
 }
 
