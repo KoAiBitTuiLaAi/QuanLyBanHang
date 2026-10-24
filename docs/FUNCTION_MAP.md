@@ -87,6 +87,7 @@
 - S7-05: Tài chính → Thu tiền theo tuyến → Ghi khoản thu kèm biên lai, xem chi tiết, xác nhận nhận tiền, đối chiếu theo nhân viên/ngày thu.
 - S7-06: Tài chính → Đối chiếu công nợ → Lập biên bản đối chiếu định kỳ (đầu kỳ, phát sinh, cuối kỳ), xuất PDF, gửi đại lý xác nhận hoặc phản hồi lệch.
 - S7-07: Kinh doanh → Công nợ của tôi → Xem tổng còn nợ, hạn mức còn lại, danh sách hoá đơn kèm hạn thanh toán, xem và tải PDF hoá đơn đã phát hành.
+- S7-08: Tự động chạy hàng ngày lúc 7h; Kinh doanh → Thông báo của tôi → Xem nhắc hạn thanh toán trước 3 ngày, quá hạn, lọc chưa đọc, đánh dấu đã đọc.
 
 ## Sprint 8 — Trả hàng và báo cáo
 

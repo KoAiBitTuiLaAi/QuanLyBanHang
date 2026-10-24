@@ -1,3 +1,27 @@
+# Trạng thái sprint 1–8
+
+## S7-08 — Nhắc hạn thanh toán tự động cho đại lý (Frontend) (24/10/2026)
+
+Nhánh `feature/S7-08-chuc-nang-nhac-thanh-toan(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ các tiêu chí nghiệp vụ trong ảnh yêu cầu:
+- Gửi email và thông báo trong ứng dụng trước hạn 3 ngày và khi quá hạn
+- Tác vụ định kỳ chạy mỗi ngày một lần (backend scheduler 7h sáng)
+- Không gửi trùng nhiều lần cho cùng một hoá đơn trong cùng một ngày (backend unique constraint)
+Theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Thông báo trong ứng dụng trước hạn 3 ngày (`PAYMENT_DUE_BEFORE_3_DAYS`)** | Có | Có | Có | Màn hình `Kinh doanh → Thông báo của tôi` (`/dealer-notifications`): Hiển thị thông báo sắp đến hạn thanh toán với badge màu hổ phách/vàng, biểu tượng đồng hồ/lịch, hiển thị rõ số hóa đơn liên quan (`referenceCode`), ngày đến hạn và số tiền. Có nút "Xem hóa đơn" liên kết trực tiếp sang trang công nợ `/dealer-invoices`. |
+| **Thông báo trong ứng dụng khi quá hạn (`PAYMENT_OVERDUE`)** | Có | Có | Có | Hiển thị thông báo quá hạn thanh toán với badge đỏ cảnh báo, biểu tượng cảnh báo nguy hiểm, nội dung nêu rõ số ngày quá hạn và cảnh báo nguy cơ bị tạm khóa đơn hàng nếu không thanh toán sớm. Có nút "Xem hóa đơn". |
+| **Đếm số lượng thông báo chưa đọc (Unread Badge)** | Có | Có | Có | Gọi API `GET /api/portal/notifications/unread-count`: hiển thị badge đỏ số lượng thông báo chưa đọc trên tiêu đề trang và tab lọc. Tích hợp nút chuông thông báo trên topbar của Cổng đặt hàng đại lý (`dealer-portal.html`). |
+| **Đánh dấu thông báo đã đọc (từng thông báo & tất cả)** | Có | Có | Có | Nút "Đã đọc" tại từng thông báo gọi `PUT /api/portal/notifications/{id}/read`, cập nhật ngay giao diện và giảm badge. Nút "Đánh dấu tất cả đã đọc" gọi `PUT /api/portal/notifications/read-all`, chuyển toàn bộ thông báo sang trạng thái đã đọc. |
+| **Bộ lọc & Phân trang thông báo** | Có | Có | Có | Tab chuyển đổi nhanh giữa "Tất cả" và "Chưa đọc"; dropdown lọc theo loại thông báo (`PAYMENT_DUE_BEFORE_3_DAYS`, `PAYMENT_OVERDUE`, `SYSTEM`). Thanh phân trang trước/sau đầy đủ. |
+| **Hỗ trợ Quản trị viên (ROLE_ADMIN Context)** | Có | Có | Có | Tích hợp `DealerPortalContext`: Quản trị viên có thể chọn đại lý để xem trung tâm thông báo của đại lý đó qua dropdown chọn đại lý, tự động gắn query param `dealerId`. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Bắt buộc quyền `NOTIFICATION_VIEW` (hoặc `ROLE_ADMIN`). Thu hồi quyền trên phiên hiện tại lập tức ẩn menu, ẩn giao diện danh sách thông báo và hiển thị thông báo lỗi 403; không dùng role-based fallback. Lắng nghe sự kiện `auth:permissions-changed`. `ROLE_ADMIN` luôn có toàn quyền. |
+
+Kiểm thử: **5/5 tests S7-08 qua 100%** trong `tests/dealer-notifications.test.cjs`, toàn bộ **219/219 tests Node** trong dự án qua, menu config và routing hoạt động chính xác. Đã cập nhật `docs/FUNCTION_MAP.md`.
+
+---
+
 ## S7-06 — Biên bản đối chiếu công nợ định kỳ với đại lý (Frontend) — 24/10/2026
 
 Nhánh `feature/S7-06-lap-bien-ban-doi-chieu-cong-no(frontend)`. Phạm vi: **Chỉ làm Frontend (FE)** theo yêu cầu của người dùng ("đọc AGENTS.md và làm theo yêu cầu sau(chỉ frontend)"), tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_frontend_design.md` + `SKILLS/SKILL_backend.md`.

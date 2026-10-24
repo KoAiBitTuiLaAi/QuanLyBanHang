@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thông báo của tôi | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <link rel="stylesheet" href="/css/dealer-notifications.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content>
+    <main class="content dealer-notif-page">
+      <!-- Header -->
+      <header class="dn-heading">
+        <div>
+          <p class="dn-eyebrow">Cổng đại lý</p>
+          <h1 class="dn-title">
+            Thông báo của tôi
+            <span id="dn-unread-badge" class="dn-unread-badge" hidden>0</span>
+          </h1>
+          <p class="dn-subtitle">Nhận thông báo nhắc hạn thanh toán tự động (trước hạn 3 ngày và khi quá hạn), cảnh báo công nợ và thông tin hệ thống.</p>
+        </div>
+        <div class="dn-actions">
+          <!-- Admin dealer switcher -->
+          <div class="dn-switcher" id="dp-dealer-switcher-wrap" hidden>
+            <label for="dp-dealer-select"><strong>Đại lý:</strong></label>
+            <select id="dp-dealer-select" aria-label="Chọn đại lý hỗ trợ"></select>
+          </div>
+          <button id="btn-read-all" class="btn btn--secondary" type="button" disabled>Đánh dấu tất cả đã đọc</button>
+          <button id="btn-reload" class="btn btn--secondary" type="button">Tải lại</button>
+        </div>
+      </header>
+
+      <!-- Access Denied Notice -->
+      <p id="dn-access-denied" class="dn-notice dn-notice--danger" role="status" hidden>
+        Bạn chưa có quyền xem thông báo. Liên hệ quản trị viên để kiểm tra quyền NOTIFICATION_VIEW trong ma trận quyền.
+      </p>
+
+      <!-- Workspace -->
+      <section id="dn-workspace">
+        <div id="dn-alert" class="dn-alert" role="alert" hidden></div>
+
+        <!-- Filter Controls & Tabs -->
+        <div class="dn-controls">
+          <div class="dn-tabs" role="tablist">
+            <button type="button" class="dn-tab dn-tab--active" id="tab-all" role="tab" aria-selected="true">
+              Tất cả
+            </button>
+            <button type="button" class="dn-tab" id="tab-unread" role="tab" aria-selected="false">
+              Chưa đọc <span id="dn-unread-tab-count"></span>
+            </button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label for="dn-type-filter" style="font-size: 0.8125rem; font-weight: 600; color: var(--ink-700);">Loại thông báo:</label>
+            <select id="dn-type-filter" class="dn-filter-select">
+              <option value="">Tất cả loại thông báo</option>
+              <option value="PAYMENT_DUE_BEFORE_3_DAYS">Nhắc hạn thanh toán trước 3 ngày</option>
+              <option value="PAYMENT_OVERDUE">Nhắc quá hạn thanh toán</option>
+              <option value="SYSTEM">Thông báo hệ thống</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Notification List -->
+        <div id="dn-list" class="dn-list" role="region" aria-label="Danh sách thông báo" tabindex="0">
+          <div class="dn-loading">Đang tải thông báo…</div>
+        </div>
+
+        <!-- Pagination -->
+        <footer class="dn-pagination">
+          <span id="dn-page-summary">Đang tải…</span>
+          <div class="dn-pagination__controls">
+            <button type="button" id="dn-prev-page" class="btn btn--secondary btn--sm" disabled>Trước</button>
+            <span id="dn-page-info" class="dn-pagination__page" role="status">Trang 1</span>
+            <button type="button" id="dn-next-page" class="btn btn--secondary btn--sm" disabled>Sau</button>
+          </div>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/dealer-portal-context.js"></script>
+  <script src="/js/dealer-notifications.js"></script>
+</body>
+</html>
+
