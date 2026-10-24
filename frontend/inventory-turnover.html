@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Báo cáo tồn kho &amp; Vòng quay hàng | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/inventory-turnover.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content>
+    <main class="content turnover-page">
+      <header class="it-heading">
+        <div>
+          <h1>Báo cáo tồn kho &amp; Vòng quay hàng</h1>
+          <p>Theo dõi giá trị tồn theo kho, nhóm hàng, số ngày tồn bình quân SKU và cảnh báo hàng chậm luân chuyển đang chôn vốn.</p>
+        </div>
+        <div class="it-actions">
+          <button id="it-reload" class="btn btn--secondary" type="button">Tải lại</button>
+          <button id="it-export" class="btn btn--primary" type="button">Xuất Excel</button>
+        </div>
+      </header>
+
+      <p id="it-access-denied" class="it-notice" role="status" hidden>
+        Bạn chưa có quyền xem báo cáo tồn kho. Vui lòng liên hệ Quản trị viên để cấp quyền REPORT_INVENTORY trong ma trận quyền.
+      </p>
+
+      <p id="it-error" class="it-error" role="alert" hidden></p>
+      <p id="it-success" class="it-success" role="status" hidden></p>
+
+      <section id="it-workspace" hidden>
+        <!-- Bộ lọc báo cáo -->
+        <form id="it-filters" class="it-panel it-form" role="search">
+          <label>Kho hàng
+            <select id="it-filter-warehouse">
+              <option value="">Tất cả kho được phân quyền</option>
+            </select>
+          </label>
+
+          <label>Nhóm hàng
+            <select id="it-filter-category">
+              <option value="">Tất cả nhóm hàng</option>
+            </select>
+          </label>
+
+          <label>Từ ngày
+            <input id="it-filter-from" type="date">
+          </label>
+
+          <label>Đến ngày
+            <input id="it-filter-to" type="date">
+          </label>
+
+          <label>Ngưỡng chậm luân chuyển (ngày)
+            <input id="it-filter-threshold" type="number" min="1" max="730" value="90" placeholder="Số ngày cảnh báo">
+          </label>
+
+          <label>Trạng thái luân chuyển
+            <select id="it-filter-status">
+              <option value="">Tất cả trạng thái</option>
+              <option value="FAST_MOVING">Luân chuyển nhanh</option>
+              <option value="NORMAL_MOVING">Bình thường</option>
+              <option value="SLOW_MOVING">Chậm luân chuyển</option>
+              <option value="DEAD_STOCK">Chết kho (không xuất)</option>
+              <option value="OUT_OF_STOCK">Hết hàng</option>
+            </select>
+          </label>
+
+          <label>Tìm kiếm SKU / Tên sản phẩm
+            <input id="it-filter-keyword" type="search" maxlength="150" placeholder="Mã SKU hoặc tên hàng hoá">
+          </label>
+
+          <div class="it-wide" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <label class="it-check">
+              <input id="it-filter-slow-moving" type="checkbox">
+              <span>Chỉ hiển thị hàng chậm luân chuyển đang chôn vốn</span>
+            </label>
+
+            <div class="it-actions" style="margin: 0;">
+              <button id="it-filter-submit" class="btn btn--primary" type="submit">Xem báo cáo</button>
+              <button id="it-filter-reset" class="btn btn--secondary" type="button">Đặt lại</button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Thẻ tóm tắt chỉ số tài chính kho (KPIs) -->
+        <dl class="it-metrics" aria-label="Chỉ số tồn kho và vòng quay hàng">
+          <div>
+            <dt>Tổng giá trị tồn kho</dt>
+            <dd id="it-total-inventory-value">—</dd>
+            <span class="it-metric-sub" id="it-total-qty-sub">Tồn thực tế: —</span>
+          </div>
+
+          <div>
+            <dt>Vốn chôn trong hàng chậm</dt>
+            <dd id="it-tied-up-value" class="it-metric-highlight">—</dd>
+            <span class="it-metric-sub" id="it-tied-up-percent-sub">Tỷ lệ chôn vốn: —</span>
+          </div>
+
+          <div>
+            <dt>SKU chậm luân chuyển / Chết kho</dt>
+            <dd id="it-slow-moving-skus" class="it-metric-highlight">—</dd>
+            <span class="it-metric-sub" id="it-total-skus-sub">Tổng số: — SKU</span>
+          </div>
+
+          <div>
+            <dt>Số ngày tồn bình quân chung</dt>
+            <dd id="it-avg-days">—</dd>
+            <span class="it-metric-sub">Kỳ báo cáo: <span id="it-period-days-sub">90</span> ngày</span>
+          </div>
+
+          <div>
+            <dt>Hệ số vòng quay chung</dt>
+            <dd id="it-turnover-rate">—</dd>
+            <span class="it-metric-sub" id="it-annual-turnover-sub">Quy đổi năm: —</span>
+          </div>
+        </dl>
+
+        <!-- Phân hệ báo cáo theo Tabs -->
+        <section class="it-panel" aria-labelledby="it-tabs-title">
+          <header class="it-heading" style="margin-bottom: 8px;">
+            <h2 id="it-tabs-title">Bảng phân tích chi tiết</h2>
+            <span id="it-report-time" class="it-help"></span>
+          </header>
+
+          <nav class="it-tabs" role="tablist" aria-label="Phân hệ phân tích tồn kho">
+            <button id="tab-warehouse" class="it-tab-btn it-tab-btn--active" role="tab" aria-selected="true" aria-controls="panel-warehouse" type="button">
+              Giá trị tồn theo kho
+            </button>
+            <button id="tab-category" class="it-tab-btn" role="tab" aria-selected="false" aria-controls="panel-category" type="button">
+              Giá trị tồn theo nhóm hàng
+            </button>
+            <button id="tab-matrix" class="it-tab-btn" role="tab" aria-selected="false" aria-controls="panel-matrix" type="button">
+              Kho × Nhóm hàng
+            </button>
+            <button id="tab-slow-moving" class="it-tab-btn" role="tab" aria-selected="false" aria-controls="panel-slow-moving" type="button">
+              Cảnh báo chôn vốn
+            </button>
+            <button id="tab-skus" class="it-tab-btn" role="tab" aria-selected="false" aria-controls="panel-skus" type="button">
+              Số ngày tồn &amp; Vòng quay SKU
+            </button>
+          </nav>
+
+          <!-- TAB 1: GIÁ TRỊ TỒN THEO KHO -->
+          <div id="panel-warehouse" role="tabpanel" aria-labelledby="tab-warehouse">
+            <div class="it-scroll" role="region" aria-label="Giá trị tồn theo kho" tabindex="0">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mã kho</th>
+                    <th>Tên kho</th>
+                    <th class="it-num">Tồn thực tế</th>
+                    <th class="it-num">Tồn khả dụng</th>
+                    <th class="it-num">Giá trị tồn kho</th>
+                    <th class="it-num">Tỷ trọng</th>
+                    <th class="it-num">Vốn chôn hàng chậm</th>
+                    <th class="it-num">Hệ số vòng quay</th>
+                  </tr>
+                </thead>
+                <tbody id="it-warehouse-rows">
+                  <tr><td colspan="8" class="it-muted" style="text-align: center; padding: 20px;">Đang nạp dữ liệu...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 2: GIÁ TRỊ TỒN THEO NHÓM HÀNG -->
+          <div id="panel-category" role="tabpanel" aria-labelledby="tab-category" hidden>
+            <div class="it-scroll" role="region" aria-label="Giá trị tồn theo nhóm hàng" tabindex="0">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mã nhóm</th>
+                    <th>Tên nhóm hàng</th>
+                    <th class="it-num">Tồn thực tế</th>
+                    <th class="it-num">Giá trị tồn kho</th>
+                    <th class="it-num">Tỷ trọng</th>
+                    <th class="it-num">Vốn chôn hàng chậm</th>
+                    <th class="it-num">Số SKU chậm</th>
+                    <th class="it-num">Hệ số vòng quay</th>
+                  </tr>
+                </thead>
+                <tbody id="it-category-rows">
+                  <tr><td colspan="8" class="it-muted" style="text-align: center; padding: 20px;">Đang nạp dữ liệu...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 3: MA TRẬN KHO × NHÓM HÀNG -->
+          <div id="panel-matrix" role="tabpanel" aria-labelledby="tab-matrix" hidden>
+            <div class="it-scroll" role="region" aria-label="Giá trị tồn theo kho và nhóm hàng" tabindex="0">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Kho hàng</th>
+                    <th>Nhóm hàng</th>
+                    <th class="it-num">Tồn thực tế</th>
+                    <th class="it-num">Giá trị tồn kho</th>
+                    <th class="it-num">Tỷ trọng trong kho</th>
+                    <th class="it-num">Vốn chôn hàng chậm</th>
+                  </tr>
+                </thead>
+                <tbody id="it-matrix-rows">
+                  <tr><td colspan="6" class="it-muted" style="text-align: center; padding: 20px;">Đang nạp dữ liệu...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 4: CẢNH BÁO HÀNG CHẬM LUÂN CHUYỂN ĐANG CHÔN VỐN -->
+          <div id="panel-slow-moving" role="tabpanel" aria-labelledby="tab-slow-moving" hidden>
+            <div class="it-slow-highlight">
+              <h3>Phát hiện hàng chậm luân chuyển đang chôn vốn</h3>
+              <p>Danh sách các mặt hàng có số ngày tồn vượt ngưỡng hoặc không có biến động xuất trong kỳ, được sắp xếp ưu tiên theo <strong>giá trị vốn bị chôn lớn nhất</strong>.</p>
+            </div>
+
+            <div class="it-scroll" role="region" aria-label="Danh sách hàng chậm luân chuyển chôn vốn" tabindex="0">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mã SKU</th>
+                    <th>Tên sản phẩm</th>
+                    <th>Nhóm hàng</th>
+                    <th class="it-num">Tồn cuối</th>
+                    <th class="it-num">Giá trị chôn vốn</th>
+                    <th class="it-num">Số ngày tồn bình quân</th>
+                    <th>Trạng thái</th>
+                    <th>Thuyết minh nguyên nhân</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="it-slow-rows">
+                  <tr><td colspan="9" class="it-muted" style="text-align: center; padding: 20px;">Đang nạp dữ liệu...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 5: VÒNG QUAY & SỐ NGÀY TỒN BÌNH QUÂN TỪNG SKU -->
+          <div id="panel-skus" role="tabpanel" aria-labelledby="tab-skus" hidden>
+            <div class="it-scroll" role="region" aria-label="Số ngày tồn bình quân và vòng quay từng SKU" tabindex="0">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mã SKU</th>
+                    <th>Tên sản phẩm</th>
+                    <th>Nhóm hàng</th>
+                    <th>ĐVT</th>
+                    <th class="it-num">Tồn đầu</th>
+                    <th class="it-num">Xuất kỳ</th>
+                    <th class="it-num">Tồn cuối</th>
+                    <th class="it-num">Giá trị tồn kho</th>
+                    <th class="it-num">Số ngày tồn BQ</th>
+                    <th class="it-num">Vòng quay</th>
+                    <th>Trạng thái</th>
+                    <th class="it-num">Vốn chôn</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="it-sku-rows">
+                  <tr><td colspan="13" class="it-muted" style="text-align: center; padding: 20px;">Đang nạp dữ liệu...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="it-actions it-pagination">
+              <button id="it-sku-prev" class="btn btn--secondary" type="button">Trước</button>
+              <span id="it-sku-page" role="status">Trang 1</span>
+              <button id="it-sku-next" class="btn btn--secondary" type="button">Sau</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/inventory-turnover-utils.js"></script>
+  <script src="/js/inventory-turnover.js"></script>
+</body>
+</html>
+
