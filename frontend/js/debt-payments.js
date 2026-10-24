@@ -20,6 +20,7 @@
     selectedType: '',
     payments: [],
     currentDetailPayment: null,
+    currentReceiptPayment: null,
     // Tab đang hoạt động: 'payments' hoặc 'invoices'
     activeTab: 'payments',
     // Dữ liệu khi tạo phiếu thu
@@ -94,6 +95,12 @@
       if (btnAdjFromDetail) btnAdjFromDetail.hidden = true;
     }
 
+    const canPrint = DebtPaymentsUtils.canPrintReceipt(user);
+    const receiptModal = $('modal-receipt-print');
+    if (!canPrint && receiptModal && !receiptModal.hidden) {
+      receiptModal.hidden = true;
+    }
+
     return true;
   }
 
@@ -126,7 +133,7 @@
    * Đóng tất cả các modal
    */
   function closeAllModals() {
-    ['modal-payment-create', 'modal-payment-detail', 'modal-adjustment-create', 'modal-order-settlements'].forEach((id) => {
+    ['modal-payment-create', 'modal-payment-detail', 'modal-adjustment-create', 'modal-order-settlements', 'modal-receipt-print'].forEach((id) => {
       const el = $(id);
       if (el) el.hidden = true;
     });
@@ -279,6 +286,9 @@
             <button class="btn btn--secondary btn--sm" data-action="view-detail" data-id="${p.id}" type="button">
               Chi tiết
             </button>
+            <button class="btn btn--secondary btn--sm" data-action="print-receipt" data-id="${p.id}" type="button" style="color: var(--teal-deep, #0f766e); margin-left: 6px;">
+              In / PDF
+            </button>
             ${!isAdjustment && canManage ? `
               <button class="btn btn--secondary btn--sm" data-action="adjust-payment" data-id="${p.id}" type="button" style="color: #c2410c; margin-left: 6px;">
                 Điều chỉnh
@@ -334,6 +344,7 @@
 
       const p = json.data;
       state.currentDetailPayment = p;
+      state.currentReceiptPayment = p;
 
       const typeInfo = DebtPaymentsUtils.getPaymentTypeInfo(p.paymentType);
       const methodInfo = DebtPaymentsUtils.getPaymentMethodInfo(p.paymentMethod);
@@ -382,6 +393,12 @@
         btnAdjust.hidden = isAdjustment || !canManage;
       }
 
+      const canPrint = DebtPaymentsUtils.canPrintReceipt(Auth.getUser());
+      const btnPrintDetail = $('btn-print-from-detail');
+      const btnPdfDetail = $('btn-download-pdf-from-detail');
+      if (btnPrintDetail) btnPrintDetail.hidden = !canPrint;
+      if (btnPdfDetail) btnPdfDetail.hidden = !canPrint;
+
       // Render danh sách allocations
       const allocations = p.allocations || [];
       if (allocationsTbody) {
@@ -412,6 +429,89 @@
       if (allocationsTbody) {
         allocationsTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#dc2626; padding:16px;">${escapeHtml(err.message)}</td></tr>`;
       }
+    }
+  }
+
+  /**
+   * Mở modal xem trước và in phiếu thu / tải PDF (S7-09).
+   */
+  async function openReceiptPrintModal(idOrPayment) {
+    const user = Auth.getUser();
+    if (!DebtPaymentsUtils.canPrintReceipt(user)) {
+      showGlobalMessage('error', 'Bạn không có quyền xem hoặc in phiếu thu.');
+      return;
+    }
+
+    let payment = null;
+    if (typeof idOrPayment === 'object' && idOrPayment !== null) {
+      payment = idOrPayment;
+    } else {
+      payment = state.payments.find((p) => String(p.id) === String(idOrPayment));
+      if (!payment || !payment.allocations) {
+        try {
+          const res = await Auth.apiFetch(`/finance/debt-payments/${idOrPayment}`);
+          const json = await res.json().catch(() => null);
+          if (res.ok && json?.success && json?.data) {
+            payment = json.data;
+          }
+        } catch (e) {
+          console.warn('Không tải được allocations chi tiết, dùng thông tin phiếu thu sẵn có:', e);
+        }
+      }
+    }
+
+    if (!payment) {
+      showGlobalMessage('error', 'Không tìm thấy thông tin phiếu thu để in.');
+      return;
+    }
+
+    state.currentReceiptPayment = payment;
+
+    const printArea = $('dp-receipt-print-area');
+    if (printArea) {
+      printArea.innerHTML = DebtPaymentsUtils.renderReceiptHtml(payment);
+    }
+
+    const modal = $('modal-receipt-print');
+    if (modal) {
+      modal.hidden = false;
+    }
+  }
+
+  /**
+   * Tạo và tải file PDF phiếu thu về máy (S7-09).
+   */
+  function downloadReceiptPdf(payment) {
+    const target = payment || state.currentReceiptPayment || state.currentDetailPayment;
+    if (!target) {
+      showGlobalMessage('error', 'Chưa có thông tin phiếu thu để tải PDF.');
+      return;
+    }
+
+    const user = Auth.getUser();
+    if (!DebtPaymentsUtils.canPrintReceipt(user)) {
+      showGlobalMessage('error', 'Bạn không có quyền tải PDF phiếu thu.');
+      return;
+    }
+
+    try {
+      const blob = DebtPaymentsUtils.generateReceiptPdfBlob(target);
+      if (!blob) {
+        throw new Error('Không thể tạo nội dung file PDF.');
+      }
+      const pCode = target.paymentCode || `PT-${target.id || 'NEW'}`;
+      const fileName = `phieu-thu-${pCode}.pdf`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      showGlobalMessage('error', 'Lỗi khi xuất file PDF: ' + err.message);
     }
   }
 
@@ -787,6 +887,11 @@
 
       // Tải lại danh sách
       await loadPayments(0);
+
+      // S7-09: Tự động mở xem trước phiếu thu để kế toán in chứng từ ngay tại chỗ cho đại lý
+      if (json.data && DebtPaymentsUtils.canPrintReceipt(Auth.getUser())) {
+        openReceiptPrintModal(json.data);
+      }
     } catch (err) {
       if (errorEl) {
         errorEl.textContent = err.message;
@@ -1151,6 +1256,8 @@
 
       if (action === 'view-detail') {
         openPaymentDetail(id);
+      } else if (action === 'print-receipt') {
+        openReceiptPrintModal(id);
       } else if (action === 'adjust-payment') {
         const payment = state.payments.find((p) => String(p.id) === String(id));
         if (payment) openAdjustmentModal(payment);
@@ -1163,6 +1270,34 @@
         $('modal-payment-detail').hidden = true;
         openAdjustmentModal(state.currentDetailPayment);
       }
+    });
+
+    // ── Nút In phiếu thu và Tải PDF từ modal chi tiết (S7-09) ──
+    $('btn-print-from-detail')?.addEventListener('click', () => {
+      if (state.currentDetailPayment) {
+        openReceiptPrintModal(state.currentDetailPayment);
+      }
+    });
+
+    $('btn-download-pdf-from-detail')?.addEventListener('click', () => {
+      if (state.currentDetailPayment) {
+        downloadReceiptPdf(state.currentDetailPayment);
+      }
+    });
+
+    // ── Thao tác trên Modal xem trước & In phiếu thu (S7-09) ──
+    $('btn-print-receipt-action')?.addEventListener('click', () => {
+      window.print();
+    });
+    $('btn-print-receipt-action-footer')?.addEventListener('click', () => {
+      window.print();
+    });
+
+    $('btn-download-receipt-pdf')?.addEventListener('click', () => {
+      downloadReceiptPdf(state.currentReceiptPayment);
+    });
+    $('btn-download-receipt-pdf-footer')?.addEventListener('click', () => {
+      downloadReceiptPdf(state.currentReceiptPayment);
     });
 
     // ── Thay đổi đại lý trong form tạo phiếu thu ──

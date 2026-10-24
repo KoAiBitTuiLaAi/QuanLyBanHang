@@ -1,5 +1,22 @@
 # Trạng thái sprint 1–8
 
+## S7-09 — In phiếu thu cho mỗi khoản đã ghi nhận (Frontend) — 24/10/2026
+
+Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ các yêu cầu nghiệp vụ theo ảnh mô tả: **chỉ làm frontend**, không sửa backend.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Phiếu thu có mã duy nhất | Có | Có | Có | Mã phiếu thu duy nhất `PT-YYYYMMDD-XXXX` (do backend sinh tự động khi lưu phiếu qua `POST /api/finance/debt-payments`) được hiển thị nổi bật trên tiêu đề chứng từ, khung xem trước và file PDF xuất ra. |
+| Thông tin đại lý | Có | Có | Có | Thể hiện đầy đủ tên đại lý (`dealerName`), mã đại lý (`dealerCode`) và địa chỉ đơn vị nộp tiền, hỗ trợ kế toán công nợ và đại lý đối soát chứng từ tại chỗ. |
+| Số tiền (bằng số & bằng chữ) | Có | Có | Có | Hiển thị số tiền thu bằng số chuẩn định dạng VND (`15.000.000 ₫`) và tự động chuyển đổi đọc thành chữ chuẩn mực chứng từ kế toán Việt Nam (`numberToVietnameseWords`, ví dụ: "Mười lăm triệu đồng chẵn."). |
+| Hình thức thu tiền & Người thu | Có | Có | Có | Ghi nhận rõ hình thức thu (`paymentMethod`: Tiền mặt, Chuyển khoản, Khác) kèm mã chứng từ gốc/UNC (`referenceCode`), ngày thu tiền (`paymentDate`), ngày giờ ghi nhận và họ tên/tài khoản người thu tiền (`recordedBy`). Kèm bảng kê chi tiết các hoá đơn được đối trừ (`allocations`) và 4 cột chữ ký (Người nộp tiền, Người thu tiền, Kế toán trưởng, Thủ trưởng đơn vị). |
+| In hoặc tải PDF được | Có (APIs S7-02) | Có | Có | Hỗ trợ 2 phương thức: (1) **In phiếu thu**: Nút "In phiếu" trên bảng danh sách, trong modal chi tiết hoặc mở tự động sau khi lập phiếu thu thành công; mở modal xem trước và gọi `window.print()` áp dụng CSS `@media print` chuẩn A4 chuyên nghiệp, ẩn các thanh điều hướng/nút bấm; (2) **Tải PDF**: Tạo trực tiếp file PDF nhúng chuẩn binary `%PDF-1.4` (`application/pdf`) tải về máy `phieu-thu-PT-XXXX.pdf` để gửi đại lý ngay tại chỗ. |
+| Ma trận phân quyền động (Permission Matrix) & An toàn dữ liệu | Có | Có | Có | Quyền `FINANCE_VIEW_DEBT` hoặc `FINANCE_MANAGE` để xem, in và tải PDF phiếu thu. `ROLE_ADMIN` luôn có toàn quyền. Tuyệt đối không role fallback (`ROLE_ACCOUNTANT` mất quyền trong DB sẽ bị ẩn nút và chặn in). Đóng modal in ngay lập tức khi nhận sự kiện `auth:permissions-changed`. Không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: **14/14 tests S7-02/S7-09 qua 100%** trong `tests/debt-payments.test.cjs`; toàn bộ **247/247 test frontend qua 100%**; **13/13 clean routes test qua 100%**. Đã cập nhật `docs/FUNCTION_MAP.md`.
+
+---
+
 ## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Frontend) — 24/10/2026
 
 Nhánh `feature/S7-02-ghi-nhan-thanh-toan(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 5 tiêu chí nghiệp vụ theo yêu cầu người dùng: **chỉ làm frontend**.
