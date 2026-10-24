@@ -31,5 +31,15 @@ public class DebtPaymentRequest {
     private String referenceCode;
 
     private String note;
+
+    /** Người thu tiền (S7-02) */
+    private String recordedBy;
+
+    /** Tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO) (S7-02) */
+    @Builder.Default
+    private Boolean autoAllocate = true;
+
+    /** Danh sách hoá đơn chỉ định đối trừ cụ thể (S7-02) */
+    private java.util.List<PaymentAllocationItemRequest> allocations;
 }
 

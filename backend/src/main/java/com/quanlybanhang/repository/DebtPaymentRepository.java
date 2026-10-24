@@ -25,5 +25,11 @@ public interface DebtPaymentRepository extends JpaRepository<DebtPayment, Long> 
     boolean existsByPaymentCode(String paymentCode);
 
     long countByPaymentDate(LocalDate paymentDate);
+
+    long countByPaymentCodeStartingWith(String prefix);
+
+    List<DebtPayment> findByOriginalPaymentId(Long originalPaymentId);
+
+    boolean existsByOriginalPaymentIdAndPaymentType(Long originalPaymentId, String paymentType);
 }
 

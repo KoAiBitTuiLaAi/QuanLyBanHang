@@ -156,6 +156,43 @@ public class Order {
     @Builder.Default
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
+    /**
+     * Số tiền đã thanh toán / đối trừ cho hoá đơn này (S7-02).
+     */
+    @Column(name = "paid_amount", precision = 15, scale = 2)
+    @Builder.Default
+    private BigDecimal paidAmount = BigDecimal.ZERO;
+
+    /**
+     * Trạng thái thanh toán của hoá đơn (S7-02):
+     * UNPAID: Chưa thanh toán
+     * PARTIALLY_PAID: Thanh toán một phần
+     * PAID: Đã thanh toán
+     */
+    @Column(name = "payment_status", length = 30)
+    @Builder.Default
+    private String paymentStatus = "UNPAID";
+
+    public BigDecimal getRemainingDebt() {
+        BigDecimal total = totalAmount != null ? totalAmount : BigDecimal.ZERO;
+        BigDecimal paid = paidAmount != null ? paidAmount : BigDecimal.ZERO;
+        return total.subtract(paid).max(BigDecimal.ZERO);
+    }
+
+    public void updatePaymentStatusFromPaidAmount() {
+        if (paidAmount == null) {
+            paidAmount = BigDecimal.ZERO;
+        }
+        BigDecimal total = totalAmount != null ? totalAmount : BigDecimal.ZERO;
+        if (paidAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            paymentStatus = "UNPAID";
+        } else if (paidAmount.compareTo(total) >= 0) {
+            paymentStatus = "PAID";
+        } else {
+            paymentStatus = "PARTIALLY_PAID";
+        }
+    }
+
     @Column(length = 500)
     private String note;
 
@@ -218,6 +255,12 @@ public class Order {
         }
         if (this.totalAmount == null) {
             this.totalAmount = BigDecimal.ZERO;
+        }
+        if (this.paidAmount == null) {
+            this.paidAmount = BigDecimal.ZERO;
+        }
+        if (this.paymentStatus == null) {
+            this.paymentStatus = "UNPAID";
         }
     }
 }

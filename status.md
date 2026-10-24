@@ -1,5 +1,23 @@
 # Trạng thái sprint 1–8
 
+## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Backend) (22/10/2026)
+
+Nhánh `feature/S7-02/ghi-nhan-thanh-toan`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS`. Yêu cầu người dùng: **chỉ làm Backend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền / kết quả |
+|---|:---:|:---:|:---:|---|
+| Ghi số tiền, hình thức thu, ngày thu, người thu, ghi chú | Có | Chưa làm (chỉ làm BE) | Đã sẵn sàng kết nối | `POST /api/finance/debt-payments`: lưu phiếu thu `DebtPayment`, các trường `amount`, `paymentMethod`, `paymentDate`, `recordedBy`, `referenceCode`, `note`, `paymentCode` sinh tự động `PT-YYYYMMDD-XXXX`. Yêu cầu `FINANCE_MANAGE` hoặc `ROLE_ADMIN`. |
+| Chọn đối trừ vào hoá đơn cụ thể, hoặc tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO) | Có | Chưa làm (chỉ làm BE) | Đã sẵn sàng kết nối | Mặc định `autoAllocate = true`: tự động tìm các đơn hàng còn nợ theo `recordedAt` cũ nhất và cấn trừ lần lượt; hoặc `autoAllocate = false` và gửi danh sách `allocations` chỉ định cụ thể từng đơn. Lưu chi tiết đối trừ vào `DebtPaymentAllocation`. Hỗ trợ API xem trước đối trừ `POST /api/finance/debt-payments/preview-allocation`. |
+| Cho phép thu một phần; hoá đơn chuyển sang Thanh toán một phần | Có | Chưa làm (chỉ làm BE) | Đã sẵn sàng kết nối | Hoá đơn (`Order`) cập nhật `paidAmount` và `paymentStatus`: chưa trả = `UNPAID`, trả một phần = `PARTIALLY_PAID` ("Thanh toán một phần"), trả đủ = `PAID` ("Đã thanh toán"). |
+| Không cho thu vượt tổng công nợ còn lại | Có | Chưa làm (chỉ làm BE) | Đã sẵn sàng kết nối | Kiểm tra tổng nợ còn lại của các đơn hàng đã ghi sổ của đại lý; nếu số tiền thu vượt quá tổng nợ còn lại hoặc số tiền đối trừ vượt quá nợ hoá đơn cụ thể, server ném ngoại lệ và trả mã lỗi `400 Bad Request`. |
+| Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh | Có | Chưa làm (chỉ làm BE) | Đã sẵn sàng kết nối | `DELETE /api/finance/debt-payments/{id}` bị chặn và trả `400 Bad Request`. Cung cấp API lập bút toán điều chỉnh `POST /api/finance/debt-payments/{id}/adjust` với `REVERSAL` (hoàn trả toàn bộ) hoặc `PARTIAL_REVERSAL` (điều chỉnh giảm một phần), sinh mã `BTDC-YYYYMMDD-XXXX`, khôi phục công nợ và trạng thái hoá đơn tương ứng. |
+| Tra cứu để biết chính xác đại lý còn nợ hoá đơn nào | Có | Chưa làm (chỉ làm BE) | Đã sẵn sàng kết nối | API `GET /api/finance/dealers/{dealerId}/invoices` và `GET /api/finance/dealers/{dealerId}/unpaid-invoices`: trả danh sách hoá đơn kèm số tiền tổng, đã trả, còn nợ, số ngày quá hạn, trạng thái thanh toán và lịch sử đối trừ. API `GET /api/finance/orders/{orderId}/settlements`. Yêu cầu `FINANCE_VIEW_DEBT` hoặc `ROLE_ADMIN`. |
+| Ma trận phân quyền động (Permission matrix) | Có | Chưa làm (chỉ làm BE) | Đã sẵn sàng kết nối | Kết nối chặt chẽ với ma trận phân quyền DB (`RolePermissionConfig`), không role-based fallback. Thu hồi quyền trên JWT hiện tại lập tức trả 403 Forbidden. `ROLE_ADMIN` luôn có toàn quyền. |
+
+Kiểm thử: **55 tests S7-02 qua 100%** (9 integration tests trong `DebtSettlementIntegrationTest`, 26 service tests trong `DealerDebtServiceTest`, 20 controller tests trong `FinanceControllerTest`), toàn bộ **815/815 test backend qua**. Đã cập nhật hợp đồng API tại `backend/API_DOCUMENTATION.md`.
+
+---
+
 ## S8-02 — Sửa tích hợp frontend/backend sau đồng bộ develop (24/10/2026)
 
 Đã đọc AGENTS.md và toàn bộ hai SKILLS. Đồng bộ `origin/develop` tại `67c5f57` vào nhánh frontend bằng commit `2267fc9`; giữ các story/menu/tài liệu khác khi giải quyết xung đột. Những sửa lỗi dưới đây đang ở working tree, chưa commit/push và không gộp nhánh này vào develop. Phối hợp Antigravity **Opus 4.6 Thinking** để rà rủi ro/kiểm thử, Codex kiểm chứng và chốt thay đổi.

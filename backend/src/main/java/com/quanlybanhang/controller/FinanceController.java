@@ -1,11 +1,13 @@
 package com.quanlybanhang.controller;
 
+import com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest;
 import com.quanlybanhang.dto.request.DealerDebtActionConfigRequest;
 import com.quanlybanhang.dto.request.DebtLimitRequest;
 import com.quanlybanhang.dto.request.DebtPaymentRequest;
 import com.quanlybanhang.dto.request.DebtRiskConfigRequest;
 import com.quanlybanhang.dto.response.ApiResponse;
 import com.quanlybanhang.dto.response.DebtPaymentResponse;
+import org.springframework.web.server.ResponseStatusException;
 import com.quanlybanhang.model.Dealer;
 import com.quanlybanhang.repository.DealerRepository;
 import com.quanlybanhang.repository.ProductRepository;
@@ -331,6 +333,106 @@ public class FinanceController {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "paymentDate", "createdAt"));
         return ApiResponse.success("Danh sách phiếu thu tiền công nợ",
                 dealerDebtService.getPayments(dealerId, pageable));
+    }
+
+    /**
+     * Chi tiết phiếu thu tiền / bút toán điều chỉnh kèm danh sách đối trừ (S7-02).
+     */
+    @GetMapping("/debt-payments/{id}")
+    @PreAuthorize("hasRole('ADMIN') or (hasAuthority('FINANCE_VIEW_DEBT'))")
+    public ApiResponse getDebtPaymentDetail(@PathVariable Long id) {
+        if (dealerDebtService == null) {
+            throw new IllegalStateException("DealerDebtService chưa được khởi tạo");
+        }
+        return ApiResponse.success("Chi tiết phiếu thu tiền công nợ",
+                dealerDebtService.getPaymentById(id));
+    }
+
+    /**
+     * Lập bút toán điều chỉnh cho phiếu thu đã ghi nhận (S7-02).
+     * Tiêu chí AC: Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh.
+     */
+    @PostMapping("/debt-payments/{id}/adjust")
+    @PreAuthorize("hasRole('ADMIN') or (hasAuthority('FINANCE_MANAGE'))")
+    public ResponseEntity<ApiResponse> adjustDebtPayment(
+            @PathVariable Long id,
+            @Valid @RequestBody DebtPaymentAdjustmentRequest request,
+            Authentication authentication) {
+        if (dealerDebtService == null) {
+            throw new IllegalStateException("DealerDebtService chưa được khởi tạo");
+        }
+        String username = authentication != null ? authentication.getName() : "system";
+        DebtPaymentResponse response = dealerDebtService.adjustPayment(id, request, username);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Lập bút toán điều chỉnh thành công", response));
+    }
+
+    /**
+     * Chặn xoá phiếu thu đã ghi nhận (S7-02).
+     * Tiêu chí AC: Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh.
+     */
+    @DeleteMapping("/debt-payments/{id}")
+    @PreAuthorize("hasRole('ADMIN') or (hasAuthority('FINANCE_MANAGE'))")
+    public ApiResponse deleteDebtPayment(@PathVariable Long id) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Đã ghi nhận thanh toán thì không được xoá, chỉ lập bút toán điều chỉnh.");
+    }
+
+    /**
+     * Danh sách hoá đơn công nợ của đại lý để biết chính xác đại lý còn nợ hoá đơn nào (S7-02).
+     */
+    @GetMapping("/dealers/{dealerId}/invoices")
+    @PreAuthorize("hasRole('ADMIN') or (hasAuthority('FINANCE_VIEW_DEBT'))")
+    public ApiResponse getDealerInvoices(
+            @PathVariable Long dealerId,
+            @RequestParam(required = false) String status) {
+        if (dealerDebtService == null) {
+            throw new IllegalStateException("DealerDebtService chưa được khởi tạo");
+        }
+        return ApiResponse.success("Danh sách hoá đơn công nợ của đại lý",
+                dealerDebtService.getDealerInvoices(dealerId, status));
+    }
+
+    /**
+     * Danh sách các hoá đơn còn nợ của đại lý (chưa thanh toán hoặc thanh toán một phần) (S7-02).
+     */
+    @GetMapping("/dealers/{dealerId}/unpaid-invoices")
+    @PreAuthorize("hasRole('ADMIN') or (hasAuthority('FINANCE_VIEW_DEBT'))")
+    public ApiResponse getDealerUnpaidInvoices(@PathVariable Long dealerId) {
+        if (dealerDebtService == null) {
+            throw new IllegalStateException("DealerDebtService chưa được khởi tạo");
+        }
+        return ApiResponse.success("Danh sách hoá đơn còn nợ của đại lý",
+                dealerDebtService.getDealerUnpaidInvoices(dealerId));
+    }
+
+    /**
+     * Xem trước đối trừ tự động theo nguyên tắc hoá đơn cũ nhất trước (FIFO) (S7-02).
+     */
+    @PostMapping("/debt-payments/preview-allocation")
+    @PreAuthorize("hasRole('ADMIN') or (hasAuthority('FINANCE_VIEW_DEBT'))")
+    public ApiResponse previewDebtPaymentAllocation(
+            @RequestParam Long dealerId,
+            @RequestParam BigDecimal amount) {
+        if (dealerDebtService == null) {
+            throw new IllegalStateException("DealerDebtService chưa được khởi tạo");
+        }
+        return ApiResponse.success("Xem trước đối trừ công nợ theo FIFO",
+                dealerDebtService.previewPaymentAllocation(dealerId, amount));
+    }
+
+    /**
+     * Lịch sử các lần đối trừ vào một hoá đơn / đơn hàng cụ thể (S7-02).
+     */
+    @GetMapping("/orders/{orderId}/settlements")
+    @PreAuthorize("hasRole('ADMIN') or (hasAuthority('FINANCE_VIEW_DEBT'))")
+    public ApiResponse getOrderSettlements(@PathVariable Long orderId) {
+        if (dealerDebtService == null) {
+            throw new IllegalStateException("DealerDebtService chưa được khởi tạo");
+        }
+        return ApiResponse.success("Lịch sử đối trừ của hoá đơn",
+                dealerDebtService.getOrderSettlements(orderId));
     }
 
     private BigDecimal normalizeDebtLimit(BigDecimal debtLimit) {

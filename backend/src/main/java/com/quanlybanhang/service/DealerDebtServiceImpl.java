@@ -1,14 +1,17 @@
 package com.quanlybanhang.service;
 
+import com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest;
 import com.quanlybanhang.dto.request.DebtPaymentRequest;
 import com.quanlybanhang.dto.request.DebtRiskConfigRequest;
 import com.quanlybanhang.dto.request.OrderDebtCheckRequest;
+import com.quanlybanhang.dto.request.PaymentAllocationItemRequest;
 import com.quanlybanhang.dto.response.*;
 import com.quanlybanhang.exception.DealerDebtBlockedException;
 import com.quanlybanhang.exception.DealerDebtOverdueException;
 import com.quanlybanhang.exception.DealerLockedException;
 import com.quanlybanhang.model.*;
 import com.quanlybanhang.repository.DealerRepository;
+import com.quanlybanhang.repository.DebtPaymentAllocationRepository;
 import com.quanlybanhang.repository.DebtPaymentRepository;
 import com.quanlybanhang.repository.DebtRiskConfigRepository;
 import com.quanlybanhang.repository.InvoiceRepository;
@@ -43,6 +46,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
     private final DebtPaymentRepository debtPaymentRepository;
     private final DebtRiskConfigRepository debtRiskConfigRepository;
     private final AuditLogService auditLogService;
+    private final com.quanlybanhang.repository.DebtPaymentAllocationRepository debtPaymentAllocationRepository;
 
     @Autowired(required = false)
     private InvoiceRepository invoiceRepository;
@@ -722,7 +726,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 .build();
     }
 
-    // ──────────────────────── S7-04: GHI NHẬN THU TIỀN ────────────────────────
+    // ──────────────────────── S7-02 & S7-04: GHI NHẬN THU TIỀN & ĐỐI TRỪ CÔNG NỢ ────────────────────────
 
     @Override
     @Transactional
@@ -737,8 +741,35 @@ public class DealerDebtServiceImpl implements DealerDebtService {
         Dealer dealer = dealerRepository.findById(request.getDealerId())
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + request.getDealerId()));
 
+        List<Order> recordedOrders = orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(
+                dealer.getId(), OrderStatus.debtBearingStatuses());
+
+        BigDecimal totalRemainingDebt = BigDecimal.ZERO;
+        for (Order o : recordedOrders) {
+            BigDecimal orderAmt = o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO;
+            BigDecimal paidAmt = o.getPaidAmount() != null ? o.getPaidAmount() : BigDecimal.ZERO;
+            BigDecimal rem = orderAmt.subtract(paidAmt).max(BigDecimal.ZERO);
+            totalRemainingDebt = totalRemainingDebt.add(rem);
+        }
+
+        // Tiêu chí S7-02: Không cho thu vượt tổng công nợ còn lại
+        if (!recordedOrders.isEmpty()) {
+            if (totalRemainingDebt.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException(String.format("Đại lý '%s' hiện không còn công nợ để thu tiền.", dealer.getName()));
+            }
+            if (request.getAmount().compareTo(totalRemainingDebt) > 0) {
+                throw new IllegalArgumentException(String.format(
+                        "Số tiền thu (%s) không được vượt quá tổng công nợ còn lại của đại lý (%s).",
+                        formatMoney(request.getAmount()), formatMoney(totalRemainingDebt)));
+            }
+        }
+
         LocalDate paymentDate = request.getPaymentDate() != null ? request.getPaymentDate() : LocalDate.now();
         String paymentCode = generatePaymentCode(paymentDate);
+
+        String collector = request.getRecordedBy() != null && !request.getRecordedBy().isBlank()
+                ? request.getRecordedBy().trim()
+                : (username != null ? username : "system");
 
         DebtPayment payment = DebtPayment.builder()
                 .paymentCode(paymentCode)
@@ -748,10 +779,114 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod().trim() : "CHUYEN_KHOAN")
                 .referenceCode(request.getReferenceCode() != null ? request.getReferenceCode().trim() : null)
                 .note(request.getNote() != null ? request.getNote().trim() : null)
-                .recordedBy(username != null ? username : "system")
+                .recordedBy(collector)
+                .paymentType("PAYMENT")
                 .build();
 
         debtPaymentRepository.save(payment);
+
+        List<DebtPaymentAllocation> createdAllocations = new ArrayList<>();
+
+        boolean hasSpecificAllocations = request.getAllocations() != null && !request.getAllocations().isEmpty()
+                && !Boolean.TRUE.equals(request.getAutoAllocate());
+
+        if (hasSpecificAllocations) {
+            // Tiêu chí S7-02: Chọn đối trừ vào hoá đơn cụ thể
+            BigDecimal sumAllocated = BigDecimal.ZERO;
+            for (PaymentAllocationItemRequest item : request.getAllocations()) {
+                if (item.getOrderId() == null) {
+                    throw new IllegalArgumentException("Mã đơn hàng/hoá đơn đối trừ không được để trống");
+                }
+                if (item.getAmount() == null || item.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new IllegalArgumentException("Số tiền đối trừ cho mỗi hoá đơn phải lớn hơn 0");
+                }
+                Order order = orderRepository.findById(item.getOrderId())
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hoá đơn với ID: " + item.getOrderId()));
+
+                if (!order.getDealer().getId().equals(dealer.getId())) {
+                    throw new IllegalArgumentException("Hoá đơn '" + order.getOrderCode() + "' không thuộc đại lý '" + dealer.getName() + "'");
+                }
+                if (!OrderStatus.debtBearingStatuses().contains(order.getStatus())) {
+                    throw new IllegalArgumentException("Hoá đơn '" + order.getOrderCode() + "' không ở trạng thái ghi nhận nợ");
+                }
+
+                BigDecimal orderTotal = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+                BigDecimal currentPaid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+                BigDecimal orderRemaining = orderTotal.subtract(currentPaid).max(BigDecimal.ZERO);
+
+                if (orderRemaining.compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new IllegalArgumentException("Hoá đơn '" + order.getOrderCode() + "' đã được thanh toán đủ, không thể đối trừ thêm");
+                }
+                if (item.getAmount().compareTo(orderRemaining) > 0) {
+                    throw new IllegalArgumentException(String.format(
+                            "Số tiền đối trừ (%s) vượt quá số nợ còn lại của hoá đơn '%s' (%s).",
+                            formatMoney(item.getAmount()), order.getOrderCode(), formatMoney(orderRemaining)));
+                }
+
+                sumAllocated = sumAllocated.add(item.getAmount());
+
+                BigDecimal newPaid = currentPaid.add(item.getAmount());
+                order.setPaidAmount(newPaid);
+                order.updatePaymentStatusFromPaidAmount();
+                orderRepository.save(order);
+
+                DebtPaymentAllocation alloc = DebtPaymentAllocation.builder()
+                        .payment(payment)
+                        .order(order)
+                        .orderCode(order.getOrderCode())
+                        .amount(item.getAmount())
+                        .note(item.getNote())
+                        .build();
+                if (debtPaymentAllocationRepository != null) {
+                    debtPaymentAllocationRepository.save(alloc);
+                }
+                createdAllocations.add(alloc);
+            }
+
+            if (sumAllocated.compareTo(request.getAmount()) != 0) {
+                throw new IllegalArgumentException(String.format(
+                        "Tổng số tiền đối trừ các hoá đơn (%s) phải bằng tổng số tiền thu ghi nhận (%s).",
+                        formatMoney(sumAllocated), formatMoney(request.getAmount())));
+            }
+        } else {
+            // Tiêu chí S7-02: Tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO)
+            BigDecimal remainingToAllocate = request.getAmount();
+
+            for (Order order : recordedOrders) {
+                if (remainingToAllocate.compareTo(BigDecimal.ZERO) <= 0) {
+                    break;
+                }
+                BigDecimal orderTotal = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+                BigDecimal currentPaid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+                BigDecimal orderRemaining = orderTotal.subtract(currentPaid).max(BigDecimal.ZERO);
+
+                if (orderRemaining.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue; // Đơn này đã trả đủ
+                }
+
+                BigDecimal allocAmt = remainingToAllocate.min(orderRemaining);
+                BigDecimal newPaid = currentPaid.add(allocAmt);
+                order.setPaidAmount(newPaid);
+                order.updatePaymentStatusFromPaidAmount();
+                orderRepository.save(order);
+
+                DebtPaymentAllocation alloc = DebtPaymentAllocation.builder()
+                        .payment(payment)
+                        .order(order)
+                        .orderCode(order.getOrderCode())
+                        .amount(allocAmt)
+                        .note("Tự động đối trừ theo hoá đơn cũ nhất (FIFO)")
+                        .build();
+                if (debtPaymentAllocationRepository != null) {
+                    debtPaymentAllocationRepository.save(alloc);
+                }
+                createdAllocations.add(alloc);
+
+                remainingToAllocate = remainingToAllocate.subtract(allocAmt);
+            }
+        }
+
+        payment.setAllocations(createdAllocations);
 
         auditLogService.logAction(
                 "DEBT_PAYMENT",
@@ -760,28 +895,317 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 null,
                 formatMoney(request.getAmount()) + " (" + paymentCode + ")",
                 request.getNote() != null ? request.getNote() : "Ghi nhận thu tiền công nợ đại lý",
-                username != null ? username : "system");
+                collector);
 
-        // Yêu cầu AC: Tác vụ đánh giá lại chạy lại sau mỗi lần ghi nhận thu tiền
+        // Tác vụ đánh giá lại chạy lại sau mỗi lần ghi nhận thu tiền
         FlaggedDealerResponse evaluation = evaluateDealerDebtInternal(dealer);
 
-        return DebtPaymentResponse.builder()
-                .id(payment.getId())
-                .paymentCode(payment.getPaymentCode())
+        DebtPaymentResponse response = toPaymentResponse(payment);
+        response.setRemainingDebt(evaluation.getCurrentDebt());
+        response.setDealerStillFlagged(Boolean.TRUE.equals(dealer.getDebtFlagged()));
+        response.setDebtFlagReason(dealer.getDebtFlagReason());
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public DebtPaymentResponse adjustPayment(Long paymentId, DebtPaymentAdjustmentRequest request, String username) {
+        if (paymentId == null) {
+            throw new IllegalArgumentException("ID phiếu thu cần điều chỉnh không được để trống");
+        }
+        if (request == null || request.getReason() == null || request.getReason().trim().isBlank()) {
+            throw new IllegalArgumentException("Lý do điều chỉnh không được để trống");
+        }
+
+        DebtPayment originalPayment = debtPaymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu thu với ID: " + paymentId));
+
+        if ("ADJUSTMENT".equalsIgnoreCase(originalPayment.getPaymentType())) {
+            throw new IllegalArgumentException("Không thể lập bút toán điều chỉnh cho một bút toán điều chỉnh khác");
+        }
+
+        Dealer dealer = originalPayment.getDealer();
+        LocalDate adjustmentDate = request.getAdjustmentDate() != null ? request.getAdjustmentDate() : LocalDate.now();
+        String adjCode = generateAdjustmentCode(adjustmentDate);
+
+        String collector = request.getRecordedBy() != null && !request.getRecordedBy().isBlank()
+                ? request.getRecordedBy().trim()
+                : (username != null ? username : "system");
+
+        String adjType = request.getAdjustmentType() != null ? request.getAdjustmentType().trim().toUpperCase() : "REVERSAL";
+
+        BigDecimal adjustmentAmount;
+        if ("PARTIAL_REVERSAL".equals(adjType)) {
+            if (request.getAdjustmentAmount() == null || request.getAdjustmentAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Số tiền điều chỉnh giảm phải lớn hơn 0");
+            }
+            if (request.getAdjustmentAmount().compareTo(originalPayment.getAmount()) > 0) {
+                throw new IllegalArgumentException("Số tiền điều chỉnh giảm không được vượt quá số tiền của phiếu thu gốc");
+            }
+            adjustmentAmount = request.getAdjustmentAmount().negate();
+        } else {
+            // REVERSAL: Hoàn trả/huỷ toàn bộ khoản thu gốc
+            adjustmentAmount = originalPayment.getAmount().negate();
+        }
+
+        DebtPayment adjPayment = DebtPayment.builder()
+                .paymentCode(adjCode)
+                .dealer(dealer)
+                .amount(adjustmentAmount)
+                .paymentDate(adjustmentDate)
+                .paymentMethod(originalPayment.getPaymentMethod())
+                .referenceCode("DC-" + originalPayment.getPaymentCode())
+                .note(String.format("Bút toán điều chỉnh phiếu %s: %s", originalPayment.getPaymentCode(), request.getReason().trim()))
+                .recordedBy(collector)
+                .paymentType("ADJUSTMENT")
+                .originalPayment(originalPayment)
+                .adjustmentReason(request.getReason().trim())
+                .build();
+
+        debtPaymentRepository.save(adjPayment);
+
+        List<DebtPaymentAllocation> originalAllocations = debtPaymentAllocationRepository != null
+                ? debtPaymentAllocationRepository.findByPaymentIdOrderByCreatedAtAsc(originalPayment.getId())
+                : originalPayment.getAllocations();
+
+        List<DebtPaymentAllocation> adjAllocations = new ArrayList<>();
+
+        if ("PARTIAL_REVERSAL".equals(adjType)) {
+            // Giảm một phần: hoàn trả từ các dòng allocation mới nhất lùi về trước
+            BigDecimal remainingToRevert = request.getAdjustmentAmount();
+            for (int i = originalAllocations.size() - 1; i >= 0 && remainingToRevert.compareTo(BigDecimal.ZERO) > 0; i--) {
+                DebtPaymentAllocation origAlloc = originalAllocations.get(i);
+                BigDecimal revertAmt = remainingToRevert.min(origAlloc.getAmount());
+
+                Order order = origAlloc.getOrder();
+                BigDecimal currentPaid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+                BigDecimal newPaid = currentPaid.subtract(revertAmt).max(BigDecimal.ZERO);
+                order.setPaidAmount(newPaid);
+                order.updatePaymentStatusFromPaidAmount();
+                orderRepository.save(order);
+
+                DebtPaymentAllocation adjAlloc = DebtPaymentAllocation.builder()
+                        .payment(adjPayment)
+                        .order(order)
+                        .orderCode(order.getOrderCode())
+                        .amount(revertAmt.negate())
+                        .note("Điều chỉnh giảm phân bổ phiếu " + originalPayment.getPaymentCode())
+                        .build();
+                if (debtPaymentAllocationRepository != null) {
+                    debtPaymentAllocationRepository.save(adjAlloc);
+                }
+                adjAllocations.add(adjAlloc);
+
+                remainingToRevert = remainingToRevert.subtract(revertAmt);
+            }
+        } else {
+            // REVERSAL: Hoàn trả toàn bộ phân bổ của phiếu gốc
+            for (DebtPaymentAllocation origAlloc : originalAllocations) {
+                Order order = origAlloc.getOrder();
+                BigDecimal currentPaid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+                BigDecimal newPaid = currentPaid.subtract(origAlloc.getAmount()).max(BigDecimal.ZERO);
+                order.setPaidAmount(newPaid);
+                order.updatePaymentStatusFromPaidAmount();
+                orderRepository.save(order);
+
+                DebtPaymentAllocation adjAlloc = DebtPaymentAllocation.builder()
+                        .payment(adjPayment)
+                        .order(order)
+                        .orderCode(order.getOrderCode())
+                        .amount(origAlloc.getAmount().negate())
+                        .note("Hoàn trả phân bổ phiếu " + originalPayment.getPaymentCode())
+                        .build();
+                if (debtPaymentAllocationRepository != null) {
+                    debtPaymentAllocationRepository.save(adjAlloc);
+                }
+                adjAllocations.add(adjAlloc);
+            }
+        }
+
+        adjPayment.setAllocations(adjAllocations);
+
+        auditLogService.logAction(
+                "DEBT_PAYMENT_ADJUSTMENT",
+                dealer.getId().toString(),
+                "ADJUST",
+                originalPayment.getPaymentCode(),
+                adjCode + " (" + formatMoney(adjustmentAmount) + ")",
+                request.getReason().trim(),
+                collector);
+
+        FlaggedDealerResponse evaluation = evaluateDealerDebtInternal(dealer);
+
+        DebtPaymentResponse response = toPaymentResponse(adjPayment);
+        response.setRemainingDebt(evaluation.getCurrentDebt());
+        response.setDealerStillFlagged(Boolean.TRUE.equals(dealer.getDebtFlagged()));
+        response.setDebtFlagReason(dealer.getDebtFlagReason());
+        return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DebtPaymentResponse getPaymentById(Long paymentId) {
+        DebtPayment payment = debtPaymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu thu với ID: " + paymentId));
+        return toPaymentResponse(payment);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DealerInvoiceResponse> getDealerInvoices(Long dealerId, String paymentStatusFilter) {
+        Dealer dealer = dealerRepository.findById(dealerId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + dealerId));
+
+        List<Order> orders = orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(
+                dealerId, OrderStatus.debtBearingStatuses());
+
+        LocalDate today = LocalDate.now();
+        int maxDebtDays = dealer.getMaxDebtDays() != null ? dealer.getMaxDebtDays() : 0;
+
+        List<DealerInvoiceResponse> result = new ArrayList<>();
+        for (Order order : orders) {
+            BigDecimal totalAmt = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+            BigDecimal paidAmt = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+            BigDecimal remainingAmt = totalAmt.subtract(paidAmt).max(BigDecimal.ZERO);
+
+            String pStatus = order.getPaymentStatus();
+            if (pStatus == null || pStatus.isBlank()) {
+                pStatus = (paidAmt.compareTo(BigDecimal.ZERO) == 0) ? "UNPAID"
+                        : (paidAmt.compareTo(totalAmt) >= 0 ? "PAID" : "PARTIALLY_PAID");
+            }
+
+            if (paymentStatusFilter != null && !paymentStatusFilter.isBlank() && !"ALL".equalsIgnoreCase(paymentStatusFilter)) {
+                if (!pStatus.equalsIgnoreCase(paymentStatusFilter.trim())) {
+                    continue;
+                }
+            }
+
+            LocalDateTime recordTime = order.getRecordedAt() != null ? order.getRecordedAt() : order.getCreatedAt();
+            LocalDate invoiceDate = recordTime != null ? recordTime.toLocalDate() : today;
+
+            boolean isOverdue = false;
+            int overdueDays = 0;
+            if (remainingAmt.compareTo(BigDecimal.ZERO) > 0 && maxDebtDays > 0) {
+                long days = ChronoUnit.DAYS.between(invoiceDate, today);
+                if (days > maxDebtDays) {
+                    isOverdue = true;
+                    overdueDays = (int) (days - maxDebtDays);
+                }
+            }
+
+            List<DebtPaymentAllocationResponse> allocResponses = null;
+            if (debtPaymentAllocationRepository != null) {
+                allocResponses = debtPaymentAllocationRepository.findByOrderIdOrderByCreatedAtDesc(order.getId()).stream()
+                        .map(this::toAllocationResponse)
+                        .toList();
+            }
+
+            result.add(DealerInvoiceResponse.builder()
+                    .orderId(order.getId())
+                    .orderCode(order.getOrderCode())
+                    .dealerId(dealer.getId())
+                    .dealerCode(dealer.getCode())
+                    .dealerName(dealer.getName())
+                    .recordedAt(recordTime)
+                    .invoiceDate(invoiceDate)
+                    .totalAmount(totalAmt)
+                    .paidAmount(paidAmt)
+                    .remainingAmount(remainingAmt)
+                    .paymentStatus(pStatus)
+                    .paymentStatusDisplayName(formatPaymentStatusDisplayName(pStatus))
+                    .orderStatus(order.getStatus())
+                    .orderStatusDisplayName(OrderStatus.getDisplayName(order.getStatus()))
+                    .overdueDays(overdueDays)
+                    .isOverdue(isOverdue)
+                    .allocations(allocResponses)
+                    .build());
+        }
+
+        return result;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DealerInvoiceResponse> getDealerUnpaidInvoices(Long dealerId) {
+        return getDealerInvoices(dealerId, null).stream()
+                .filter(inv -> inv.getRemainingAmount().compareTo(BigDecimal.ZERO) > 0)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PaymentAllocationPreviewResponse previewPaymentAllocation(Long dealerId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Số tiền thanh toán phải lớn hơn 0");
+        }
+        Dealer dealer = dealerRepository.findById(dealerId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đại lý với ID: " + dealerId));
+
+        List<Order> orders = orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(
+                dealerId, OrderStatus.debtBearingStatuses());
+
+        BigDecimal totalDebt = BigDecimal.ZERO;
+        for (Order o : orders) {
+            BigDecimal total = o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO;
+            BigDecimal paid = o.getPaidAmount() != null ? o.getPaidAmount() : BigDecimal.ZERO;
+            totalDebt = totalDebt.add(total.subtract(paid).max(BigDecimal.ZERO));
+        }
+
+        BigDecimal remainingToAllocate = amount;
+        BigDecimal totalAllocated = BigDecimal.ZERO;
+        List<DebtPaymentAllocationResponse> previewAllocations = new ArrayList<>();
+
+        for (Order order : orders) {
+            if (remainingToAllocate.compareTo(BigDecimal.ZERO) <= 0) break;
+
+            BigDecimal total = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+            BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+            BigDecimal remaining = total.subtract(paid).max(BigDecimal.ZERO);
+
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            BigDecimal toAlloc = remainingToAllocate.min(remaining);
+            BigDecimal newPaid = paid.add(toAlloc);
+            BigDecimal newRemaining = total.subtract(newPaid).max(BigDecimal.ZERO);
+
+            String newStatus = newRemaining.compareTo(BigDecimal.ZERO) == 0 ? "PAID" : "PARTIALLY_PAID";
+
+            previewAllocations.add(DebtPaymentAllocationResponse.builder()
+                    .orderId(order.getId())
+                    .orderCode(order.getOrderCode())
+                    .allocatedAmount(toAlloc)
+                    .orderTotalAmount(total)
+                    .orderPaidAmount(newPaid)
+                    .orderRemainingAmount(newRemaining)
+                    .orderPaymentStatus(newStatus)
+                    .orderPaymentStatusDisplayName(formatPaymentStatusDisplayName(newStatus))
+                    .note("Xem trước đối trừ FIFO")
+                    .build());
+
+            remainingToAllocate = remainingToAllocate.subtract(toAlloc);
+            totalAllocated = totalAllocated.add(toAlloc);
+        }
+
+        return PaymentAllocationPreviewResponse.builder()
                 .dealerId(dealer.getId())
                 .dealerCode(dealer.getCode())
                 .dealerName(dealer.getName())
-                .amount(payment.getAmount())
-                .paymentDate(payment.getPaymentDate())
-                .paymentMethod(payment.getPaymentMethod())
-                .referenceCode(payment.getReferenceCode())
-                .note(payment.getNote())
-                .recordedBy(payment.getRecordedBy())
-                .createdAt(payment.getCreatedAt())
-                .remainingDebt(evaluation.getCurrentDebt())
-                .dealerStillFlagged(Boolean.TRUE.equals(dealer.getDebtFlagged()))
-                .debtFlagReason(dealer.getDebtFlagReason())
+                .currentTotalDebt(totalDebt)
+                .paymentAmount(amount)
+                .totalAllocated(totalAllocated)
+                .remainingPayment(remainingToAllocate)
+                .remainingDebtAfterPayment(totalDebt.subtract(totalAllocated).max(BigDecimal.ZERO))
+                .allocations(previewAllocations)
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DebtPaymentAllocationResponse> getOrderSettlements(Long orderId) {
+        if (debtPaymentAllocationRepository == null) return List.of();
+        return debtPaymentAllocationRepository.findByOrderIdOrderByCreatedAtDesc(orderId).stream()
+                .map(this::toAllocationResponse)
+                .toList();
     }
 
     @Override
@@ -962,6 +1386,17 @@ public class DealerDebtServiceImpl implements DealerDebtService {
     }
 
     private DebtPaymentResponse toPaymentResponse(DebtPayment payment) {
+        List<DebtPaymentAllocationResponse> allocResponses = null;
+        if (payment.getAllocations() != null && !payment.getAllocations().isEmpty()) {
+            allocResponses = payment.getAllocations().stream()
+                    .map(this::toAllocationResponse)
+                    .toList();
+        } else if (debtPaymentAllocationRepository != null && payment.getId() != null) {
+            allocResponses = debtPaymentAllocationRepository.findByPaymentIdOrderByCreatedAtAsc(payment.getId()).stream()
+                    .map(this::toAllocationResponse)
+                    .toList();
+        }
+
         return DebtPaymentResponse.builder()
                 .id(payment.getId())
                 .paymentCode(payment.getPaymentCode())
@@ -974,8 +1409,55 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                 .referenceCode(payment.getReferenceCode())
                 .note(payment.getNote())
                 .recordedBy(payment.getRecordedBy())
+                .paymentType(payment.getPaymentType() != null ? payment.getPaymentType() : "PAYMENT")
+                .originalPaymentId(payment.getOriginalPayment() != null ? payment.getOriginalPayment().getId() : null)
+                .originalPaymentCode(payment.getOriginalPayment() != null ? payment.getOriginalPayment().getPaymentCode() : null)
+                .adjustmentReason(payment.getAdjustmentReason())
+                .allocations(allocResponses)
                 .createdAt(payment.getCreatedAt())
                 .build();
+    }
+
+    private DebtPaymentAllocationResponse toAllocationResponse(DebtPaymentAllocation alloc) {
+        Order order = alloc.getOrder();
+        BigDecimal total = order != null && order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal paid = order != null && order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+        BigDecimal rem = total.subtract(paid).max(BigDecimal.ZERO);
+        String pStatus = order != null ? order.getPaymentStatus() : "UNPAID";
+
+        return DebtPaymentAllocationResponse.builder()
+                .id(alloc.getId())
+                .orderId(order != null ? order.getId() : null)
+                .orderCode(alloc.getOrderCode() != null ? alloc.getOrderCode() : (order != null ? order.getOrderCode() : null))
+                .allocatedAmount(alloc.getAmount())
+                .orderTotalAmount(total)
+                .orderPaidAmount(paid)
+                .orderRemainingAmount(rem)
+                .orderPaymentStatus(pStatus)
+                .orderPaymentStatusDisplayName(formatPaymentStatusDisplayName(pStatus))
+                .allocatedAt(alloc.getCreatedAt())
+                .note(alloc.getNote())
+                .build();
+    }
+
+    private String formatPaymentStatusDisplayName(String status) {
+        if (status == null || status.isBlank()) return "Chưa thanh toán";
+        return switch (status.trim().toUpperCase()) {
+            case "PAID" -> "Đã thanh toán";
+            case "PARTIALLY_PAID" -> "Thanh toán một phần";
+            default -> "Chưa thanh toán";
+        };
+    }
+
+    private String generateAdjustmentCode(LocalDate date) {
+        String prefix = "BTDC-" + date.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-";
+        long count = debtPaymentRepository.countByPaymentCodeStartingWith(prefix) + 1;
+        String code = String.format("%s%04d", prefix, count);
+        while (debtPaymentRepository.existsByPaymentCode(code)) {
+            count++;
+            code = String.format("%s%04d", prefix, count);
+        }
+        return code;
     }
 
     private DealerResponse mapDealerToResponse(Dealer dealer, DealerDebtResponse debtInfo) {
@@ -1069,10 +1551,10 @@ public class DealerDebtServiceImpl implements DealerDebtService {
     }
 
     private String formatMoney(BigDecimal amount) {
-        if (amount == null) {
-            return "0 ₫";
-        }
-        DecimalFormat df = new DecimalFormat("#,###");
-        return df.format(amount) + " ₫";
+        if (amount == null) return "0 đ";
+        java.text.DecimalFormatSymbols symbols = new java.text.DecimalFormatSymbols(java.util.Locale.US);
+        symbols.setGroupingSeparator(',');
+        DecimalFormat df = new DecimalFormat("#,### đ", symbols);
+        return df.format(amount);
     }
 }

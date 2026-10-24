@@ -3443,6 +3443,128 @@ Tài liệu hợp đồng API phục vụ Bộ phận Kế toán - Tài chính v
 
 ---
 
+## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Backend)
+
+Hỗ trợ Kế toán công nợ (`ROLE_ACCOUNTANT`) ghi nhận thanh toán từ đại lý và đối trừ vào công nợ, để biết chính xác đại lý còn nợ những hoá đơn nào.
+
+### Quy tắc nghiệp vụ cốt lõi:
+1. **Thông tin phiếu thu đầy đủ**:
+   - Ghi nhận số tiền (`amount` > 0), hình thức thu (`paymentMethod`: `TIEN_MAT`, `CHUYEN_KHOAN`, `KHAC`), ngày thu (`paymentDate`), người thu (`recordedBy`), mã chứng từ tham chiếu (`referenceCode`), và ghi chú (`note`).
+   - Mã phiếu thu tự động sinh theo mẫu: `PT-YYYYMMDD-XXXX`.
+2. **Đối trừ linh hoạt**:
+   - **Tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO)**: Khi `autoAllocate = true` (hoặc không truyền danh sách đối trừ cụ thể), hệ thống tự động tìm các đơn hàng/hoá đơn còn nợ theo thứ tự `recordedAt` cũ nhất trước và cấn trừ lần lượt cho tới khi hết số tiền thu.
+   - **Chọn đối trừ vào hoá đơn cụ thể**: Khi `autoAllocate = false` và truyền mảng `allocations`: Kế toán chỉ định rõ đơn hàng nào (`orderId`) được đối trừ bao nhiêu tiền (`amount`). Tổng số tiền đối trừ phải khớp chính xác với số tiền phiếu thu.
+3. **Cho phép thu một phần (Partial Payment)**:
+   - Một hoá đơn khi được thanh toán một phần (`paidAmount < totalAmount`) sẽ chuyển trạng thái sang **"Thanh toán một phần"** (`paymentStatus = "PARTIALLY_PAID"`).
+   - Khi đã thanh toán đủ (`paidAmount >= totalAmount`), chuyển trạng thái sang **"Đã thanh toán"** (`paymentStatus = "PAID"`).
+   - Đơn hàng chưa thanh toán có trạng thái `UNPAID`.
+4. **Không cho thu vượt tổng công nợ còn lại**:
+   - Nếu số tiền thu lớn hơn tổng số nợ còn lại của các đơn hàng đã ghi sổ của đại lý: Hệ thống chặn và trả lỗi **HTTP 400 Bad Request** kèm thông báo chi tiết: *"Số tiền thu (...) không được vượt quá tổng công nợ còn lại của đại lý (...)"*.
+   - Với đối trừ chỉ định cụ thể: Không được đối trừ vượt quá số nợ còn lại của từng hoá đơn.
+5. **Bất biến: Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh**:
+   - API xoá phiếu thu `DELETE /api/finance/debt-payments/{id}` bị chặn và luôn trả về **HTTP 400 Bad Request**: *"Đã ghi nhận thanh toán thì không được xoá, chỉ lập bút toán điều chỉnh"*.
+   - Hỗ trợ lập bút toán điều chỉnh qua `POST /api/finance/debt-payments/{id}/adjust`:
+     + `REVERSAL`: Huỷ bỏ toàn bộ khoản thu (lập bút toán điều chỉnh hoàn trả toàn bộ số tiền âm, khôi phục nợ và trạng thái các hoá đơn đã đối trừ). Mã bút toán điều chỉnh: `BTDC-YYYYMMDD-XXXX`.
+     + `PARTIAL_REVERSAL`: Điều chỉnh giảm một phần số tiền thu (`adjustmentAmount`), hoàn trả tiền từ các hoá đơn được đối trừ gần nhất trở về trước.
+6. **Ma trận phân quyền**:
+   - Ghi nhận thanh toán và lập bút toán điều chỉnh: Bắt buộc `FINANCE_MANAGE` hoặc `ROLE_ADMIN`.
+   - Tra cứu hoá đơn, xem trước đối trừ, xem lịch sử: Bắt buộc `FINANCE_VIEW_DEBT` hoặc `FINANCE_MANAGE` hoặc `ROLE_ADMIN`.
+   - Nguồn sự thật duy nhất là ma trận phân quyền trong DB (`RolePermissionConfig`), không fallback theo role cứng.
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| POST | `/api/finance/debt-payments` | `FINANCE_MANAGE` hoặc ADMIN | Ghi nhận thanh toán và đối trừ vào công nợ (FIFO hoặc cụ thể) |
+| GET | `/api/finance/debt-payments/{id}` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Chi tiết phiếu thu tiền kèm danh sách các hoá đơn được đối trừ |
+| POST | `/api/finance/debt-payments/{id}/adjust` | `FINANCE_MANAGE` hoặc ADMIN | Lập bút toán điều chỉnh cho phiếu thu đã ghi nhận |
+| DELETE | `/api/finance/debt-payments/{id}` | `FINANCE_MANAGE` hoặc ADMIN | Chặn xoá phiếu thu, luôn trả 400 Bad Request |
+| GET | `/api/finance/dealers/{dealerId}/invoices` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Danh sách hoá đơn công nợ của đại lý (lọc theo `status`: `UNPAID`, `PARTIALLY_PAID`, `PAID`) |
+| GET | `/api/finance/dealers/{dealerId}/unpaid-invoices` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Danh sách các hoá đơn còn nợ của đại lý |
+| POST | `/api/finance/debt-payments/preview-allocation` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Xem trước đối trừ tự động theo FIFO trước khi lưu phiếu thu |
+| GET | `/api/finance/orders/{orderId}/settlements` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Lịch sử các lần đối trừ vào một đơn hàng/hoá đơn cụ thể |
+
+#### Ví dụ Request Ghi nhận thanh toán có đối trừ cụ thể (`POST /api/finance/debt-payments`):
+```json
+{
+  "dealerId": 12,
+  "amount": 15000000,
+  "paymentDate": "2026-10-22",
+  "paymentMethod": "CHUYEN_KHOAN",
+  "referenceCode": "UNC-20261022-99",
+  "note": "Thanh toán đợt 1 cho 2 hoá đơn",
+  "recordedBy": "Kế toán Nguyễn Văn A",
+  "autoAllocate": false,
+  "allocations": [
+    {
+      "orderId": 101,
+      "amount": 10000000,
+      "note": "Trả hết hoá đơn DH-001"
+    },
+    {
+      "orderId": 102,
+      "amount": 5000000,
+      "note": "Trả một phần hoá đơn DH-002"
+    }
+  ]
+}
+```
+
+#### Ví dụ Response:
+```json
+{
+  "success": true,
+  "message": "Ghi nhận thu tiền thành công và đã đánh giá lại công nợ",
+  "data": {
+    "id": 55,
+    "paymentCode": "PT-20261022-0005",
+    "dealerId": 12,
+    "dealerCode": "DL-001",
+    "dealerName": "Đại lý Cấp 1 Minh Phát",
+    "amount": 15000000.00,
+    "paymentDate": "2026-10-22",
+    "paymentMethod": "CHUYEN_KHOAN",
+    "referenceCode": "UNC-20261022-99",
+    "note": "Thanh toán đợt 1 cho 2 hoá đơn",
+    "recordedBy": "Kế toán Nguyễn Văn A",
+    "paymentType": "PAYMENT",
+    "allocations": [
+      {
+        "id": 1,
+        "orderId": 101,
+        "orderCode": "DH-001",
+        "allocatedAmount": 10000000.00,
+        "orderTotalAmount": 10000000.00,
+        "orderPaidAmount": 10000000.00,
+        "orderRemainingAmount": 0.00,
+        "orderPaymentStatus": "PAID",
+        "orderPaymentStatusDisplayName": "Đã thanh toán"
+      },
+      {
+        "id": 2,
+        "orderId": 102,
+        "orderCode": "DH-002",
+        "allocatedAmount": 5000000.00,
+        "orderTotalAmount": 12000000.00,
+        "orderPaidAmount": 5000000.00,
+        "orderRemainingAmount": 7000000.00,
+        "orderPaymentStatus": "PARTIALLY_PAID",
+        "orderPaymentStatusDisplayName": "Thanh toán một phần"
+      }
+    ],
+    "remainingDebt": 7000000.00,
+    "dealerStillFlagged": false
+  }
+}
+```
+
+#### Ví dụ Request Lập bút toán điều chỉnh (`POST /api/finance/debt-payments/55/adjust`):
+```json
+{
+  "reason": "Khách hàng chuyển nhầm đại lý, lập bút toán hoàn trả toàn bộ",
+  "adjustmentType": "REVERSAL",
+  "recordedBy": "Kế toán trưởng"
+}
+```
+
 ## S7-01 — Phát hành hóa đơn bán hàng từ phiếu đã giao (22/10/2026)
 
 **Bổ sung 23/10/2026:** `GET /api/invoices/{id}/adjustments/{adjustmentId}/pdf` kiểm tra chứng từ thuộc đúng hóa đơn `{id}` trước khi tạo PDF. Sai cặp hóa đơn/chứng từ trả `400 Bad Request`, không gọi dịch vụ xuất PDF. Quyền đọc vẫn là `INVOICE_VIEW` hoặc ADMIN; không đổi schema hay hợp đồng phát hành.

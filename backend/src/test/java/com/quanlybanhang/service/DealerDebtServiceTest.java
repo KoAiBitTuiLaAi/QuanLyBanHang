@@ -53,6 +53,8 @@ class DealerDebtServiceTest {
     private com.quanlybanhang.repository.DebtRiskConfigRepository debtRiskConfigRepository;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private com.quanlybanhang.repository.DebtPaymentAllocationRepository debtPaymentAllocationRepository;
 
     @InjectMocks
     private DealerDebtServiceImpl dealerDebtService;
@@ -492,6 +494,245 @@ class DealerDebtServiceTest {
         assertThat(response.getRequiresApproval()).isTrue();
         assertThat(response.getIsBlocked()).isFalse();
         assertThat(response.getApprovalReason()).contains("Đại lý đang bị gắn cờ rủi ro công nợ");
+    }
+
+    @Test
+    @DisplayName("S7-02: Ghi nhận thanh toán và chọn đối trừ vào hoá đơn cụ thể")
+    void recordPayment_withSpecificAllocations() {
+        when(dealerRepository.findById(1L)).thenReturn(Optional.of(dealer));
+
+        Order order1 = Order.builder()
+                .id(101L)
+                .orderCode("DH-001")
+                .dealer(dealer)
+                .totalAmount(new BigDecimal("10000000"))
+                .paidAmount(BigDecimal.ZERO)
+                .status("RECORDED")
+                .paymentStatus("UNPAID")
+                .build();
+
+        when(orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(1L, OrderStatus.debtBearingStatuses()))
+                .thenReturn(List.of(order1));
+        when(orderRepository.findById(101L)).thenReturn(Optional.of(order1));
+
+        com.quanlybanhang.dto.request.DebtPaymentRequest req = com.quanlybanhang.dto.request.DebtPaymentRequest.builder()
+                .dealerId(1L)
+                .amount(new BigDecimal("6000000"))
+                .paymentMethod("TIEN_MAT")
+                .recordedBy("Kế toán A")
+                .note("Thu tiền mặt đợt 1")
+                .autoAllocate(false)
+                .allocations(List.of(
+                        com.quanlybanhang.dto.request.PaymentAllocationItemRequest.builder()
+                                .orderId(101L)
+                                .amount(new BigDecimal("6000000"))
+                                .note("Đối trừ DH-001")
+                                .build()
+                ))
+                .build();
+
+        DebtPaymentResponse res = dealerDebtService.recordPayment(req, "accountant1");
+
+        assertThat(res).isNotNull();
+        assertThat(res.getAmount()).isEqualByComparingTo(new BigDecimal("6000000"));
+        assertThat(res.getRecordedBy()).isEqualTo("Kế toán A");
+        assertThat(order1.getPaidAmount()).isEqualByComparingTo(new BigDecimal("6000000"));
+        assertThat(order1.getPaymentStatus()).isEqualTo("PARTIALLY_PAID");
+        verify(orderRepository).save(order1);
+        verify(debtPaymentRepository).save(org.mockito.ArgumentMatchers.any(DebtPayment.class));
+        verify(debtPaymentAllocationRepository).save(org.mockito.ArgumentMatchers.any(DebtPaymentAllocation.class));
+    }
+
+    @Test
+    @DisplayName("S7-02: Không cho thu vượt tổng công nợ còn lại của đại lý")
+    void recordPayment_exceedsRemainingDebt_throwsException() {
+        when(dealerRepository.findById(1L)).thenReturn(Optional.of(dealer));
+
+        Order order1 = Order.builder()
+                .id(101L)
+                .orderCode("DH-001")
+                .dealer(dealer)
+                .totalAmount(new BigDecimal("5000000"))
+                .paidAmount(BigDecimal.ZERO)
+                .status("RECORDED")
+                .paymentStatus("UNPAID")
+                .build();
+
+        when(orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(1L, OrderStatus.debtBearingStatuses()))
+                .thenReturn(List.of(order1));
+
+        com.quanlybanhang.dto.request.DebtPaymentRequest req = com.quanlybanhang.dto.request.DebtPaymentRequest.builder()
+                .dealerId(1L)
+                .amount(new BigDecimal("8000000")) // vượt 5tr
+                .build();
+
+        assertThatThrownBy(() -> dealerDebtService.recordPayment(req, "accountant1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("không được vượt quá tổng công nợ còn lại");
+    }
+
+    @Test
+    @DisplayName("S7-02: Lập bút toán điều chỉnh hoàn trả toàn bộ (REVERSAL)")
+    void adjustPayment_reversal_success() {
+        DebtPayment origPayment = DebtPayment.builder()
+                .id(20L)
+                .paymentCode("PT-20261022-0001")
+                .dealer(dealer)
+                .amount(new BigDecimal("5000000"))
+                .paymentMethod("CHUYEN_KHOAN")
+                .paymentType("PAYMENT")
+                .build();
+
+        Order order = Order.builder()
+                .id(101L)
+                .orderCode("DH-001")
+                .dealer(dealer)
+                .totalAmount(new BigDecimal("10000000"))
+                .paidAmount(new BigDecimal("5000000"))
+                .paymentStatus("PARTIALLY_PAID")
+                .status("RECORDED")
+                .build();
+
+        DebtPaymentAllocation alloc = DebtPaymentAllocation.builder()
+                .id(1L)
+                .payment(origPayment)
+                .order(order)
+                .amount(new BigDecimal("5000000"))
+                .orderCode("DH-001")
+                .build();
+
+        when(debtPaymentRepository.findById(20L)).thenReturn(Optional.of(origPayment));
+        when(debtPaymentAllocationRepository.findByPaymentIdOrderByCreatedAtAsc(20L)).thenReturn(List.of(alloc));
+
+        com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest adjReq = com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest.builder()
+                .reason("Khách chuyển nhầm, hoàn trả toàn bộ")
+                .adjustmentType("REVERSAL")
+                .recordedBy("Kế toán trưởng")
+                .build();
+
+        DebtPaymentResponse adjRes = dealerDebtService.adjustPayment(20L, adjReq, "accountant1");
+
+        assertThat(adjRes).isNotNull();
+        assertThat(adjRes.getPaymentType()).isEqualTo("ADJUSTMENT");
+        assertThat(adjRes.getAmount()).isEqualByComparingTo(new BigDecimal("-5000000"));
+        assertThat(order.getPaidAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(order.getPaymentStatus()).isEqualTo("UNPAID");
+        verify(orderRepository).save(order);
+        verify(debtPaymentRepository).save(org.mockito.ArgumentMatchers.any(DebtPayment.class));
+    }
+
+    @Test
+    @DisplayName("S7-02: Lập bút toán điều chỉnh giảm một phần (PARTIAL_REVERSAL)")
+    void adjustPayment_partialReversal_success() {
+        DebtPayment origPayment = DebtPayment.builder()
+                .id(20L)
+                .paymentCode("PT-20261022-0001")
+                .dealer(dealer)
+                .amount(new BigDecimal("5000000"))
+                .paymentMethod("CHUYEN_KHOAN")
+                .paymentType("PAYMENT")
+                .build();
+
+        Order order = Order.builder()
+                .id(101L)
+                .orderCode("DH-001")
+                .dealer(dealer)
+                .totalAmount(new BigDecimal("10000000"))
+                .paidAmount(new BigDecimal("5000000"))
+                .paymentStatus("PARTIALLY_PAID")
+                .status("RECORDED")
+                .build();
+
+        DebtPaymentAllocation alloc = DebtPaymentAllocation.builder()
+                .id(1L)
+                .payment(origPayment)
+                .order(order)
+                .amount(new BigDecimal("5000000"))
+                .orderCode("DH-001")
+                .build();
+
+        when(debtPaymentRepository.findById(20L)).thenReturn(Optional.of(origPayment));
+        when(debtPaymentAllocationRepository.findByPaymentIdOrderByCreatedAtAsc(20L)).thenReturn(List.of(alloc));
+
+        com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest adjReq = com.quanlybanhang.dto.request.DebtPaymentAdjustmentRequest.builder()
+                .reason("Điều chỉnh giảm 2.000.000")
+                .adjustmentType("PARTIAL_REVERSAL")
+                .adjustmentAmount(new BigDecimal("2000000"))
+                .build();
+
+        DebtPaymentResponse adjRes = dealerDebtService.adjustPayment(20L, adjReq, "accountant1");
+
+        assertThat(adjRes).isNotNull();
+        assertThat(adjRes.getAmount()).isEqualByComparingTo(new BigDecimal("-2000000"));
+        assertThat(order.getPaidAmount()).isEqualByComparingTo(new BigDecimal("3000000"));
+        assertThat(order.getPaymentStatus()).isEqualTo("PARTIALLY_PAID");
+        verify(orderRepository).save(order);
+    }
+
+    @Test
+    @DisplayName("S7-02: Xem trước đối trừ theo FIFO")
+    void previewPaymentAllocation_FIFO_calculates() {
+        when(dealerRepository.findById(1L)).thenReturn(Optional.of(dealer));
+
+        Order order1 = Order.builder()
+                .id(101L)
+                .orderCode("DH-001")
+                .dealer(dealer)
+                .totalAmount(new BigDecimal("4000000"))
+                .paidAmount(BigDecimal.ZERO)
+                .status("RECORDED")
+                .build();
+
+        Order order2 = Order.builder()
+                .id(102L)
+                .orderCode("DH-002")
+                .dealer(dealer)
+                .totalAmount(new BigDecimal("6000000"))
+                .paidAmount(BigDecimal.ZERO)
+                .status("RECORDED")
+                .build();
+
+        when(orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(1L, OrderStatus.debtBearingStatuses()))
+                .thenReturn(List.of(order1, order2));
+
+        var preview = dealerDebtService.previewPaymentAllocation(1L, new BigDecimal("7000000"));
+
+        assertThat(preview.getTotalAllocated()).isEqualByComparingTo(new BigDecimal("7000000"));
+        assertThat(preview.getAllocations()).hasSize(2);
+        assertThat(preview.getAllocations().get(0).getOrderCode()).isEqualTo("DH-001");
+        assertThat(preview.getAllocations().get(0).getAllocatedAmount()).isEqualByComparingTo(new BigDecimal("4000000"));
+        assertThat(preview.getAllocations().get(0).getOrderPaymentStatus()).isEqualTo("PAID");
+        assertThat(preview.getAllocations().get(1).getOrderCode()).isEqualTo("DH-002");
+        assertThat(preview.getAllocations().get(1).getAllocatedAmount()).isEqualByComparingTo(new BigDecimal("3000000"));
+        assertThat(preview.getAllocations().get(1).getOrderPaymentStatus()).isEqualTo("PARTIALLY_PAID");
+    }
+
+    @Test
+    @DisplayName("S7-02: Tra cứu danh sách hoá đơn của đại lý")
+    void getDealerInvoices_returnsList() {
+        when(dealerRepository.findById(1L)).thenReturn(Optional.of(dealer));
+
+        Order order1 = Order.builder()
+                .id(101L)
+                .orderCode("DH-001")
+                .dealer(dealer)
+                .totalAmount(new BigDecimal("5000000"))
+                .paidAmount(BigDecimal.ZERO)
+                .paymentStatus("UNPAID")
+                .status("RECORDED")
+                .recordedAt(LocalDateTime.now())
+                .build();
+
+        when(orderRepository.findByDealerIdAndStatusInOrderByRecordedAtAsc(1L, OrderStatus.debtBearingStatuses()))
+                .thenReturn(List.of(order1));
+        when(debtPaymentAllocationRepository.findByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(List.of());
+
+        var invoices = dealerDebtService.getDealerInvoices(1L, null);
+
+        assertThat(invoices).hasSize(1);
+        assertThat(invoices.get(0).getOrderCode()).isEqualTo("DH-001");
+        assertThat(invoices.get(0).getPaymentStatus()).isEqualTo("UNPAID");
+        assertThat(invoices.get(0).getRemainingAmount()).isEqualByComparingTo(new BigDecimal("5000000"));
     }
 }
 
