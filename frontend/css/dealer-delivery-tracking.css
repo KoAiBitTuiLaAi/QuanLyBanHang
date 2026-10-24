@@ -1,0 +1,27 @@
+/* Internal detail only. The existing shared app shell owns outer page geometry. */
+.dealer-order-detail { width:min(960px,calc(100vw - 32px)); }
+.dealer-delivery-tracking { border-block:1px solid var(--line); padding-block:18px; margin-bottom:20px; min-width:0; }
+.dealer-delivery-tracking__heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+.dealer-delivery-tracking h3 { font-size:1rem; color:var(--ink-900); }
+.dealer-delivery-tracking__readonly { color:var(--ink-600); font-size:.75rem; }
+.dealer-delivery-tracking__notice { color:var(--ink-600); font-size:.8rem; line-height:1.65; overflow-wrap:anywhere; }
+.dealer-delivery-tracking__warning { border-left:3px solid var(--amber); padding:10px 12px; margin-block:12px; background:var(--amber-soft); font-size:.82rem; line-height:1.6; overflow-wrap:anywhere; }
+.dealer-delivery-timeline { padding:0; margin-block:20px; list-style:none; }
+.dealer-delivery-timeline__step { display:grid; grid-template-columns:20px minmax(0,1fr); gap:14px; padding-bottom:20px; position:relative; min-width:0; }
+.dealer-delivery-timeline__step:not(:last-child)::before { content:''; position:absolute; width:2px; background:var(--line); top:15px; bottom:0; left:7px; }
+.dealer-delivery-timeline__marker { width:16px; height:16px; border:2px solid var(--ink-400); border-radius:50%; background:var(--white); margin-top:2px; z-index:1; }
+.dealer-delivery-timeline__step--recorded .dealer-delivery-timeline__marker { border-color:var(--teal-deep); background:var(--teal-soft); }
+.dealer-delivery-timeline__step--current .dealer-delivery-timeline__marker { border-color:var(--blue); background:var(--blue-soft); }
+.dealer-delivery-timeline__step strong { font-size:.9rem; color:var(--ink-900); }
+.dealer-delivery-timeline__state { color:var(--ink-600); font-size:.75rem; margin-left:10px; }
+.dealer-delivery-timeline__step--unknown strong { color:var(--ink-600); }
+.dealer-delivery-timeline time,.dealer-delivery-timeline small { display:block; margin-top:5px; font-size:.78rem; color:var(--ink-600); line-height:1.6; overflow-wrap:anywhere; }
+.dealer-delivery-tracking__lines-note { margin-block:10px; color:var(--ink-600); font-size:.8rem; line-height:1.65; }
+.dealer-order-detail__footer .btn { min-height:44px; }
+.dealer-order-detail__footer { flex-wrap:wrap; }
+.dealer-delivery-tracking :focus-visible { outline:2px solid var(--teal-deep); outline-offset:4px; }
+@media(max-width:560px) {
+  .dealer-delivery-timeline__state { display:block; margin:5px 0 0; }
+  .dealer-order-detail__footer .btn { flex:1 1 120px; }
+  .dealer-order-detail :is(.modal__header,.modal__body,.modal__footer) { padding-inline:14px; }
+}

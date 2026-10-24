@@ -721,3 +721,10 @@
 }
 
 .ord-table-actions [data-action="confirm-portal"] { width: auto; padding-inline: 10px; }
+.ord-delivery-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 12px; }
+.ord-delivery-fields label { display: grid; gap: 6px; }
+.ord-delivery-fields input, .ord-delivery-fields textarea { box-sizing: border-box; max-width: 100%; padding: 8px; border: 1px solid var(--line, #dbe3eb); border-radius: 6px; }
+.ord-delivery-table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; }
+.ord-delivery-table-wrap table { width: 100%; min-width: 540px; }
+.ord-delivery-table-wrap input[type="number"] { width: 110px; }
+#ord-delivery-error { color: var(--danger, #b42318); }

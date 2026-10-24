@@ -236,7 +236,7 @@ public class OrderController {
      * Cập nhật thông tin giao hàng và số lượng thực giao cho từng dòng hàng (S5-01).
      */
     @PutMapping("/{id}/delivery")
-    @PreAuthorize("hasAuthority('WAREHOUSE_EXPORT')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_EXPORT')")
     public ApiResponse updateOrderDelivery(
             @PathVariable Long id,
             @Valid @RequestBody com.quanlybanhang.dto.request.OrderDeliveryUpdateRequest request,

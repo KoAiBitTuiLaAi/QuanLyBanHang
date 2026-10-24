@@ -74,6 +74,8 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(s.state.calls.filter(c=>c.method==='PATCH').length,before+1);
     for (const width of [1440,768,390]) {
       await s.page.setViewportSize({width,height:950});
+      // Chrome applies viewport/media-query changes on the next rendering frame.
+      await s.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       assert.ok(await s.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`approval overflow ${width}`);
     }
     s.state.delayDetail=true;
@@ -96,6 +98,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.ok(!c.state.calls.some(call=>call.endpoint==='/orders'&&call.method==='GET'),'No partial order-list calculation or extra ORDER_VIEW dependency');
     for (const width of [1440,768,390]) {
       await c.page.setViewportSize({width,height:950});
+      await c.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       assert.ok(await c.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`builder overflow ${width}`);
     }
     await c.context.close(); assert.deepEqual(errors,[]); assert.deepEqual(unexpected,[]);

@@ -41,6 +41,7 @@ class OrderReservationIntegrationTest {
     @Autowired ProductRepository products;
     @Autowired CategoryRepository categories;
     @Autowired OrderRepository orders;
+    @Autowired WarehouseVoucherRepository vouchers;
     @Autowired UserRepository users;
     @Autowired RoleRepository roles;
     @Autowired PasswordEncoder passwords;
@@ -186,6 +187,108 @@ class OrderReservationIntegrationTest {
         long id = pending(warehouse, "30", "1", false);
         call(HttpMethod.PUT, path(id) + "/approve?reservationHours=0", token, null, 400);
         assertStock(first, "100", "0"); assertThat(detail(id).get("status").asText()).isEqualTo("PENDING_APPROVAL");
+    }
+
+    @Test void directExportCannotConsumeAnotherOrdersReservationIncludingForAdmin() {
+        approve(pending(warehouse, "80", "1", false), token, 200);
+        var body = Map.of("warehouseId", warehouse.getId(), "productId", first.getId(), "quantity", 50, "unit", "lon");
+        call(HttpMethod.POST, "/api/warehouse/export", token, body, 400);
+        call(HttpMethod.POST, "/api/warehouse/export", adminToken, body, 400);
+        assertStock(first, "100", "80");
+        call(HttpMethod.POST, "/api/warehouse/export", token,
+                Map.of("warehouseId", warehouse.getId(), "productId", first.getId(), "quantity", 20, "unit", "lon"), 200);
+        assertStock(first, "80", "80");
+    }
+
+    @Test void genericAdjustmentCannotReduceStockBelowReservationsAndRevokeTakesEffectImmediately() {
+        approve(pending(warehouse, "80", "1", false), token, 200);
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER, Set.of(Permission.WAREHOUSE_ADJUST));
+        var body = Map.of("warehouseId", warehouse.getId(), "productId", first.getId(), "quantity", 10, "unit", "lon");
+        call(HttpMethod.POST, "/api/warehouse/adjust", token, body, 400);
+        call(HttpMethod.POST, "/api/warehouse/adjust", adminToken, body, 400);
+        assertStock(first, "100", "80");
+        var boundary = Map.of("warehouseId", warehouse.getId(), "productId", first.getId(), "quantity", 80, "unit", "lon");
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER, Set.of());
+        call(HttpMethod.POST, "/api/warehouse/adjust", token, boundary, 403);
+        assertStock(first, "100", "80");
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER, Set.of(Permission.WAREHOUSE_ADJUST));
+        call(HttpMethod.POST, "/api/warehouse/adjust", token, boundary, 200);
+        assertStock(first, "80", "80");
+    }
+
+    @Test void genericAdjustmentCannotWriteOutsideAssignedWarehouse() {
+        inventories.save(WarehouseInventory.builder().warehouse(outside).product(first).baseUnit("lon")
+                .baseQuantity(new BigDecimal("100")).build());
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER, Set.of(Permission.WAREHOUSE_ADJUST));
+        var body = Map.of("warehouseId", outside.getId(), "productId", first.getId(), "quantity", 10, "unit", "lon");
+        call(HttpMethod.POST, "/api/warehouse/adjust", token, body, 403);
+        assertThat(inventories.findByWarehouseIdAndProductId(outside.getId(), first.getId()).orElseThrow().getBaseQuantity())
+                .isEqualByComparingTo("100");
+        call(HttpMethod.POST, "/api/warehouse/adjust", adminToken, body, 200);
+    }
+
+    @Test void deliveryValidatesOwnedUniqueLinesAndQuantityAndPersistsActualShortage() {
+        long id = pending(warehouse, "30", "1", false);
+        approve(id, token, 200);
+        call(HttpMethod.PUT, path(id) + "/status", token, Map.of("status", "PICKING"), 200);
+        call(HttpMethod.PUT, path(id) + "/status", token, Map.of("status", "EXPORTED"), 200);
+        assertThat(detail(id).get("canUpdateDelivery").asBoolean()).isTrue();
+        long itemId = detail(id).get("items").get(0).get("id").asLong();
+        for (Object invalid : List.of(
+                List.of(Map.of("orderItemId", Long.MAX_VALUE, "deliveredQuantity", 20)),
+                List.of(Map.of("orderItemId", itemId, "deliveredQuantity", 31)),
+                List.of(Map.of("orderItemId", itemId, "deliveredQuantity", -1)),
+                List.of(Map.of("orderItemId", itemId, "deliveredQuantity", 0.00001)),
+                List.of(Map.of("orderItemId", itemId, "deliveredQuantity", 20), Map.of("orderItemId", itemId, "deliveredQuantity", 10)))) {
+            call(HttpMethod.PUT, path(id) + "/delivery", token, Map.of("items", invalid), 400);
+            assertThat(detail(id).get("status").asText()).isEqualTo("EXPORTED");
+        }
+        var body = Map.of("actualDeliveryDate", "2026-10-22", "deliveryNote", "Giao thiếu",
+                "items", List.of(Map.of("orderItemId", itemId, "deliveredQuantity", 20, "note", "Thiếu 10")));
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER, Set.of(Permission.ORDER_VIEW));
+        call(HttpMethod.PUT, path(id) + "/delivery", token, body, 403);
+        matrix.updateRolePermissions(ERole.ROLE_VIEWER, Set.of(Permission.ORDER_VIEW, Permission.WAREHOUSE_EXPORT));
+        JsonNode saved = call(HttpMethod.PUT, path(id) + "/delivery", token, body, 200).get("data");
+        assertThat(saved.get("status").asText()).isEqualTo("DELIVERED");
+        assertThat(saved.get("hasShortage").asBoolean()).isTrue();
+        assertThat(saved.get("items").get(0).get("deliveredQuantity").decimalValue()).isEqualByComparingTo("20");
+        assertThat(saved.get("actualDeliveryDate").asText()).isEqualTo("2026-10-22");
+        assertStock(first, "70", "0");
+    }
+
+    @Test void failedSecondExportLineRollsBackFirstLineAndDoesNotCreateVoucher() {
+        approve(pending(warehouse, "80", "1", false), token, 200);
+        long before = vouchers.count();
+        call(HttpMethod.POST, "/api/warehouse/export", token, Map.of("warehouseId", warehouse.getId(),
+                "items", List.of(Map.of("productId", second.getId(), "quantity", 10, "unit", "lon"),
+                                 Map.of("productId", first.getId(), "quantity", 50, "unit", "lon"))), 400);
+        assertStock(first, "100", "80"); assertStock(second, "100", "0");
+        assertThat(vouchers.count()).isEqualTo(before);
+    }
+
+    @Test void approvalRacingDirectExportCannotCreateStockBelowReservations() throws Exception {
+        long id = pending(warehouse, "80", "1", false);
+        assertThat(race(() -> exchange(HttpMethod.PUT, path(id) + "/approve", token, null).getStatusCode().value(),
+                () -> exchange(HttpMethod.POST, "/api/warehouse/export", token,
+                        Map.of("warehouseId", warehouse.getId(), "productId", first.getId(), "quantity", 50, "unit", "lon"))
+                        .getStatusCode().value())).containsExactlyInAnyOrder(200, 400);
+        var row = inventories.findByWarehouseIdAndProductId(warehouse.getId(), first.getId()).orElseThrow();
+        assertThat(row.getBaseQuantity()).isGreaterThanOrEqualTo(row.getReservedQuantity());
+    }
+
+    @Test void deliveryPermissionDoesNotBypassWarehouseScopeAndAdminRetainsCapability() {
+        inventories.save(WarehouseInventory.builder().warehouse(outside).product(first).baseUnit("lon")
+                .baseQuantity(new BigDecimal("100")).build());
+        long id = pending(outside, "30", "1", false);
+        approve(id, adminToken, 200);
+        call(HttpMethod.PUT, path(id) + "/status", adminToken, Map.of("status", "PICKING"), 200);
+        call(HttpMethod.PUT, path(id) + "/status", adminToken, Map.of("status", "EXPORTED"), 200);
+        long line = detail(id).get("items").get(0).get("id").asLong();
+        var body = Map.of("items", List.of(Map.of("orderItemId", line, "deliveredQuantity", 20)));
+        call(HttpMethod.PUT, path(id) + "/delivery", token, body, 403);
+        assertThat(detail(id).get("status").asText()).isEqualTo("EXPORTED");
+        matrix.updateRolePermissions(ERole.ROLE_ADMIN, Set.of());
+        call(HttpMethod.PUT, path(id) + "/delivery", adminToken, body, 200);
     }
 
     private long pending(Warehouse target, String quantity, String factor, boolean twoSkus) {

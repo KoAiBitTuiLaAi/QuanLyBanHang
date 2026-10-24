@@ -1,6 +1,8 @@
 package com.quanlybanhang.dto.request;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.time.LocalDate;
@@ -30,11 +32,13 @@ public class OrderDeliveryUpdateRequest {
     /**
      * Ghi chú giao hàng tổng quan.
      */
+    @Size(max = 500)
     private String deliveryNote;
 
     /**
      * Danh sách số lượng thực giao cho từng dòng hàng (S5-01).
      */
     @Valid
-    private List<OrderItemDeliveryRequest> items;
+    @Size(max = 500)
+    private List<@NotNull OrderItemDeliveryRequest> items;
 }

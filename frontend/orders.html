@@ -381,6 +381,24 @@
             </div>
           </div>
 
+          <section id="ord-delivery-box" class="ord-lifecycle-box" aria-labelledby="ord-delivery-title" hidden>
+            <h3 id="ord-delivery-title">Số lượng thực giao</h3>
+            <form id="ord-delivery-form">
+              <fieldset id="ord-delivery-fields" class="ord-delivery-fields">
+                <label>Ngày giao thực tế <input id="ord-actual-delivery-date" type="date" required></label>
+                <label>Ghi chú giao hàng <textarea id="ord-delivery-note" maxlength="500" rows="2"></textarea></label>
+                <div class="ord-delivery-table-wrap">
+                  <table class="ord-items-table"><thead><tr><th>Sản phẩm / đơn vị</th><th>Đặt</th><th>Thực giao</th><th>Ghi chú dòng</th></tr></thead><tbody id="ord-delivery-rows"></tbody></table>
+                </div>
+              </fieldset>
+              <p id="ord-delivery-error" role="alert" hidden></p>
+              <div id="ord-delivery-actions" class="ord-detail-actions" hidden>
+                <button id="btn-delivery-full" type="button" class="btn btn--secondary">Điền giao đủ</button>
+                <button id="btn-save-delivery" type="submit" class="btn btn--primary">Lưu thực giao</button>
+              </div>
+            </form>
+          </section>
+
           <!-- Approval details if available -->
           <div id="ord-approval-box" class="ord-approval-box" hidden>
             <div class="ord-approval-box__title">Thông tin duyệt đơn</div>

@@ -201,7 +201,10 @@
   }
 
   /* ── 7. Data Loading ───────────────────────────────────────── */
+  let dataVersion = 0;
   async function loadInitialData() {
+    const version = ++dataVersion;
+    if (!Auth.hasPermission('ORDER_VIEW')) return;
     try {
       // 1. Fetch dealers options & full dealers list in parallel
       const [optRes, dlrRes, ordRes] = await Promise.all([
@@ -209,16 +212,20 @@
         Auth.apiFetch('/dealers?page=0&size=500').catch(() => null),
         Auth.apiFetch('/orders').catch(() => null),
       ]);
+      const [optJson, dlrJson, ordJson] = await Promise.all([
+        optRes?.ok ? optRes.json() : null,
+        dlrRes?.ok ? dlrRes.json() : null,
+        ordRes?.ok ? ordRes.json() : null,
+      ]);
+      if (version !== dataVersion || !Auth.hasPermission('ORDER_VIEW')) return;
 
       if (optRes && optRes.ok) {
-        const optJson = await optRes.json();
         if (optJson.success && optJson.data) {
           state.options = optJson.data;
         }
       }
 
       if (dlrRes && dlrRes.ok) {
-        const dlrJson = await dlrRes.json();
         const dealers = Array.isArray(dlrJson.data)
           ? dlrJson.data
           : dlrJson.data?.content || [];
@@ -229,7 +236,6 @@
       }
 
       if (ordRes && ordRes.ok) {
-        const ordJson = await ordRes.json();
         state.allOrders = Array.isArray(ordJson.data) ? ordJson.data : [];
       } else {
         throw new Error('Không thể tải danh sách đơn hàng');
@@ -244,6 +250,7 @@
       // 4. Apply initial filters & render
       applyFilters();
     } catch (err) {
+      if (version !== dataVersion || !Auth.hasPermission('ORDER_VIEW')) return;
       console.error(err);
       const tbody = $('ord-tbody');
       tbody.innerHTML = `
@@ -707,7 +714,82 @@
   }
 
   /* ── 12. Modal: Order Detail ───────────────────────────────── */
+  let detailVersion = 0;
+  let deliveryBusy = false;
+
+  function canEditDelivery(order) {
+    return Auth.hasPermission('ORDER_VIEW') && Auth.hasPermission('WAREHOUSE_EXPORT') && order?.canUpdateDelivery === true;
+  }
+
+  function renderDelivery(order) {
+    const box = $('ord-delivery-box');
+    if (!box) return;
+    box.hidden = !['EXPORTED', 'SHIPPED', 'DELIVERED', 'CLOSED', 'COMPLETED'].includes(String(order.status).toUpperCase());
+    const editable = canEditDelivery(order);
+    $('ord-delivery-fields').disabled = !editable || deliveryBusy;
+    $('ord-delivery-actions').hidden = !editable;
+    $('btn-save-delivery').disabled = deliveryBusy;
+    $('ord-delivery-error').hidden = true;
+    $('ord-actual-delivery-date').value = order.actualDeliveryDate || '';
+    $('ord-delivery-note').value = order.deliveryNote || '';
+    $('ord-delivery-rows').innerHTML = (order.items || []).map((item) => `<tr>
+      <td>${escHtml(item.productName || item.productCode)} / ${escHtml(item.unit || item.baseUnit || '')}</td>
+      <td>${escHtml(item.quantity)}</td>
+      <td><input aria-label="Thực giao ${escHtml(item.productName || item.productCode)}" data-delivery-qty="${escHtml(item.id)}" type="number" min="0" max="${escHtml(item.quantity)}" step="0.0001" required value="${escHtml(item.deliveredQuantity ?? '')}" placeholder="Chưa cập nhật"></td>
+      <td><input aria-label="Ghi chú thực giao" data-delivery-note="${escHtml(item.id)}" maxlength="500" value="${escHtml(item.deliveryNote || '')}"></td>
+    </tr>`).join('');
+  }
+
+  $('btn-delivery-full')?.addEventListener('click', () => {
+    if (!canEditDelivery(state.activeOrder) || deliveryBusy) return;
+    for (const item of state.activeOrder.items || []) {
+      const input = $('ord-delivery-rows').querySelector(`[data-delivery-qty="${item.id}"]`);
+      if (input) input.value = item.quantity;
+    }
+  });
+
+  $('ord-delivery-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const order = state.activeOrder;
+    if (!canEditDelivery(order) || deliveryBusy || !$('ord-delivery-form').reportValidity()) return;
+    const version = detailVersion;
+    const items = (order.items || []).map((item) => ({
+      orderItemId: item.id,
+      deliveredQuantity: Number($('ord-delivery-rows').querySelector(`[data-delivery-qty="${item.id}"]`).value),
+      note: $('ord-delivery-rows').querySelector(`[data-delivery-note="${item.id}"]`).value.trim(),
+    }));
+    deliveryBusy = true;
+    $('ord-delivery-fields').disabled = true;
+    $('btn-save-delivery').disabled = true;
+    $('ord-delivery-error').hidden = true;
+    try {
+      const res = await Auth.apiFetch(`/orders/${order.id}/delivery`, {
+        method: 'PUT', body: JSON.stringify({ status: 'DELIVERED', items,
+          actualDeliveryDate: $('ord-actual-delivery-date').value,
+          deliveryNote: $('ord-delivery-note').value.trim() }),
+      });
+      const result = await res.json();
+      if (version !== detailVersion || !canEditDelivery(state.activeOrder)) return;
+      if (!res.ok || !result.success) throw new Error(result.message || 'Không lưu được số lượng thực giao.');
+      showToast('Đã lưu số lượng thực giao.', 'success');
+      await loadInitialData();
+      if (version === detailVersion) await openOrderDetailModal(order.id);
+    } catch (error) {
+      if (version !== detailVersion || !canEditDelivery(state.activeOrder)) return;
+      $('ord-delivery-error').textContent = error.message;
+      $('ord-delivery-error').hidden = false;
+    } finally {
+      deliveryBusy = false;
+      $('ord-delivery-fields').disabled = !canEditDelivery(state.activeOrder);
+      $('btn-save-delivery').disabled = !canEditDelivery(state.activeOrder);
+    }
+  });
+
   async function openOrderDetailModal(orderId) {
+    if (!Auth.hasPermission('ORDER_VIEW')) return;
+    const version = ++detailVersion;
+    state.activeOrder = null;
+    if ($('ord-delivery-box')) $('ord-delivery-box').hidden = true;
     const modal = $('order-detail-modal');
     modal.hidden = false;
 
@@ -734,17 +816,21 @@
     try {
       const res = await Auth.apiFetch(`/orders/${orderId}`);
       const json = await res.json();
+      if (version !== detailVersion || !Auth.hasPermission('ORDER_VIEW')) return;
       if (!res.ok || !json.success || !json.data) {
         throw new Error(json.message || 'Không thể tải chi tiết đơn hàng');
       }
       const order = json.data;
       state.activeOrder = order;
+      renderDelivery(order);
 
       const dealer = order.dealerId != null ? state.dealersMap.get(order.dealerId) : null;
 
       $('ord-detail-title').textContent = `Đơn hàng ${order.orderCode || '#' + order.id}`;
       $('ord-detail-sub').textContent = `Tạo lúc ${formatDate(order.createdAt)} · Bởi ${order.createdBy || 'Hệ thống'}`;
-      $('ord-detail-status-badge').innerHTML = renderStatusBadge(order.status);
+      $('ord-detail-status-badge').innerHTML = order.backordered
+        ? '<span class="order-status-badge order-status-badge--draft">Đã xuất một phần · Còn nợ hàng</span>'
+        : renderStatusBadge(order.status);
 
       // Warning banners
       if (order.dealerLockWarning) {
@@ -809,6 +895,7 @@
       }
 
       await loadLifecycleTracking(orderId);
+      if (version !== detailVersion || !Auth.hasPermission('ORDER_VIEW')) return;
       $('btn-detail-tracking').disabled = false;
 
       // Actions in modal
@@ -824,9 +911,10 @@
       }
       $('btn-detail-confirm-portal').hidden = CAN_APPROVE || !Auth.hasPermission('ORDER_CONFIRM') || !order.canConfirmPortalOrder;
       const next = $('btn-detail-next-status');
-      next.hidden = !Auth.hasPermission('WAREHOUSE_EXPORT') || !order.nextLifecycleStatus;
-      next.textContent = order.nextLifecycleStatus ? `Chuyển sang ${lifecycleStatusLabel(order.nextLifecycleStatus)}` : 'Chuyển bước tiếp theo';
+      next.hidden = !Auth.hasPermission('WAREHOUSE_EXPORT') || (!order.nextLifecycleStatus && !order.backordered);
+      next.textContent = order.backordered ? 'Xuất bù hàng còn nợ' : order.nextLifecycleStatus === 'EXPORTED' ? 'Lập phiếu xuất kho' : order.nextLifecycleStatus ? `Chuyển sang ${lifecycleStatusLabel(order.nextLifecycleStatus)}` : 'Chuyển bước tiếp theo';
     } catch (e) {
+      if (version !== detailVersion) return;
       $('ord-detail-title').textContent = 'Lỗi xem chi tiết đơn';
       $('ord-items-tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:16px;">${escHtml(e.message)}</td></tr>`;
     }
@@ -870,8 +958,10 @@
   }
 
   async function loadLifecycleTracking(orderId) {
+    const version = detailVersion;
     const res = await Auth.apiFetch(`/orders/${orderId}/tracking`);
     const json = await res.json().catch(() => null);
+    if (version !== detailVersion || !Auth.hasPermission('ORDER_VIEW') || String(state.activeOrder?.id) !== String(orderId)) return;
     if (!res.ok || !json?.success || !json.data) {
       throw new Error(json?.message || 'Không thể tải vòng đời đơn hàng');
     }
@@ -879,8 +969,15 @@
   }
 
   function closeOrderDetailModal() {
+    detailVersion++;
     $('order-detail-modal').hidden = true;
     state.activeOrder = null;
+    if ($('ord-delivery-box')) {
+      $('ord-delivery-box').hidden = true;
+      $('ord-delivery-rows').innerHTML = '';
+      $('ord-delivery-note').value = '';
+      $('ord-actual-delivery-date').value = '';
+    }
   }
 
   /* ── 13. Actions: Approve / Reject / Cancel ────────────────── */
@@ -899,7 +996,18 @@
 
   async function advanceLifecycle() {
     const order = state.activeOrder;
-    if (!Auth.hasPermission('WAREHOUSE_EXPORT') || !order?.nextLifecycleStatus) return;
+    if (!Auth.hasPermission('WAREHOUSE_EXPORT') || !order) return;
+    if (order.backordered || order.nextLifecycleStatus === 'EXPORTED') {
+      location.assign('/warehouse/order-shipments?orderId=' + encodeURIComponent(order.id)); return;
+    }
+    if (!order.nextLifecycleStatus) return;
+    if (order.nextLifecycleStatus === 'DELIVERED') {
+      if (canEditDelivery(order)) {
+        $('ord-delivery-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        $('ord-actual-delivery-date').focus();
+      }
+      return;
+    }
     if (!confirm(`Chuyển đơn ${order.orderCode} sang ${lifecycleStatusLabel(order.nextLifecycleStatus)}?`)) return;
     const button = $('btn-detail-next-status');
     button.disabled = true;
@@ -1229,9 +1337,16 @@
   setupEventListeners();
   loadInitialData();
   window.addEventListener("auth:permissions-changed", () => {
+    dataVersion++;
+    state.allOrders = [];
+    state.scopedOrders = [];
+    state.filteredOrders = [];
+    state.dealersMap.clear();
+    state.dealersList = [];
+    state.options = { territories: [], assignedUsers: [] };
     CAN_APPROVE = Auth.hasPermission("ORDER_APPROVE");
     CAN_CANCEL = Auth.hasPermission("ORDER_CANCEL");
-    renderTable();
+    applyFilters();
     if (!CAN_CANCEL) { closeCancelModal(); $("btn-detail-cancel").hidden = true; }
     if (!CAN_APPROVE) {
       closeRejectModal();
