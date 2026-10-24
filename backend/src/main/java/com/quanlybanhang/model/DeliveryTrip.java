@@ -149,13 +149,13 @@ public class DeliveryTrip {
     }
 
     /**
-     * Số điểm còn lại chưa giao xong (PENDING + FAILED).
+     * Số điểm chưa xử lý xong (PENDING + FAILED, loại điểm đã xác nhận trả kho).
      * Theo S6-07: Hàng chưa giao được vẫn thuộc trách nhiệm của chuyến, không tự về kho.
      */
     public long getRemainingPoints() {
         if (this.stops == null) return 0L;
         return this.stops.stream()
-                .filter(s -> s.getStatus() != DeliveryStopStatus.DELIVERED)
+                .filter(s -> s.getStatus() != DeliveryStopStatus.DELIVERED && !Boolean.TRUE.equals(s.getReturnedToWarehouse()))
                 .count();
     }
 
@@ -205,11 +205,12 @@ public class DeliveryTrip {
      * Bao gồm:
      * - Các điểm chờ giao (PENDING)
      * - Các điểm chưa giao được (FAILED) vì hàng chưa giao được vẫn thuộc trách nhiệm chuyến, không tự về kho.
+     * Chỉ loại ra khi đã có xác nhận returnedToWarehouse, không suy từ trạng thái chuyến.
      */
     public BigDecimal getRemainingValue() {
         if (this.stops == null || this.stops.isEmpty()) return BigDecimal.ZERO;
         return this.stops.stream()
-                .filter(s -> s.getStatus() != DeliveryStopStatus.DELIVERED)
+                .filter(s -> s.getStatus() != DeliveryStopStatus.DELIVERED && !Boolean.TRUE.equals(s.getReturnedToWarehouse()))
                 .map(s -> s.getDeliveryAmount() != null ? s.getDeliveryAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }

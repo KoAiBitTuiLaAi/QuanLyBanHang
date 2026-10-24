@@ -40,6 +40,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("InvoiceControllerTest - Kiểm thử REST Endpoints Hóa đơn bán hàng (S7-01)")
 class InvoiceControllerTest {
 
+    @Test
+    void adjustmentPdfMustBelongToRequestedInvoice() throws Exception {
+        when(invoiceService.getAdjustments(1L)).thenReturn(List.of(
+                InvoiceAdjustmentResponse.builder().id(11L).invoiceId(1L).build()));
+        mockMvc.perform(get("/api/invoices/1/adjustments/22/pdf"))
+                .andExpect(status().isBadRequest());
+        verify(invoicePdfService, never()).generateAdjustmentPdf(anyLong(), anyString());
+        when(invoicePdfService.generateAdjustmentPdf(eq(11L), anyString()))
+                .thenReturn("%PDF-test".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        mockMvc.perform(get("/api/invoices/1/adjustments/11/pdf"))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF));
+    }
+
     @Autowired
     private MockMvc mockMvc;
 

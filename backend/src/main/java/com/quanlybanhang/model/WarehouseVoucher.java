@@ -32,6 +32,16 @@ public class WarehouseVoucher {
     @Builder.Default
     private Long version = 0L;
 
+    /** S6-05 links; nullable for existing standalone warehouse documents. */
+    @Column(name = "shipment_order_id")
+    private Long shipmentOrderId;
+
+    @Column(name = "shipment_request_key", length = 36, unique = true)
+    private String shipmentRequestKey;
+
+    @Column(name = "shipment_request_hash", length = 64)
+    private String shipmentRequestHash;
+
     @Column(name = "voucher_code", nullable = false, length = 50, unique = true)
     private String voucherCode;
 
