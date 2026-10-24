@@ -97,6 +97,7 @@
 - S8-07: Chỉ backend → `/api/reports/inventory-turnover` (giá trị tồn theo kho và nhóm hàng, số ngày tồn bình quân từng SKU, hàng chậm luân chuyển đang chôn vốn), `/api/reports/inventory-turnover/by-warehouse`, `/api/reports/inventory-turnover/by-category`, `/api/reports/inventory-turnover/skus`, `/api/reports/inventory-turnover/slow-moving`, `/api/reports/inventory-turnover/export` (xuất Excel `.xlsx`).
 - S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel (ba cột tồn); tên tệp hiện là `So-ton-kho.xlsx`, chưa kèm mã kho/ngày.
 - S8-09: Một phần (frontend): Báo cáo → Công nợ theo tuổi nợ → Tổng hợp nhóm tuổi nợ/nhân viên, ưu tiên đại lý và Excel; chờ backend để tải dữ liệu/xuất file thật.
+- S8-10: Tài chính → Sổ chi tiết công nợ → Chọn đại lý và khoảng thời gian, xem phát sinh tăng giảm kèm số dư lũy kế, xuất PDF và Excel.
 
 ## Nguồn đối chiếu
 
