@@ -431,6 +431,8 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                     .discountAmount(inv.getDiscountAmount())
                     .totalAmount(inv.getTotalAmount())
                     .adjustedTotalAmount(inv.getAdjustedTotalAmount())
+                    .effectiveAmount(effectiveAmount)
+                    .isPaid(inv.getStatus() != InvoiceStatus.CANCELLED && remainingAmount.signum() == 0)
                     .paidAmount(paidAmount)
                     .remainingAmount(remainingAmount)
                     .paymentStatus(paymentStatus)
@@ -1451,13 +1453,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
 
     private String generateAdjustmentCode(LocalDate date) {
         String prefix = "BTDC-" + date.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-";
-        long count = debtPaymentRepository.countByPaymentCodeStartingWith(prefix) + 1;
-        String code = String.format("%s%04d", prefix, count);
-        while (debtPaymentRepository.existsByPaymentCode(code)) {
-            count++;
-            code = String.format("%s%04d", prefix, count);
-        }
-        return code;
+        return prefix + java.util.UUID.randomUUID().toString().replace("-", "").toUpperCase(java.util.Locale.ROOT);
     }
 
     private DealerResponse mapDealerToResponse(Dealer dealer, DealerDebtResponse debtInfo) {
@@ -1509,13 +1505,7 @@ public class DealerDebtServiceImpl implements DealerDebtService {
 
     private String generatePaymentCode(LocalDate date) {
         String prefix = "PT-" + date.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-";
-        long count = debtPaymentRepository.countByPaymentDate(date) + 1;
-        String code = String.format("%s%04d", prefix, count);
-        while (debtPaymentRepository.existsByPaymentCode(code)) {
-            count++;
-            code = String.format("%s%04d", prefix, count);
-        }
-        return code;
+        return prefix + java.util.UUID.randomUUID().toString().replace("-", "").toUpperCase(java.util.Locale.ROOT);
     }
 
     private boolean isSalesOnlyUser() {

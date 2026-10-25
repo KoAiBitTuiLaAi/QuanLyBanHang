@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phân tuyến giao hàng | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/warehouse-delivery-routes.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content>
+    <main class="content routes-page">
+      <header class="routes-heading">
+        <div>
+          <h1>Phân tuyến giao hàng</h1>
+          <p>Gom nhiều phiếu xuất theo khu vực vào một chuyến, sắp xếp lộ trình vòng chạy, gán tài xế và in danh sách điểm giao.</p>
+        </div>
+        <div class="routes-actions">
+          <button id="routes-reload-btn" class="btn btn--secondary" type="button">Tải lại</button>
+          <a href="/warehouse/delivery-trips" class="btn btn--secondary">Theo dõi chuyến giao</a>
+        </div>
+      </header>
+
+      <p class="routes-note">Xe chạy một vòng khép kín giao được nhiều điểm thay vì đi lẻ từng đơn. Danh sách điểm giao in kèm địa chỉ và số điện thoại người nhận để tài xế đối soát thuận tiện.</p>
+
+      <p id="routes-error" class="routes-error" role="alert" hidden></p>
+      <p id="routes-success" class="routes-success" role="status" hidden></p>
+      <p id="routes-access-denied" class="routes-error" role="alert" hidden>
+        Bạn cần quyền <strong>WAREHOUSE_VIEW</strong> hoặc <strong>WAREHOUSE_EXPORT</strong> từ ma trận phân quyền để truy cập phân tuyến giao hàng. Quản trị viên (ROLE_ADMIN) luôn có quyền.
+      </p>
+
+      <section id="routes-workspace">
+        <!-- ── BỘ LỌC KHO & KHU VỰC ── -->
+        <section class="routes-panel">
+          <div class="routes-filter-bar">
+            <div class="routes-filter-group">
+              <label for="routes-warehouse-select">Kho xuất phát <span class="req">*</span></label>
+              <select id="routes-warehouse-select" aria-label="Chọn kho xuất phát">
+                <option value="">Đang tải danh sách kho…</option>
+              </select>
+            </div>
+            <div class="routes-filter-group">
+              <label for="routes-area-select">Lọc theo khu vực giao hàng</label>
+              <select id="routes-area-select" aria-label="Lọc theo khu vực">
+                <option value="">Tất cả khu vực</option>
+              </select>
+            </div>
+            <div class="routes-filter-group">
+              <label for="routes-search-input">Tìm kiếm phiếu xuất / khách hàng / địa chỉ</label>
+              <input id="routes-search-input" type="search" placeholder="Nhập mã đơn, tên khách, số điện thoại, địa chỉ…" maxlength="150">
+            </div>
+            <div class="routes-actions" style="margin-bottom: 2px;">
+              <button id="routes-select-all-area-btn" class="btn btn--secondary" type="button">Gom tất cả đơn khu vực này</button>
+              <button id="routes-clear-filter-btn" class="btn btn--secondary" type="button">Bỏ lọc</button>
+            </div>
+          </div>
+
+          <div id="routes-area-chips-container" class="routes-area-chips" aria-label="Danh sách khu vực nhanh"></div>
+        </section>
+
+        <!-- ── BỐ CỤC 2 CỘT: DANH SÁCH CHỜ GOM & LỘ TRÌNH CHUYẾN ── -->
+        <div class="routes-grid">
+          <!-- Cột 1: Danh sách phiếu xuất chờ gom -->
+          <section class="routes-subpanel" aria-labelledby="eligible-orders-title">
+            <div class="routes-subpanel-header">
+              <div>
+                <h2 id="eligible-orders-title" style="font-size: 1.1rem; margin: 0;">Phiếu xuất chờ giao</h2>
+                <p class="routes-muted" style="margin: 4px 0 0 0; font-size: 0.85rem;">Các đơn hàng đã xuất kho sẵn sàng điều phối</p>
+              </div>
+              <span id="routes-eligible-count" class="routes-badge">0 phiếu</span>
+            </div>
+
+            <div id="routes-eligible-loading" class="routes-muted" style="text-align: center; padding: 24px;">Đang tải danh sách phiếu xuất…</div>
+            <div id="routes-eligible-empty" class="routes-muted" style="text-align: center; padding: 32px;" hidden>Không có phiếu xuất nào chờ giao ở kho này.</div>
+
+            <div id="routes-eligible-list" class="routes-orders-list" aria-live="polite"></div>
+          </section>
+
+          <!-- Cột 2: Lộ trình chuyến giao & Gán tài xế -->
+          <section class="routes-subpanel" aria-labelledby="staged-route-title">
+            <div class="routes-staged-header">
+              <div class="routes-subpanel-header" style="border: none; padding: 0; margin-bottom: 8px;">
+                <h2 id="staged-route-title" style="font-size: 1.1rem; margin: 0;">Lộ trình chuyến giao</h2>
+                <span id="routes-staged-badge" class="routes-badge">0 điểm dừng</span>
+              </div>
+              <p class="routes-muted" style="font-size: 0.85rem; margin: 0;">Sắp xếp thứ tự giao để xe chạy vòng thuận tiện nhất.</p>
+
+              <dl class="routes-kpi-row">
+                <div class="routes-kpi-item">
+                  <dt>Số điểm giao</dt>
+                  <dd id="routes-kpi-stops">0</dd>
+                </div>
+                <div class="routes-kpi-item">
+                  <dt>Tổng tiền hàng trên xe</dt>
+                  <dd id="routes-kpi-amount">0 ₫</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div id="routes-staged-empty" class="routes-muted" style="text-align: center; padding: 24px; border: 1px dashed var(--line); border-radius: var(--radius-sm); margin-bottom: 16px;">
+              Chưa có điểm giao nào được chọn.<br>Tích chọn các phiếu xuất ở cột bên trái để gom vào chuyến.
+            </div>
+
+            <div id="routes-staged-stops" class="routes-stops-container" aria-live="polite"></div>
+
+            <!-- Form gán tài xế và phương tiện -->
+            <form id="routes-dispatch-form" class="routes-form-section">
+              <h3 style="font-size: 1rem; margin-bottom: 12px;">Gán tài xế &amp; Phương tiện vận chuyển</h3>
+              
+              <div class="routes-form-grid">
+                <label>
+                  Tên tài xế <span class="req">*</span>
+                  <input id="route-driver-name" type="text" placeholder="Họ và tên tài xế" required maxlength="100">
+                </label>
+                <label>
+                  Số điện thoại tài xế
+                  <input id="route-driver-phone" type="tel" placeholder="Ví dụ: 0912345678" maxlength="20">
+                </label>
+                <label>
+                  Biển số xe / Phương tiện <span class="req">*</span>
+                  <input id="route-vehicle-plate" type="text" placeholder="Ví dụ: 29C-123.45" required maxlength="30">
+                </label>
+                <label>
+                  Mã chuyến (tùy chọn)
+                  <input id="route-trip-code" type="text" placeholder="Tự sinh nếu để trống" maxlength="50">
+                </label>
+                <label>
+                  Thời điểm xuất phát
+                  <input id="route-departure-time" type="datetime-local">
+                </label>
+                <label>
+                  Dự kiến hoàn thành <span class="req">*</span>
+                  <input id="route-expected-time" type="datetime-local" required>
+                </label>
+              </div>
+
+              <label style="display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; font-weight: 600; margin-bottom: 16px;">
+                Ghi chú điều phối lộ trình
+                <input id="route-trip-note" type="text" placeholder="Ví dụ: Xe chạy vòng Quận 1 - Quận 3 - Quận 7" maxlength="255">
+              </label>
+
+              <div class="routes-actions" style="justify-content: flex-end;">
+                <button id="routes-clear-staged-btn" class="btn btn--secondary" type="button">Xóa lộ trình đang soạn</button>
+                <button id="routes-submit-btn" class="btn btn--primary" type="submit">Xác nhận phân tuyến &amp; Tạo chuyến</button>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <!-- ── DANH SÁCH CÁC CHUYẾN ĐÃ PHÂN TUYẾN GẦN ĐÂY ── -->
+        <section class="routes-panel routes-recent-trips-panel" aria-labelledby="recent-trips-title">
+          <header class="routes-heading">
+            <div>
+              <h2 id="recent-trips-title">Chuyến giao hàng gần đây</h2>
+              <p class="routes-muted">Tra cứu chuyến và in lại danh sách điểm giao lộ trình</p>
+            </div>
+            <button id="routes-refresh-recent-btn" class="btn btn--secondary" type="button">Làm mới danh sách</button>
+          </header>
+
+          <div class="routes-table-wrapper" role="region" aria-label="Bảng các chuyến gần đây" tabindex="0">
+            <table class="routes-table">
+              <thead>
+                <tr>
+                  <th>Mã chuyến</th>
+                  <th>Kho xuất phát</th>
+                  <th>Tài xế &amp; Biển số xe</th>
+                  <th>Số điểm giao</th>
+                  <th>Tổng tiền hàng</th>
+                  <th>Khởi hành / Dự kiến</th>
+                  <th>Trạng thái</th>
+                  <th style="text-align: center;">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="routes-recent-trips-tbody">
+                <tr><td colspan="8" class="routes-muted" style="text-align: center; padding: 24px;">Đang tải danh sách chuyến…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <!-- ── MODAL IN DANH SÁCH ĐIỂM GIAO CỦA CHUYẾN ── -->
+      <div id="routes-print-modal" class="routes-modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="print-modal-heading">
+        <div class="routes-modal-card">
+          <header class="routes-modal-header">
+            <h2 id="print-modal-heading" style="margin: 0; font-size: 1.2rem;">In danh sách điểm giao hàng</h2>
+            <button id="routes-modal-close-x" class="btn btn--secondary" type="button" aria-label="Đóng cửa sổ in">Đóng</button>
+          </header>
+
+          <div class="routes-modal-body">
+            <div id="routes-printable-area"></div>
+          </div>
+
+          <footer class="routes-modal-footer">
+            <button id="routes-modal-close-btn" class="btn btn--secondary" type="button">Đóng</button>
+            <button id="routes-print-now-btn" class="btn btn--primary" type="button">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              In danh sách điểm giao
+            </button>
+          </footer>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/warehouse-delivery-routes-utils.js"></script>
+  <script src="/js/warehouse-delivery-routes.js"></script>
+</body>
+</html>

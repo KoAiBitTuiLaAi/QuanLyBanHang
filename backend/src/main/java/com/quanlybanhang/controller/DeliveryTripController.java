@@ -3,6 +3,10 @@ package com.quanlybanhang.controller;
 import com.quanlybanhang.dto.request.CreateDeliveryTripRequest;
 import com.quanlybanhang.dto.request.ReturnStopGoodsRequest;
 import com.quanlybanhang.dto.request.UpdateDeliveryStopStatusRequest;
+import com.quanlybanhang.dto.request.UpdateDeliveryTripRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import com.quanlybanhang.dto.response.*;
 import com.quanlybanhang.model.DeliveryTripStatus;
 import com.quanlybanhang.service.DeliveryTripService;
@@ -92,6 +96,23 @@ public class DeliveryTripController {
         return ApiResponse.success("Cập nhật trạng thái điểm giao thành công", trip);
     }
 
+    @PostMapping(value = "/{id}/stops/{stopId}/confirm-delivery", consumes = "multipart/form-data")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_EXPORT')")
+    public ApiResponse confirmDelivery(@PathVariable Long id, @PathVariable Long stopId,
+            @RequestParam String receiverName,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            java.time.LocalDateTime deliveredAt,
+            @RequestPart("proof") org.springframework.web.multipart.MultipartFile proof, Principal principal) {
+        return ApiResponse.success("Xác nhận giao hàng thành công", deliveryTripService.confirmDelivery(
+                id, stopId, receiverName, deliveredAt, proof, principal.getName()));
+    }
+
+    @GetMapping("/{id}/stops/{stopId}/proof")
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('WAREHOUSE_VIEW', 'WAREHOUSE_EXPORT')")
+    public org.springframework.http.ResponseEntity<byte[]> getProof(@PathVariable Long id, @PathVariable Long stopId) {
+        return deliveryTripService.getDeliveryProof(id, stopId);
+    }
+
     @PostMapping("/{id}/complete")
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_EXPORT')")
     public ApiResponse completeTrip(
@@ -130,10 +151,63 @@ public class DeliveryTripController {
         return ApiResponse.success("Nhập kho trả hàng thành công", response);
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_EXPORT')")
+    public ApiResponse updateTrip(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateDeliveryTripRequest request,
+            Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        DeliveryTripResponse trip = deliveryTripService.updateTrip(id, request, username);
+        return ApiResponse.success("Cập nhật thông tin chuyến giao hàng thành công", trip);
+    }
+
+    @GetMapping("/{id}/manifest")
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('WAREHOUSE_VIEW', 'WAREHOUSE_EXPORT')")
+    public ApiResponse getManifest(@PathVariable Long id, Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        DeliveryTripManifestResponse manifest = deliveryTripService.getManifest(id, username);
+        return ApiResponse.success("Bảng kê điểm giao hàng của chuyến", manifest);
+    }
+
+    @GetMapping(value = "/{id}/manifest/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('WAREHOUSE_VIEW', 'WAREHOUSE_EXPORT')")
+    public ResponseEntity<byte[]> downloadManifestPdf(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "false") boolean download,
+            Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        byte[] pdfBytes = deliveryTripService.generateManifestPdf(id, username);
+        DeliveryTripResponse trip = deliveryTripService.getTripById(id);
+        String disposition = download ? "attachment" : "inline";
+        String code = trip != null && trip.getTripCode() != null ? trip.getTripCode() : String.valueOf(id);
+        String filename = "bang-ke-chuyen-giao-" + code + ".pdf";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition + "; filename=\"" + filename + "\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdfBytes);
+    }
+
+    @GetMapping(value = "/{id}/manifest/print", produces = "text/html;charset=UTF-8")
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('WAREHOUSE_VIEW', 'WAREHOUSE_EXPORT')")
+    public ResponseEntity<String> getManifestPrintHtml(
+            @PathVariable Long id,
+            Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        String html = deliveryTripService.generateManifestPrintHtml(id, username);
+        return ResponseEntity.ok()
+                .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
+                .body(html);
+    }
+
     @GetMapping("/eligible-orders")
     @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('WAREHOUSE_VIEW', 'WAREHOUSE_EXPORT')")
-    public ApiResponse getEligibleOrders(@RequestParam Long warehouseId) {
-        List<DeliveryEligibleOrderResponse> orders = deliveryTripService.getEligibleOrders(warehouseId);
+    public ApiResponse getEligibleOrders(
+            @RequestParam Long warehouseId,
+            @RequestParam(required = false) Long territoryId,
+            @RequestParam(required = false) String keyword) {
+        List<DeliveryEligibleOrderResponse> orders = deliveryTripService.getEligibleOrders(warehouseId, territoryId, keyword);
         return ApiResponse.success("Danh sách đơn hàng đủ điều kiện gán chuyến", orders);
     }
 }

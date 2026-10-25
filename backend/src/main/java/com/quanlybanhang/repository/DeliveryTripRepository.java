@@ -16,6 +16,10 @@ import java.util.Optional;
 @Repository
 public interface DeliveryTripRepository extends JpaRepository<DeliveryTrip, Long>, JpaSpecificationExecutor<DeliveryTrip> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from DeliveryTrip t where t.id = :id")
+    Optional<DeliveryTrip> findByIdForUpdate(@Param("id") Long id);
+
     Optional<DeliveryTrip> findByTripCode(String tripCode);
 
     boolean existsByTripCode(String tripCode);

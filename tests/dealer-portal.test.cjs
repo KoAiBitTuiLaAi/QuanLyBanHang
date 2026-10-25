@@ -6,7 +6,7 @@ const { test } = require('node:test');
 
 async function createMockEnvironment(apiResponses = {}, options = {}) {
   const currentUser = options.currentUser || { id: 99, username: 'dealer.test', roles: ['ROLE_DEALER'],
-    permissions: ['ORDER_VIEW', 'ORDER_CREATE', 'PRODUCT_VIEW'], dealerId: 10 };
+    permissions: ['ORDER_VIEW', 'ORDER_CREATE', 'PRODUCT_VIEW', 'FINANCE_VIEW_DEBT'], dealerId: 10 };
   const elements = new Map();
   function getEl(id) {
     if (!elements.has(id)) {
@@ -314,6 +314,18 @@ test('S4-10: preview lỗi chặn gửi đơn và cho phép tính lại, không 
   assert.equal(elements.get('btn-refresh-cart-preview').hidden, false);
   await portal.submitDealerOrder();
   assert.ok(!calls.some(call => call.url === '/portal/orders' && call.method === 'POST'));
+});
+
+test('S7-07: không có quyền công nợ thì không gọi API tổng nợ, vẫn kiểm tra giỏ hàng qua preview', async () => {
+  const user = {roles:['ROLE_DEALER'], permissions:['ORDER_VIEW','ORDER_CREATE','PRODUCT_VIEW'], dealerId:10};
+  const {portal, calls, elements} = await createMockEnvironment({}, {currentUser:user});
+  await new Promise(setImmediate);
+  assert.ok(!calls.some(call => call.url === '/portal/debt'));
+  assert.equal(elements.get('val-current-debt').textContent, 'Không có quyền xem');
+  assert.equal(elements.get('val-debt-limit').textContent, 'Không có quyền xem');
+  portal.addToCart({id:101, sku:'KEN330', name:'Bia', basePrice:15000}, 'lon', 1, 15000, 1);
+  await portal.refreshCartPreview();
+  assert.equal(elements.get('btn-submit-order').disabled, false);
 });
 
 test('S4-10: bỏ quyền sau khi mở trang không gửi preview hay tạo đơn mới', async () => {

@@ -30,5 +30,8 @@ public class InvoiceAdjustmentResponse {
     private LocalDateTime createdAt;
     private String note;
     private List<InvoiceAdjustmentItemResponse> items;
+    public java.util.Map<String, String> getExactAmounts() {
+        return com.quanlybanhang.util.ExactAmounts.of("adjustmentAmount", adjustmentAmount);
+    }
 }
 

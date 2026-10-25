@@ -27,5 +27,9 @@ public class InvoiceItemResponse {
     private BigDecimal discountAmount;
     private BigDecimal totalAmount;
     private String note;
+    public java.util.Map<String, String> getExactAmounts() {
+        return com.quanlybanhang.util.ExactAmounts.of("unitPrice", unitPrice, "subtotalAmount", subtotalAmount,
+                "discountAmount", discountAmount, "totalAmount", totalAmount, "invoicedQuantity", invoicedQuantity);
+    }
 }
 

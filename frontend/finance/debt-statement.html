@@ -1,77 +1,211 @@
 <!doctype html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sổ công nợ | SaleStock</title>
   <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
-  <link rel="stylesheet" href="/css/debt-statement.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/debt-statement.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
   <script src="/js/app-transition.js"></script>
 </head>
-<body><div data-app-content><main class="content ds-page">
-  <header class="ds-heading">
-    <div>
-      <h1>Sổ công nợ</h1>
-      <p>Xem công nợ theo đại lý với phân tích tuổi nợ, tập trung đòi những khoản nợ lâu nhất trước.</p>
-    </div>
-    <div class="ds-actions">
-      <button id="ds-reload" class="btn btn--secondary" type="button">Tải dữ liệu</button>
-      <button id="ds-export" class="btn btn--primary" type="button" disabled>Xuất Excel</button>
-    </div>
-  </header>
-  <p id="ds-access" class="ds-notice" role="status" hidden>Bạn chưa có quyền xem công nợ. Liên hệ quản trị viên để cấp FINANCE_VIEW_DEBT trong ma trận quyền.</p>
-  <section id="ds-workspace" hidden>
-    <p id="ds-error" class="ds-error" role="alert" hidden></p>
-    <div id="ds-progress" class="ds-progress" hidden></div>
-    <form id="ds-filters" class="ds-filters">
-      <label>Tìm đại lý<input id="ds-search" type="search" placeholder="Mã hoặc tên đại lý" maxlength="100"></label>
-      <label class="ds-check"><input id="ds-overdue" type="checkbox"> Chỉ đại lý quá hạn</label>
-      <label>Số dòng<select id="ds-size"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select></label>
-    </form>
-    <div class="ds-panel">
-      <div class="ds-scroll" role="region" aria-label="Sổ công nợ theo đại lý" tabindex="0">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Đại lý</th>
-              <th scope="col">Mã</th>
-              <th scope="col">Phải thu</th>
-              <th scope="col">Đã thu</th>
-              <th scope="col">Còn nợ</th>
-              <th scope="col">0–30 ngày</th>
-              <th scope="col">31–60 ngày</th>
-              <th scope="col">61–90 ngày</th>
-              <th scope="col">Trên 90 ngày</th>
-            </tr>
-          </thead>
-          <tbody id="ds-rows"><tr><td colspan="9" class="ds-empty">Bấm "Tải dữ liệu" để xem sổ công nợ.</td></tr></tbody>
-          <tfoot id="ds-totals" hidden>
-            <tr>
-              <td colspan="2">Tổng cộng</td>
-              <td id="ds-t-recv"></td>
-              <td id="ds-t-paid"></td>
-              <td id="ds-t-remain"></td>
-              <td id="ds-t-0"></td>
-              <td id="ds-t-1"></td>
-              <td id="ds-t-2"></td>
-              <td id="ds-t-3"></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      <footer class="ds-pagination">
-        <span id="ds-summary" class="ds-help"></span>
-        <div class="ds-actions">
-          <button id="ds-prev" class="btn btn--secondary" type="button" disabled>Trước</button>
-          <span id="ds-page" role="status"></span>
-          <button id="ds-next" class="btn btn--secondary" type="button" disabled>Sau</button>
+<body>
+  <div data-app-content>
+    <main class="content statement-page">
+      <!-- Header -->
+      <header class="statement-header">
+        <div class="statement-title">
+          <h1>Sổ công nợ</h1>
+          <p>Tổng quan tuổi nợ của các đại lý và tra cứu sổ chi tiết theo kỳ.</p>
         </div>
-      </footer>
-    </div>
-    <p class="ds-help">Tuổi nợ tính từ ngày phát sinh chứng từ do máy chủ cung cấp. Xuất Excel gồm tất cả đại lý đã lọc, không chỉ trang đang xem.</p>
-  </section>
-</main></div>
-<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script>
-<script src="/js/vendor/xlsx.full.min.js"></script><script src="/js/debt-statement.js"></script>
-</body></html>
+      </header>
+
+      <!-- Access / Error notices -->
+      <div id="statement-access" class="statement-notice statement-notice--warning" hidden>
+        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem và xuất sổ chi tiết công nợ. Quản trị viên luôn có quyền.
+      </div>
+      <div id="statement-error" class="statement-notice statement-notice--error" role="alert" hidden></div>
+
+      <div class="debt-tabs" role="tablist" aria-label="Chế độ xem sổ công nợ" hidden>
+        <button id="debt-tab-aging" class="debt-tab" type="button" role="tab" aria-selected="true" aria-controls="debt-panel-aging">Tổng quan công nợ</button>
+        <button id="debt-tab-statement" class="debt-tab" type="button" role="tab" aria-selected="false" aria-controls="debt-panel-statement" tabindex="-1">Sổ chi tiết</button>
+      </div>
+
+      <section id="debt-panel-aging" class="debt-tab-panel" role="tabpanel" aria-labelledby="debt-tab-aging" tabindex="0" hidden>
+        <header class="ds-heading">
+          <div>
+            <h2>Tổng quan công nợ theo tuổi nợ</h2>
+            <p>Ưu tiên đại lý có khoản nợ lâu nhất; số liệu được chốt theo ngày chọn.</p>
+          </div>
+          <div class="ds-actions">
+            <button id="ds-reload" class="btn btn--secondary" type="button">Tải dữ liệu</button>
+            <button id="ds-export" class="btn btn--primary" type="button" disabled>Xuất Excel</button>
+          </div>
+        </header>
+        <p id="ds-error" class="ds-error" role="alert" hidden></p>
+        <section id="ds-workspace" hidden>
+          <form id="ds-filters" class="ds-filters">
+            <label for="ds-search">Tìm đại lý<input id="ds-search" type="search" placeholder="Mã hoặc tên đại lý" maxlength="100"></label>
+            <label for="ds-as-of">Ngày chốt<input id="ds-as-of" type="date"></label>
+            <label class="ds-check"><input id="ds-overdue" type="checkbox"> Chỉ đại lý quá hạn</label>
+          </form>
+          <div id="ds-progress" class="ds-progress" role="status" hidden>Đang tải dữ liệu công nợ…</div>
+          <div class="ds-panel">
+            <div class="ds-scroll" role="region" aria-label="Sổ công nợ theo đại lý" tabindex="0">
+              <table>
+                <thead><tr>
+                  <th scope="col">Đại lý</th><th scope="col">Mã</th><th scope="col">Phải thu</th><th scope="col">Đã thu</th><th scope="col">Còn nợ</th>
+                  <th scope="col">0–30 ngày</th><th scope="col">31–60 ngày</th><th scope="col">61–90 ngày</th><th scope="col">Trên 90 ngày</th>
+                </tr></thead>
+                <tbody id="ds-rows"><tr><td colspan="9" class="ds-empty">Bấm “Tải dữ liệu” để xem sổ công nợ.</td></tr></tbody>
+                <tfoot id="ds-totals" hidden><tr>
+                  <td colspan="2">Tổng cộng</td><td id="ds-t-recv"></td><td id="ds-t-paid"></td><td id="ds-t-remain"></td>
+                  <td id="ds-t-0"></td><td id="ds-t-1"></td><td id="ds-t-2"></td><td id="ds-t-3"></td>
+                </tr></tfoot>
+              </table>
+            </div>
+          </div>
+          <p class="ds-help">Tuổi nợ tính theo ngày phát sinh chứng từ. Bảng ưu tiên các khoản nợ lâu ngày.</p>
+        </section>
+      </section>
+
+      <section id="debt-panel-statement" class="debt-tab-panel" role="tabpanel" aria-labelledby="debt-tab-statement" tabindex="0" hidden>
+
+      <!-- Filter Card -->
+      <section class="statement-filter-card">
+        <form id="statement-filter-form" class="statement-filter-form">
+          <div class="filter-group">
+            <label for="filter-dealer">Đại lý đối chiếu <span style="color:#dc2626">*</span></label>
+            <select id="filter-dealer" required>
+              <option value="">-- Đang tải danh sách đại lý... --</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="filter-from">Từ ngày <span style="color:#dc2626">*</span></label>
+            <input type="date" id="filter-from" required>
+          </div>
+
+          <div class="filter-group">
+            <label for="filter-to">Đến ngày <span style="color:#dc2626">*</span></label>
+            <input type="date" id="filter-to" required>
+            <div class="quick-ranges">
+              <button type="button" class="btn-chip" data-range="this-month">Tháng này</button>
+              <button type="button" class="btn-chip" data-range="last-month">Tháng trước</button>
+              <button type="button" class="btn-chip" data-range="last-30-days">30 ngày qua</button>
+              <button type="button" class="btn-chip" data-range="this-quarter">Quý này</button>
+              <button type="button" class="btn-chip" data-range="this-year">Năm nay</button>
+            </div>
+          </div>
+
+          <div class="filter-actions">
+            <button id="btn-view-statement" class="btn btn--primary" type="submit">
+              Xem sổ chi tiết
+            </button>
+            <button id="btn-export-excel" class="btn btn-export-excel" type="button" disabled>
+              Xuất Excel
+            </button>
+            <button id="btn-export-pdf" class="btn btn-export-pdf" type="button" disabled>
+              Xuất PDF
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Initial / Empty Guidance State -->
+      <div id="statement-initial-state" class="statement-empty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #94a3b8; margin-bottom: 8px;">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <p>Vui lòng chọn đại lý và khoảng thời gian để xem sổ chi tiết công nợ.</p>
+      </div>
+
+      <!-- Loading State -->
+      <div id="statement-loading-state" class="statement-empty" hidden>
+        <span class="statement-spinner"></span>
+        <p>Đang tổng hợp sổ chi tiết công nợ...</p>
+      </div>
+
+      <!-- Result Panel -->
+      <section id="statement-result-panel" class="statement-page" hidden>
+        <!-- Dealer Info Banner -->
+        <div class="dealer-summary-banner">
+          <div>
+            <span class="dealer-info-title" id="banner-dealer-title">Đại lý</span>
+            <span style="color: #64748b; margin-left: 8px;" id="banner-dealer-code"></span>
+          </div>
+          <div class="dealer-period-badge" id="banner-period-badge">
+            Kỳ đối chiếu
+          </div>
+        </div>
+
+        <!-- Metric Cards -->
+        <div class="statement-metrics">
+          <div class="metric-card">
+            <span class="metric-label">Số dư đầu kỳ</span>
+            <span class="metric-value" id="metric-opening">0 ₫</span>
+            <span class="metric-hint">Dư nợ trước ngày bắt đầu</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Tổng phát sinh tăng</span>
+            <span class="metric-value metric-value--increase" id="metric-increase">0 ₫</span>
+            <span class="metric-hint">Đơn hàng ghi nợ trong kỳ</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Tổng phát sinh giảm</span>
+            <span class="metric-value metric-value--decrease" id="metric-decrease">0 ₫</span>
+            <span class="metric-hint">Thu tiền &amp; giảm nợ trong kỳ</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Số dư cuối kỳ</span>
+            <span class="metric-value" id="metric-closing">0 ₫</span>
+            <span class="metric-hint">Số dư nợ lũy kế hiện tại</span>
+          </div>
+        </div>
+
+        <!-- Table Card -->
+        <div class="statement-table-card">
+          <div class="statement-table-scroll" role="region" aria-label="Bảng sổ chi tiết công nợ" tabindex="0">
+            <table class="statement-table">
+              <thead>
+                <tr>
+                  <th style="width: 15%;">Ngày phát sinh</th>
+                  <th style="width: 20%;">Số chứng từ</th>
+                  <th style="width: 29%;">Diễn giải</th>
+                  <th style="width: 12%;" class="text-right">Phát sinh tăng</th>
+                  <th style="width: 12%;" class="text-right">Phát sinh giảm</th>
+                  <th style="width: 12%;" class="text-right">Số dư lũy kế</th>
+                </tr>
+              </thead>
+              <tbody id="statement-tbody">
+                <!-- Rows injected dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Statement Footnote -->
+        <div class="statement-notice statement-notice--info">
+          Số dư âm thể hiện đại lý đã thanh toán dư (credit balance). Sổ phản ánh các chứng từ hiện có trong hệ thống tại thời điểm xuất.
+        </div>
+      </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/debt-statement-utils.js"></script>
+  <script src="/js/debt-aging-utils.js"></script>
+  <script src="/js/debt-statement.js"></script>
+</body>
+</html>
 

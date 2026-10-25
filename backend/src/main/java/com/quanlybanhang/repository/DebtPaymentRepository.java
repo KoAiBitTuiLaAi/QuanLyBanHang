@@ -22,6 +22,9 @@ public interface DebtPaymentRepository extends JpaRepository<DebtPayment, Long> 
     @Query("SELECT COALESCE(SUM(p.amount), 0) FROM DebtPayment p WHERE p.dealer.id = :dealerId")
     BigDecimal sumAmountByDealerId(@Param("dealerId") Long dealerId);
 
+    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM DebtPayment p WHERE p.dealer.id = :dealerId AND p.paymentDate <= :asOfDate")
+    BigDecimal sumAmountByDealerIdAndPaymentDateLessThanEqual(@Param("dealerId") Long dealerId, @Param("asOfDate") LocalDate asOfDate);
+
     boolean existsByPaymentCode(String paymentCode);
 
     long countByPaymentDate(LocalDate paymentDate);
@@ -32,4 +35,3 @@ public interface DebtPaymentRepository extends JpaRepository<DebtPayment, Long> 
 
     boolean existsByOriginalPaymentIdAndPaymentType(Long originalPaymentId, String paymentType);
 }
-

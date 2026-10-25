@@ -54,6 +54,7 @@ class DeliveryTripServiceTest {
 
     @Mock
     private WarehouseInventoryRepository inventoryRepository;
+    @Mock private com.quanlybanhang.repository.WarehouseLotInventoryRepository lotInventoryRepository;
 
     @Mock
     private OrderRepository orderRepository;
@@ -72,6 +73,18 @@ class DeliveryTripServiceTest {
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private OrderStatusHistoryRepository orderStatusHistoryRepository;
+
+    @Mock
+    private com.quanlybanhang.repository.TerritoryRepository territoryRepository;
+
+    @Mock
+    private com.quanlybanhang.repository.WarehouseVoucherRepository warehouseVoucherRepository;
+
+    @Mock
+    private com.quanlybanhang.service.DeliveryTripPdfService deliveryTripPdfService;
 
     @InjectMocks
     private DeliveryTripServiceImpl tripService;
@@ -157,7 +170,7 @@ class DeliveryTripServiceTest {
     void createTrip_WithCustomStops_Success() {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse1));
         when(tripRepository.existsByTripCode(anyString())).thenReturn(false);
-        when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(invocation -> {
+        when(tripRepository.saveAndFlush(any(DeliveryTrip.class))).thenAnswer(invocation -> {
             DeliveryTrip t = invocation.getArgument(0);
             t.setId(10L);
             long idGen = 100L;
@@ -235,7 +248,7 @@ class DeliveryTripServiceTest {
 
         assertThatThrownBy(() -> tripService.createTrip(req, "admin"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Thời gian dự kiến hoàn thành phải sau thời điểm xuất phát");
+                .hasMessageContaining("Thời gian dự kiến hoàn thành phải sau");
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -244,17 +257,13 @@ class DeliveryTripServiceTest {
 
     @Test
     @DisplayName("Giao thành công 1 điểm: deliveredPoints = 1, remainingPoints = 1, cập nhật tiền trên đường")
-    void updateStopStatus_Delivered_UpdatesProgressAndValueOnRoad() {
+    void updateStopStatus_Delivered_UpdatesProgressAndValueOnRoad() throws Exception {
         DeliveryTrip trip = createSampleTrip();
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
         when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(i -> i.getArgument(0));
 
-        UpdateDeliveryStopStatusRequest req = UpdateDeliveryStopStatusRequest.builder()
-                .status(DeliveryStopStatus.DELIVERED)
-                .note("Đã ký nhận đầy đủ")
-                .build();
 
-        DeliveryTripResponse res = tripService.updateStopStatus(10L, 101L, req, "admin");
+        DeliveryTripResponse res = tripService.confirmDelivery(10L, 101L, "Người ký nhận", LocalDateTime.now().minusMinutes(1), proofImage(), "admin");
 
         assertThat(res.getDeliveredPoints()).isEqualTo(1);
         assertThat(res.getRemainingPoints()).isEqualTo(1);
@@ -266,7 +275,7 @@ class DeliveryTripServiceTest {
     @DisplayName("QUY TẮC CỐT LÕI S6-07: Hàng chưa giao được vẫn thuộc trách nhiệm chuyến, KHÔNG TỰ VỀ KHO")
     void updateStopStatus_Failed_DoesNotReturnToWarehouse_RemainsOnRoad() {
         DeliveryTrip trip = createSampleTrip();
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
         when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(i -> i.getArgument(0));
 
         UpdateDeliveryStopStatusRequest req = UpdateDeliveryStopStatusRequest.builder()
@@ -305,7 +314,7 @@ class DeliveryTripServiceTest {
     @DisplayName("Cập nhật điểm FAILED nhưng thiếu lý do -> ném ngoại lệ IllegalArgumentException")
     void updateStopStatus_FailedWithoutReason_ThrowsException() {
         DeliveryTrip trip = createSampleTrip();
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
 
         UpdateDeliveryStopStatusRequest req = UpdateDeliveryStopStatusRequest.builder()
                 .status(DeliveryStopStatus.FAILED)
@@ -411,6 +420,12 @@ class DeliveryTripServiceTest {
                 .totalPrice(new BigDecimal("3000000.00"))
                 .build();
         stop1.getItems().add(item);
+        var original=OrderItem.builder().id(701L).product(product).quantity(BigDecimal.TEN).exportedQuantity(BigDecimal.TEN)
+                .unit("thùng").conversionFactor(new BigDecimal("24")).baseUnit("lon").baseQuantity(new BigDecimal("240")).build();
+        var order=Order.builder().id(7L).warehouse(warehouse1).status("SHIPPING").build();order.addItem(original);stop1.setOrder(order);
+        item.setOrderItemId(701L);item.setUnit("thùng");item.setConversionFactor(new BigDecimal("24"));
+        item.setBaseUnit("lon");item.setBaseQuantity(new BigDecimal("240"));
+        when(orderRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
 
         WarehouseInventory inv = WarehouseInventory.builder()
                 .id(1L)
@@ -419,8 +434,8 @@ class DeliveryTripServiceTest {
                 .baseQuantity(new BigDecimal("100.0000"))
                 .build();
 
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 50L)).thenReturn(Optional.of(inv));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 50L)).thenReturn(Optional.of(inv));
         when(stopRepository.save(any(DeliveryTripStop.class))).thenAnswer(i -> i.getArgument(0));
 
         ReturnStopGoodsRequest req = ReturnStopGoodsRequest.builder()
@@ -430,11 +445,88 @@ class DeliveryTripServiceTest {
         DeliveryTripStopResponse res = tripService.returnStopGoodsToWarehouse(10L, 101L, req, "admin");
 
         assertThat(res.getReturnedToWarehouse()).isTrue();
-        // Kiểm tra tồn kho được cộng lại đúng 10 đơn vị (100 + 10 = 110)
-        assertThat(inv.getBaseQuantity()).isEqualByComparingTo(new BigDecimal("110.0000"));
+        // 10 thùng × 24 lon; khôi phục đơn vị cơ sở và giữ chỗ cho lượt giao lại.
+        assertThat(inv.getBaseQuantity()).isEqualByComparingTo("340");
+        assertThat(inv.getReservedQuantity()).isEqualByComparingTo("240");
         verify(inventoryRepository).save(inv);
         verify(auditLogService).logAction(eq("DELIVERY_TRIP"), eq(trip.getTripCode()), eq("RETURN_TO_WAREHOUSE"),
                 eq("false"), eq("true"), anyString(), eq("admin"));
+    }
+
+
+    private org.springframework.mock.web.MockMultipartFile proofImage() throws Exception {
+        var out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", out);
+        return new org.springframework.mock.web.MockMultipartFile("proof", "signed.png", "image/png", out.toByteArray());
+    }
+
+    @Test
+    void deliveredWithoutProofRejected() {
+        var trip = createSampleTrip();
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        assertThatThrownBy(() -> tripService.updateStopStatus(10L, 101L,
+                UpdateDeliveryStopStatusRequest.builder().status(DeliveryStopStatus.DELIVERED).build(), "admin"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("confirm-delivery");
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void confirmationStoresReceiverTimeAndProof() throws Exception {
+        var trip = createSampleTrip();
+        var time = LocalDateTime.now().minusMinutes(1);
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        var result = tripService.confirmDelivery(10L, 101L, " Người nhận ", time, proofImage(), "admin");
+        var stop = result.getStops().get(0);
+        assertThat(stop.getReceiverName()).isEqualTo("Người nhận");
+        assertThat(stop.getDeliveredAt()).isEqualTo(time);
+        assertThat(stop.isHasSignedProof()).isTrue();
+        assertThat(stop.getConfirmedBy()).isEqualTo("admin");
+        assertThatThrownBy(() -> tripService.confirmDelivery(10L, 101L, "Thay đổi", time, proofImage(), "admin"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void rejectsInvalidProofAndFutureDate() throws Exception {
+        var trip = createSampleTrip();
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        assertThatThrownBy(() -> tripService.confirmDelivery(10L, 101L, "Người nhận", LocalDateTime.now().plusDays(1), proofImage(), "admin"))
+                .isInstanceOf(IllegalArgumentException.class);
+        var fake = new org.springframework.mock.web.MockMultipartFile("proof", "fake.png", "image/png", "not an image".getBytes());
+        assertThatThrownBy(() -> tripService.confirmDelivery(10L, 101L, "Người nhận", LocalDateTime.now().minusMinutes(1), fake, "admin"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void cannotDeliverReturnedOrAlreadyDeliveredStop() {
+        var trip = createSampleTrip();
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        trip.getStops().get(0).setReturnedToWarehouse(true);
+        assertThatThrownBy(() -> tripService.updateStopStatus(10L, 101L,
+                UpdateDeliveryStopStatusRequest.builder().status(DeliveryStopStatus.DELIVERED).build(), "admin"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void confirmationPopulatesActualQuantitiesForSprint7() throws Exception {
+        var trip = createSampleTrip();
+        var product = Product.builder().id(50L).build();
+        var line = OrderItem.builder().id(701L).product(product).unit("thùng").quantity(new BigDecimal("2"))
+                .exportedQuantity(new BigDecimal("2")).baseUnit("lon").baseQuantity(new BigDecimal("48"))
+                .conversionFactor(new BigDecimal("24")).build();
+        var order = Order.builder().id(7L).warehouse(warehouse1).status("SHIPPING").build();order.addItem(line);
+        var stop = trip.getStops().get(0);
+        stop.setOrder(order);
+        stop.getItems().add(DeliveryTripStopItem.builder().product(product).unit("thùng").quantity(new BigDecimal("2")).build());
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        when(orderRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
+        when(tripRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        tripService.confirmDelivery(10L, 101L, "Người nhận", LocalDateTime.now().minusMinutes(1), proofImage(), "admin");
+        assertThat(order.getStatus()).isEqualTo("DELIVERED");
+        assertThat(line.getDeliveredQuantity()).isEqualByComparingTo("2");
+        assertThat(line.getDeliveredBaseQuantity()).isEqualByComparingTo("48");
+        verify(orderRepository).save(order);
     }
 
     private DeliveryTrip createSampleTrip() {
@@ -477,5 +569,132 @@ class DeliveryTripServiceTest {
         trip.addStop(stop1);
         trip.addStop(stop2);
         return trip;
+    }
+
+    @Test
+    @DisplayName("S6-06: Tạo chuyến giao hàng với tuyến giao và khu vực thành công")
+    void createTrip_WithRouteAndTerritory_Success() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse1));
+        when(tripRepository.existsByTripCode(any())).thenReturn(false);
+
+        com.quanlybanhang.model.Territory territory = com.quanlybanhang.model.Territory.builder()
+                .id(10L)
+                .code("KV-HN-HK")
+                .name("Khu vực Hoàn Kiếm")
+                .build();
+        when(territoryRepository.findById(10L)).thenReturn(Optional.of(territory));
+
+        CreateDeliveryTripRequest req = CreateDeliveryTripRequest.builder()
+                .warehouseId(1L)
+                .driverName("Nguyễn Văn Lái")
+                .driverPhone("0988111222")
+                .vehiclePlate("29C-999.99")
+                .routeName("Tuyến Phố Cổ - Hoàn Kiếm")
+                .territoryId(10L)
+                .expectedCompletionTime(LocalDateTime.now().plusHours(4))
+                .stops(List.of(
+                        CreateDeliveryTripStopRequest.builder()
+                                .receiverName("Cửa hàng A")
+                                .receiverPhone("0912345678")
+                                .deliveryAddress("10 Tràng Tiền, Hoàn Kiếm")
+                                .deliveryAmount(new BigDecimal("5000000.00"))
+                                .build()
+                ))
+                .build();
+
+        when(tripRepository.saveAndFlush(any(DeliveryTrip.class))).thenAnswer(invocation -> {
+            DeliveryTrip t = invocation.getArgument(0);
+            t.setId(100L);
+            return t;
+        });
+
+        DeliveryTripResponse res = tripService.createTrip(req, "admin");
+
+        assertThat(res).isNotNull();
+        assertThat(res.getDriverName()).isEqualTo("Nguyễn Văn Lái");
+        assertThat(res.getVehiclePlate()).isEqualTo("29C-999.99");
+        assertThat(res.getRouteName()).isEqualTo("Tuyến Phố Cổ - Hoàn Kiếm");
+        assertThat(res.getTerritoryId()).isEqualTo(10L);
+        assertThat(res.getTerritoryName()).isEqualTo("Khu vực Hoàn Kiếm");
+    }
+
+    @Test
+    @DisplayName("S6-06: Gán tài xế, phương tiện và đổi tuyến giao cho chuyến thành công")
+    void updateTrip_AssignDriverAndVehicle_Success() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        DeliveryTrip trip = createSampleTrip();
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+
+        com.quanlybanhang.model.Territory newTerritory = com.quanlybanhang.model.Territory.builder()
+                .id(20L)
+                .code("KV-HN-CG")
+                .name("Khu vực Cầu Giấy")
+                .build();
+        when(territoryRepository.findById(20L)).thenReturn(Optional.of(newTerritory));
+        when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(i -> i.getArgument(0));
+
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("Bác Tài Mới")
+                .driverPhone("0933444555")
+                .vehiclePlate("29B-555.66")
+                .routeName("Tuyến Cầu Giấy - Mỹ Đình")
+                .territoryId(20L)
+                .note("Đổi xe lớn theo tuyến mới")
+                .build();
+
+        DeliveryTripResponse res = tripService.updateTrip(10L, req, "admin");
+
+        assertThat(res).isNotNull();
+        assertThat(res.getDriverName()).isEqualTo("Bác Tài Mới");
+        assertThat(res.getDriverPhone()).isEqualTo("0933444555");
+        assertThat(res.getVehiclePlate()).isEqualTo("29B-555.66");
+        assertThat(res.getRouteName()).isEqualTo("Tuyến Cầu Giấy - Mỹ Đình");
+        assertThat(res.getTerritoryId()).isEqualTo(20L);
+    }
+
+    @Test
+    @DisplayName("S6-06: Cập nhật chuyến đã hoàn tất -> ném IllegalStateException")
+    void updateTrip_NotRunning_ThrowsException() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        DeliveryTrip trip = createSampleTrip();
+        trip.setStatus(DeliveryTripStatus.COMPLETED);
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("Tài mới")
+                .vehiclePlate("29C-111.11")
+                .build();
+
+        assertThatThrownBy(() -> tripService.updateTrip(10L, req, "admin"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Chỉ có thể cập nhật thông tin chuyến giao khi chuyến đang chạy");
+    }
+
+    @Test
+    @DisplayName("S6-06: In bảng kê điểm giao ủy quyền cho PdfService")
+    void getManifest_DelegatesToPdfService() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        com.quanlybanhang.dto.response.DeliveryTripManifestResponse mockManifest = com.quanlybanhang.dto.response.DeliveryTripManifestResponse.builder()
+                .tripId(10L)
+                .tripCode("CG-20261022-001")
+                .routeName("Tuyến Test")
+                .build();
+
+        when(deliveryTripPdfService.getManifest(10L, "admin")).thenReturn(mockManifest);
+        when(deliveryTripPdfService.generateManifestPdf(10L, "admin")).thenReturn("%PDF-test".getBytes());
+        when(deliveryTripPdfService.generateManifestPrintHtml(10L, "admin")).thenReturn("<html>test</html>");
+
+        var manifest = tripService.getManifest(10L, "admin");
+        byte[] pdf = tripService.generateManifestPdf(10L, "admin");
+        String html = tripService.generateManifestPrintHtml(10L, "admin");
+
+        assertThat(manifest.getTripCode()).isEqualTo("CG-20261022-001");
+        assertThat(pdf).isNotEmpty();
+        assertThat(html).isEqualTo("<html>test</html>");
     }
 }

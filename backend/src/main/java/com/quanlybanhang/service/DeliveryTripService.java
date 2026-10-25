@@ -3,6 +3,7 @@ package com.quanlybanhang.service;
 import com.quanlybanhang.dto.request.CreateDeliveryTripRequest;
 import com.quanlybanhang.dto.request.ReturnStopGoodsRequest;
 import com.quanlybanhang.dto.request.UpdateDeliveryStopStatusRequest;
+import com.quanlybanhang.dto.request.UpdateDeliveryTripRequest;
 import com.quanlybanhang.dto.response.*;
 import com.quanlybanhang.model.DeliveryTripStatus;
 import org.springframework.data.domain.Page;
@@ -10,13 +11,18 @@ import org.springframework.data.domain.Page;
 import java.util.List;
 
 /**
- * Service quản lý Chuyến giao hàng & Theo dõi tiền hàng trên đường (S6-07).
+ * Service quản lý Chuyến giao hàng & Phân tuyến giao hàng (S6-06, S6-07).
  */
 public interface DeliveryTripService {
 
     /**
-     * Lấy các tùy chọn bộ lọc và thông tin phân quyền.
+     * Lấy các tùy chọn bộ lọc và thông tin phân quyền (bao gồm danh sách kho và khu vực).
      */
+    DeliveryTripResponse confirmDelivery(Long tripId, Long stopId, String receiverName,
+            java.time.LocalDateTime deliveredAt, org.springframework.web.multipart.MultipartFile proof, String username);
+
+    org.springframework.http.ResponseEntity<byte[]> getDeliveryProof(Long tripId, Long stopId);
+
     DeliveryTripOptionsResponse getOptions();
 
     /**
@@ -40,9 +46,14 @@ public interface DeliveryTripService {
     DeliveryTripResponse getTripById(Long id);
 
     /**
-     * Tạo mới chuyến giao hàng từ danh sách đơn hàng đã xuất hoặc khai báo điểm dừng.
+     * Tạo mới chuyến giao hàng: gom nhiều phiếu xuất vào một chuyến giao theo khu vực, gán tài xế và xe (S6-06).
      */
     DeliveryTripResponse createTrip(CreateDeliveryTripRequest request, String username);
+
+    /**
+     * Cập nhật tài xế, phương tiện và phân tuyến cho chuyến giao hàng (S6-06).
+     */
+    DeliveryTripResponse updateTrip(Long id, UpdateDeliveryTripRequest request, String username);
 
     /**
      * Cập nhật trạng thái điểm giao (DELIVERED hoặc FAILED).
@@ -72,5 +83,24 @@ public interface DeliveryTripService {
      * Danh sách đơn hàng đã xuất kho đủ điều kiện gán vào chuyến giao hàng mới.
      */
     List<DeliveryEligibleOrderResponse> getEligibleOrders(Long warehouseId);
-}
 
+    /**
+     * Gom nhiều phiếu xuất/đơn hàng vào một chuyến theo khu vực và tìm kiếm từ khóa (S6-06).
+     */
+    List<DeliveryEligibleOrderResponse> getEligibleOrders(Long warehouseId, Long territoryId, String keyword);
+
+    /**
+     * Lấy dữ liệu bảng kê điểm giao của chuyến hàng (S6-06).
+     */
+    DeliveryTripManifestResponse getManifest(Long tripId, String username);
+
+    /**
+     * Xuất file PDF bảng kê danh sách điểm giao của chuyến kèm địa chỉ và SĐT người nhận (S6-06).
+     */
+    byte[] generateManifestPdf(Long tripId, String username);
+
+    /**
+     * Xem trước và in trực tiếp danh sách điểm giao của chuyến (S6-06).
+     */
+    String generateManifestPrintHtml(Long tripId, String username);
+}

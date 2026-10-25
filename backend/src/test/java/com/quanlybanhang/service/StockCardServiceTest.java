@@ -71,6 +71,15 @@ class StockCardServiceTest {
         assertThat(card.entries().get(0).sourceId()).isEqualTo(9L);
         assertThat(card.entries().get(0).runningBaseBalance()).isEqualByComparingTo("106");
         assertThat(card.entries().get(0).eventTime()).isEqualTo(t);
+        // New snapshots use base quantities; legacy rows above keep their historical interpretation.
+        item.setUnit("Thùng");item.setBaseUnit("Hộp");item.setBaseQuantity(new BigDecimal("144"));
+        when(inventoryRepo.findByProductId(100L)).thenReturn(List.of(WarehouseInventory.builder().warehouse(wh1).product(product).baseQuantity(new BigDecimal("244")).build()));
+        var converted=service.getStockCard(100L,1L,null,null,0,50);
+        assertThat(converted.openingBalance()).isEqualByComparingTo("100");
+        assertThat(converted.entries().get(0).baseQuantityChange()).isEqualByComparingTo("144");
+        assertThat(converted.entries().get(0).runningBaseBalance()).isEqualByComparingTo("244");
+        assertThat(converted.entries().get(0).displayQuantity()).isEqualByComparingTo("6");
+        assertThat(converted.entries().get(0).displayUnit()).isEqualTo("Thùng");
     }
 
     @Test

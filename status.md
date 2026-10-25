@@ -1,5 +1,287 @@
 # Trạng thái sprint 1–8
 
+## S7-03 — Xem sổ công nợ theo đại lý với phân tích tuổi nợ (Backend) — 25/10/2026
+
+User Story S7-03: *"Là Kế toán công nợ, tôi muốn xem sổ công nợ theo đại lý với phân tích tuổi nợ, để tập trung đòi những khoản nợ lâu nhất trước."*
+Phạm vi: **Chỉ làm Backend (BE)** theo yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt ma trận phân quyền database-backed, không dùng role-based fallback, `ROLE_ADMIN` luôn có toàn quyền, thu hồi quyền `FINANCE_VIEW_DEBT` lập tức trả về `403 Forbidden` trên token JWT hiện tại.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Các cột: phải thu, đã thu, còn nợ, chia theo 4 nhóm tuổi nợ (0–30, 31–60, 61–90 và trên 90 ngày)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Triển khai API `GET /api/finance/debt-aging-ledger` (alias `GET /api/finance/dealer-debt-aging`). Đối trừ FIFO tự động giữa tổng thanh toán đã thu và các chứng từ phát sinh nợ cũ nhất trước (hóa đơn bán hàng + đơn hàng ghi sổ chưa xuất hóa đơn, trừ đi các khoản trả hàng đã xác nhận `FinancialReturnCredits`). Với từng đại lý, tính toán chính xác: tổng phải thu (`totalReceivable`), tổng đã thu (`totalPaid`), còn nợ (`remainingDebt`), nợ trong hạn (`inTermDebt`), nợ quá hạn (`overdueDebt`), tuổi nợ tối đa (`maxDebtAgeDays`), số ngày quá hạn tối đa (`maxOverdueDays`), và 4 nhóm tuổi nợ chuẩn: `bucket0To30` (0–30 ngày), `bucket31To60` (31–60 ngày), `bucket61To90` (61–90 ngày), `bucketOver90` (trên 90 ngày). Đảm bảo tính nhất quán toán học: `bucket0To30 + bucket31To60 + bucket61To90 + bucketOver90 = remainingDebt`. Trả về cả dạng số `BigDecimal` và dạng chuỗi định dạng tiền tệ formatted 2 chữ số lẻ để FE hiển thị an toàn tuyệt đối. Sắp xếp danh sách ưu tiên đòi nợ: nợ trên 90 ngày lớn nhất đứng đầu (`bucketOver90` desc) -> `bucket61To90` desc -> `bucket31To60` desc -> `maxDebtAgeDays` desc -> `remainingDebt` desc. |
+| **Lọc riêng nhóm quá hạn (`overdueOnly = true`)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Hỗ trợ tham số query `overdueOnly=true`. Khi bật cờ, hệ thống chỉ lọc và trả về các đại lý có nợ quá hạn (`isOverdue = true`, tức ngày chốt `asOfDate > dueDate` của khoản nợ chưa tất toán). Khi `overdueOnly=false`, trả về toàn bộ đại lý có phát sinh công nợ. |
+| **Hiển thị tổng cộng ở chân bảng (Summary)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Đối tượng `summary` tính tổng toán học ở chân bảng khớp chính xác với tổng toàn bộ các cột đại lý chi tiết: tổng phải thu (`totalReceivable`), tổng đã thu (`totalPaid`), tổng còn nợ (`totalRemainingDebt`), tổng nợ trong hạn (`totalInTermDebt`), tổng nợ quá hạn (`totalOverdueDebt`), tổng 4 nhóm tuổi nợ (`totalBucket0To30`, `totalBucket31To60`, `totalBucket61To90`, `totalBucketOver90`), đếm tổng số đại lý phát sinh nợ (`dealerCount`) và số đại lý có nợ quá hạn (`overdueDealerCount`). Cung cấp đầy đủ các trường formatted ở chân bảng. |
+| **Xuất được ra Excel (`.xlsx`)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Triển khai API xuất Excel chuyên nghiệp `GET /api/finance/debt-aging-ledger/export` (alias `/export/excel`, `/excel`) sử dụng Apache POI sinh file `.xlsx` định dạng chuẩn. File Excel bao gồm: tiêu đề báo cáo tiếng Việt in hoa đậm, khối thông tin bộ lọc (ngày chốt sổ, trạng thái lọc quá hạn, từ khóa tìm kiếm, ngày giờ trích xuất hệ thống), header 19 cột chi tiết được style màu nền thương hiệu, căn lề tự động, định dạng số tiền VND chuẩn kế toán (`#,##0.00`), dòng **TỔNG CỘNG** ở chân bảng in đậm viền kép, tự động căn chỉnh độ rộng cột (`autoSizeColumn`), và áp dụng cơ chế chống mã độc bảng tính (Formula Injection Safe) tự động làm sạch các ký tự bắt đầu nguy hiểm (`=`, `+`, `-`, `@`). |
+| **Ma trận phân quyền động (Database-backed Permission Matrix) & Bảo mật** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Kiểm soát chặt chẽ bằng ma trận phân quyền từ cơ sở dữ liệu (`RolePermissionConfig`): Bắt buộc quyền `FINANCE_VIEW_DEBT` hoặc vai trò quản trị `ROLE_ADMIN`. Thu hồi quyền `FINANCE_VIEW_DEBT` khỏi vai trò của người dùng trên DB lập tức khiến API trả về `403 Forbidden` ngay trên phiên/token JWT hiện tại mà không cần đăng nhập lại. Tuyệt đối không dùng role-based fallback. Chưa xác thực trả về `401 Unauthorized`. Phân quyền cấp dòng (Row-Level Security): `ROLE_SALES` chỉ xem được các đại lý mình phụ trách; `ROLE_DEALER` chỉ xem được dữ liệu công nợ của chính đại lý mình; `ROLE_ADMIN` luôn có toàn quyền xem tất cả. |
+
+Kiểm thử đạt:
+- **Unit Tests (`DealerDebtAgingLedgerServiceTest`)**: 8/8 tests PASS (100%) — kiểm thử tính toán phải thu/đã thu/còn nợ, phân bổ 4 nhóm tuổi nợ, phân loại nợ trong hạn/quá hạn, đối trừ FIFO, sắp xếp nợ lâu nhất trước, lọc `overdueOnly`, tính tổng summary chân bảng, chặn ngày chốt tương lai (`IllegalArgumentException`), chặn truy cập khi thiếu quyền (`AccessDeniedException`), Row-Level Security cho Sales, và xuất Excel.
+- **Integration Tests (`DealerDebtAgingLedgerIntegrationTest`)**: 7/7 tests PASS (100%) — kiểm thử Spring Boot Test với Spring Security: `ROLE_ADMIN` gọi thành công 200 OK, `ROLE_ACCOUNTANT` có quyền `FINANCE_VIEW_DEBT` gọi thành công 200 OK, lọc `overdueOnly=true`, xuất Excel `.xlsx` kiểm tra POI headers và dòng TỔNG CỘNG chân bảng, thu hồi quyền động `FINANCE_VIEW_DEBT` lập tức trả 403 Forbidden, người dùng không có quyền bị chặn 403, và unauthenticated bị chặn 401.
+- **Tổng cộng**: 15/15 tests PASS (100%).
+
+## Sprint 6 — Kiểm tra trực tiếp web/MySQL và sửa cột nhật ký — 25/10/2026
+
+Sau khi người dùng chạy frontend/backend và cho phép thay đổi dữ liệu local, đã kiểm tra các màn hình và nghiệp vụ bằng Chrome với API/MySQL thật. Chi tiết: [SPRINT6_WEB_CHECK.md](docs/SPRINT6_WEB_CHECK.md). Mục này cập nhật giới hạn “chưa nghiệm thu MySQL” của đợt H2 bên dưới.
+
+| Hạng mục | Backend / MySQL thật | Frontend thật | Kết quả |
+|---|---|---|---|
+| S6-01/04 lô và FEFO | Lưu ngưỡng, chặn quá hạn, kiểm quyền ghi đè, trừ đúng lô khác có lý do | Cấu hình SKU, gợi ý/chọn lô và xác nhận xuất | Qua |
+| S6-02/03 thẻ kho và soạn hàng | 7 phát sinh đúng thời gian, nhập trả 4 thùng = 96 lon; gom 2 đơn/hoàn tất lượt | Mở chứng từ gốc, vị trí A01, lưu thực soạn | Qua |
+| S6-05/06/07 xuất thiếu, phân tuyến, hàng trên đường | Xuất 4 rồi 6; tạo chuyến từ phiếu; PDF thật; cảnh báo quá hạn; không tự hoàn tồn; không còn tiền hàng treo sau xử lý | Xuất bù, phân tuyến, in, bộ lọc quá hạn | Qua |
+| S6-08/09 giao nhận và đại lý | Lưu ảnh; cộng thực giao; nhập trả đúng lô/cơ sở; chặn lặp; chỉ mở xem trước hóa đơn sau giao đủ | Giao/nhập trả trên web, đại lý thấy SHIPPING/4 rồi DELIVERED/10 | Qua |
+| Quyền và phạm vi | Thủ kho ngoài kho: 403 với chuyến/ảnh/thẻ kho; VIEW-only ghi 403 | Thủ kho không có nút ghi đè quá hạn, viewer ẩn nút ghi | Qua các quyền hiện tại |
+| Audit vị trí kệ | Sửa action VARCHAR(20) → VARCHAR(100), giữ charset/collation/dữ liệu cũ; test persistence mới qua | Gán vị trí và tiếp tục soạn thành công sau sửa | Đã xử lý lỗi MySQL phát hiện trong lần kiểm tra |
+
+36 kiểm tra bố cục (9 màn hình × 1440/768/390/320px) qua. Dữ liệu kiểm thử tiền tố `S6LIVE-25287137`, có kho/đại lý riêng; giữ lại chứng từ để đối chiếu. Nhánh vẫn `fix/Sprint6`, chưa commit/push/merge. Tổng bộ hồi quy đã có thêm 1 AuditLogPersistenceTest bên cạnh 185 test backend đã qua ở đợt trước.
+
+## Sprint 6 — Sửa lỗi liên thông và ma trận quyền — 25/10/2026
+
+Nhánh `fix/Sprint6`. Đối chiếu Sprint 6 trong Product Backlog, sửa các phát hiện F1–F7 của đợt rà soát và chọn giao theo từng phiếu xuất để xử lý xuất thiếu/giao bù (G1). Nội dung này cập nhật trạng thái S6-08 cũ bên dưới vốn mới có giao diện xem trước.
+
+| Story / yêu cầu | Backend | Frontend | Kết nối / quyền |
+|---|---|---|---|
+| S6-01: Lô và hạn dùng | Giữ quản lý lô/ngưỡng/cấm xuất quá hạn và ghi đè có quyền | Giữ màn hình đã nối API | Kiểm tra hồi quy lô, xuất và thu hồi quyền |
+| S6-02: Thẻ kho | Nhập trả chuyến mới ghi đúng số cơ sở; dữ liệu lịch sử thiếu snapshot giữ cách ghi cũ | Giữ bộ lọc/kho/thời gian/chứng từ | Không còn lấy số thùng làm số lon; VIEW theo ma trận |
+| S6-03/04: Soạn hàng và FEFO | Giữ nhóm đơn, thực soạn, lý do thiếu, xuất đúng lô | Giữ UI đã nối | Kiểm tra hồi quy cả dịch vụ, HTTP và trình duyệt |
+| S6-05: Xuất thiếu và xuất bù | Cho xuất bù khi SHIPPING, giữ đúng lượng giữ chỗ; lịch sử phiếu bất biến | Dùng danh sách Còn nợ hàng đã có | Giao phần đã xuất trước, phần còn thiếu xử lý lượt sau; EXPORT để xác nhận |
+| S6-06: Phân tuyến | Điểm giao lấy hàng/lô/quy đổi từ phiếu CONFIRMED; khóa đơn/phiếu, chặn dùng lặp, DRAFT và kho khác | Chọn nhiều phiếu cùng đơn, gửi shipmentVoucherId, giữ thứ tự; bỏ phản hồi sai kho/quyền, chặn gửi lặp | VIEW hoặc EXPORT để xem; EXPORT để tạo; giữ địa chỉ/điện thoại và in bảng kê |
+| S6-07: Tiền hàng trên đường | FAILED/đóng/hủy chuyến không tự cộng tồn; nhập trả là thao tác thực nhận riêng | Giữ thống kê/chuyến còn hàng; đồng bộ từ server | Chỉ rời trách nhiệm chuyến khi giao hoặc nhận trả thực tế |
+| S6-08: Xác nhận giao/nhập trả | Lưu người nhận/giờ/ảnh, thực giao tích lũy; nhập trả đúng cơ sở+lô, giữ chỗ để giao lại; cùng giao dịch và audit | Đã nối chuyến/điểm, multipart ảnh, lý do thất bại, xác nhận thực nhận, xem/tải chứng từ | Menu/trang VIEW hoặc EXPORT; nút ghi EXPORT + cờ server. Thu hồi quyền cùng JWT có hiệu lực request sau |
+| S6-09: Theo dõi cho đại lý | Giao một phiếu chưa hoàn tất cả đơn; không tự tạo giờ 00:00 từ ngày giao cũ | Đọc các mốc/thời gian server, thực giao từng dòng; không suy đoán thời gian thiếu | Chỉ API portal theo đại lý của phiên, ORDER_VIEW; không gọi kho nội bộ |
+
+**Nguyên tắc giao từng phần:** một phiếu xuất thuộc một điểm giao; mỗi lượt cộng thực giao theo dòng gốc. Chỉ khi giao đủ mọi dòng mới chuyển đơn sang DELIVERED và cho S7-01 xem trước/phát hành hóa đơn. Hàng nhập trả của đơn còn hiệu lực được giữ chỗ để xuất lại; đơn đã hủy/từ chối không được tự mở lại. Điểm PENDING ở chuyến đã đóng/hủy có thể xác nhận nhận trả vật lý kèm lý do để tránh hàng bị treo.
+
+**Kiểm thử và giới hạn:** kiểm thử nghiệp vụ/database bằng H2 tách biệt, HTTP/JWT thật trong test; Chrome dùng HTTP fixtures, gồm lưu ảnh/nhập trả và cấp-thu hồi quyền, không ghi database đang sử dụng. Có kiểm thử dùng lặp phiếu, giao hai chuyến đồng thời, nhập trả đồng thời với giao, lặp nhận trả và hoàn tác khi audit lỗi. Antigravity Opus tham gia rà thiết kế/đoạn mã; các kết luận được đối chiếu lại với mã và kiểm thử. Chưa nghiệm thu trên MySQL thực tế. Các snapshot/nguồn mới là cột nullable; chứng từ cũ thiếu lô/dòng nguồn phải đối soát, không sửa dữ liệu đoán lô, không reset DB.
+
+Đã cập nhật API_DOCUMENTATION và FUNCTION_MAP cùng nhánh; chưa commit/push/merge trong đợt sửa này.
+
+Kết quả kiểm chứng cuối đợt: **185 test backend / 17 lớp**, **285 test Node**, **13 test định tuyến Python** và **9 bộ Chrome** đều qua. Backend gồm InvoiceIntegrationTest và 10 ca Sprint6DeliveryFlowIntegrationTest; Chrome bổ sung Phân tuyến giao hàng, thay kiểm thử S6-08 “chỉ xem trước” bằng hợp đồng lưu thật trên fixture. FUNCTION_MAP có 75 story không trùng, đúng thứ tự; diff không có lỗi whitespace. Chưa khởi động lại backend/MySQL đang dùng, nên cần chạy lại backend để nhận các DTO/cột snapshot mới trước khi kiểm tra giao diện thực tế.
+
+## S7-07 — Hoàn thiện backend công nợ của đại lý và sửa frontend kết nối — 25/10/2026
+
+Nhánh `feature/S7-07-backend-xem_cong_no_cua_chinh_minh`, từ `develop`; hoàn thiện API đã có và sửa màn hình hiện hữu tại **Kinh doanh → Công nợ của tôi** (`/dealer-invoices`).
+
+Sau khi đồng bộ `develop` mới có S6-09, giữ cả hai phần trạng thái và sửa lỗi biên dịch có sẵn trên develop: bỏ một khai báo trùng `deliveryTripStopRepository`, khôi phục các hợp đồng `OrderService` cũ đang được controller/service sử dụng, giữ hai API theo dõi giao hàng mới. Fixture controller theo dõi đơn bổ sung vai trò đại lý đúng như hồ sơ DB thật; không nới quyền để kiểm thử qua.
+
+| Yêu cầu | Backend | Frontend | Kết nối / phân quyền |
+|---|---|---|---|
+| Hóa đơn của chính đại lý, số tiền, hạn thanh toán, trạng thái | Có; cách ly hồ sơ DB, lọc hợp lệ, phân trang chống tràn số | Có; sửa trường số lượng/thành tiền, trạng thái và phân trang | INVOICE_VIEW; dealer không được đổi hồ sơ, Admin chọn dealerId |
+| Xem/tải hóa đơn đã phát hành | Có; PDF/HTML/chứng từ điều chỉnh, font tiếng Việt, giữ phần lẻ tiền, escape HTML, no-store | Có; chi tiết, PDF, in qua iframe chặn script | Thu hồi INVOICE_VIEW trả 403; xóa modal/bản in và bỏ phản hồi muộn |
+| Tổng nợ và hạn mức còn được lấy hàng | Có; giữ FIFO và khấu trừ trả hàng đã xác nhận; exactAmounts chuỗi thập phân | Có; BigInt giữ số tiền chính xác, dùng availableOrderLimit của server, không tự chặn sai chính sách ALLOW | FINANCE_VIEW_DEBT độc lập với INVOICE_VIEW; menu mở với một trong hai quyền |
+| Quyền và dữ liệu trả về | Có; ẩn invoices trong summary nếu thiếu INVOICE_VIEW, ẩn tiền trên profile nếu thiếu FINANCE_VIEW_DEBT; khóa cả /portal/debt cũ, không dùng role fallback | Có; bỏ dữ liệu cũ sau lỗi API/đổi quyền/đổi bộ lọc; khóa xuất khi không có dữ liệu; cổng đặt hàng bỏ gọi tổng nợ khi thiếu quyền | Cùng JWT có hiệu lực cấp/thu hồi; ROLE_ADMIN toàn quyền; ORDER_VIEW không đọc được tổng nợ, giỏ hàng dùng preview nghiệp vụ hiện có |
+
+Kiểm thử đạt: **133 backend** (9 tích hợp S7-07, 20 controller portal, 12 hóa đơn, 26 công nợ, 13 trả hàng; hồi quy thêm 37 controller đơn hàng, 8 controller và 8 service theo dõi giao hàng), **280 Node**, **13 route Python**; Chrome kiểm tra tiền lớn/phần lẻ, dữ liệu chi tiết, PDF, sandbox bản in, lỗi API, phản hồi sai thứ tự, thu hồi quyền đang tải, quyền độc lập và Admin; giao diện tại 1440/1024/768/390/320 px không tràn ngang toàn trang. Backend tích hợp dùng H2 cách ly; Chrome chặn toàn bộ API bằng HTTP fixture. Không kiểm thử ghi trên MySQL thật, không tạo/sửa đơn hay reset DB nghiệp vụ. Antigravity Opus hỗ trợ rà thiết kế và ca kiểm thử; Codex chốt code/kết quả. Excel hiện xuất trang đang xem; PDF được dựng từ hóa đơn đã lưu, không bổ sung kho lưu trữ PDF gốc.
+
+## S6-09 — Theo dõi trạng thái giao hàng của đơn (Backend) — 25/10/2026
+
+User Story S6-09: *"Là Đại lý, tôi muốn theo dõi trạng thái giao hàng của đơn, để chủ động bố trí người nhận hàng đúng lúc xe tới."*
+Phạm vi: **Chỉ làm Backend (BE)** theo yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt ma trận phân quyền database-backed, không dùng role-based fallback, `ROLE_ADMIN` luôn có toàn quyền, thu hồi `ORDER_VIEW` trả về 403 Forbidden.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Hiển thị mốc thời gian: đã duyệt, đang soạn, đã xuất, đang giao, đã giao (5 mốc)** | Có (`GET /api/portal/orders/{id}/tracking`, `GET /api/portal/orders/{id}/delivery-tracking`, `GET /api/orders/{id}/delivery-tracking`, và trường mở rộng trong `GET /api/portal/orders/{id}`) | Có | Có | Backend tự động xác định 5 mốc theo thứ tự nghiệp vụ: `approved` (ngày duyệt), `picking` (thời điểm tạo đợt soạn hàng S6-03), `exported` (thời điểm xác nhận xuất kho S6-05), `shipping` (thời điểm gán vào chuyến xe xuất bến S6-06), `delivered` (thời điểm hoàn thành giao tại điểm dừng S6-07/S6-08). Mỗi mốc trả về `milestoneKey`, nhãn tiếng Việt `label`, trạng thái (`COMPLETED`, `CURRENT`, `PENDING`), thời gian `timestamp` và mô tả chi tiết `description`. Đồng thời trả về thông tin chuyến xe `deliveryTrip` (biển số xe, tên & SĐT tài xế, thời gian khởi hành & dự kiến tới) để đại lý chủ động bố trí người nhận. |
+| **Xem được số lượng thực giao từng dòng hàng** | Có | Có | Có | Danh sách dòng hàng `items` trả về đầy đủ: `orderItemId`, `productId`, `productCode`, `productName`, `unit`, `quantity` (số lượng đặt ban đầu), `exportedQuantity` (số lượng thực xuất từ kho), `deliveredQuantity` (số lượng thực giao), `shortageQuantity` (số lượng thiếu nếu có), `isShortage` (cảnh báo giao thiếu) và `deliveryNote` (ghi chú giao nhận từng dòng sản phẩm). |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Bắt buộc quyền `ORDER_VIEW` từ ma trận DB (hoặc `ROLE_ADMIN`). Thu hồi quyền `ORDER_VIEW` khỏi vai trò `ROLE_DEALER` hoặc `ROLE_SALES` khiến API lập tức trả về `403 Forbidden` ngay trên phiên hiện tại. Phân quyền cấp dòng (Row-Level Security): Đại lý chỉ xem được đơn hàng của chính mình; cố truy cập đơn của đại lý khác bị chặn `403 Forbidden`. Quản trị viên `ROLE_ADMIN` luôn có toàn quyền và có thể truyền `?dealerId=...` để tra cứu theo ngữ cảnh đại lý. |
+
+Kiểm thử:
+- Đơn vị & dịch vụ: `DealerOrderTrackingServiceTest` (8/8 tests PASS), `DeliveryTripServiceTest` (13/13 tests PASS).
+- Controller & Ma trận phân quyền: `DealerOrderTrackingControllerTest` (8/8 tests PASS, kiểm thử trả về 5 mốc, chuyến xe, thực giao, chặn 403 khi thiếu quyền `ORDER_VIEW`, chặn 403 khi đại lý truy cập đơn của đại lý khác, chặn 401 khi chưa đăng nhập).
+- Nhân viên nội bộ: `OrderControllerTest` (37/37 tests PASS, kiểm thử `GET /api/orders/{id}/delivery-tracking` 200 OK với `ORDER_VIEW` và 403 khi thiếu quyền).
+- Thu hồi động: `PermissionRevocationTest` (PASS) và `RolePermissionConfigTest` (14/14 tests PASS).
+- Tài liệu hóa: Đã cập nhật `docs/FUNCTION_MAP.md` và `backend/API_DOCUMENTATION.md`.
+
+## S7-06 — Backend biên bản đối chiếu định kỳ và nối frontend — 25/10/2026
+
+Nhánh `feature/S7-06-backend-lap_bien_ban_doi_chieu_cong_no_dinh_ky`, từ `develop`. Phát hiện frontend cũ chỉ giả lập xác nhận/phản hồi trong bộ nhớ và xuất PDF sổ hiện thời; thay bằng biên bản lưu DB.
+
+| Yêu cầu | Backend | Frontend | Kết nối / phân quyền |
+|---|---|---|---|
+| Biên bản theo kỳ: đầu kỳ, phát sinh, cuối kỳ | Lưu snapshot bất biến, mã UUID, người/ngày lập; cùng sổ chứng từ S8-10 | Lập biên bản và danh sách đã lưu, lọc kỳ/đại lý, phân trang, xem lại | FINANCE_VIEW_DEBT để xem; cần thêm FINANCE_MANAGE để lập; Admin được phép |
+| PDF gửi đại lý ký | PDF từ đúng snapshot, tiếng Việt, mã/kỳ/số dư, trạng thái, 2 ô chữ ký | Nút PDF và in bản đã lưu; bỏ thông tin công ty/người ký/tài khoản ngân hàng giả lập cũ | PDF kiểm quyền/phạm vi, không tính lại sổ khi xuất |
+| Đại lý xác nhận hoặc phản hồi lệch | API portal, DB lưu số dư đại lý, lý do, chênh lệch do server tính, người/thời gian phản hồi | Gửi API thật, hiển thị lại phản hồi sau reload; không ghi trạng thái lạc quan | Chỉ đại lý liên kết có FINANCE_VIEW_DEBT; kế toán/Admin không xác nhận thay |
+| Dữ liệu và đồng thời | Version, khóa hàng, requestKey chống lặp, audit cùng transaction | Chuỗi thập phân/BigInt, chặn kết quả trễ sau thu hồi quyền; lỗi POST không tự gửi lại | Cùng JWT có hiệu lực cấp/thu hồi quyền; không role fallback, không browser storage nghiệp vụ |
+
+Giới hạn: snapshot là số liệu tại thời điểm lập; chứng từ backdate sau đó cần biên bản mới. Phản hồi lệch không tự sửa công nợ. Xác nhận cổng không phải chữ ký số; không bổ sung email. S6-08/S8-09 ngoài phạm vi không thay đổi.
+
+Kiểm thử đạt: **42 backend** (17 S7-06, 10 sổ công nợ S8-10, 14 ma trận quyền, 1 thu hồi quyền), **278 Node**, **13 route Python**; Chrome kiểm tra lưu/xem lại, PDF, phản hồi DB theo fixture, chênh lệch chính xác, POST mất kết nối, thu hồi/cấp lại quyền và 5 kích thước 1440/1024/768/390/320. Backend thử bằng H2 cách ly; Chrome chặn toàn bộ API bằng HTTP fixture, không thay đổi dữ liệu thật. Đã phối hợp Antigravity Opus rà thiết kế/rủi ro và đối chiếu các ca kiểm thử; Codex kiểm tra lại code và kết quả.
+
+## S6-06 — Phân tuyến giao hàng và gán tài xế — 25/10/2026
+
+Triển khai đầy đủ cả Backend và Frontend tuân thủ 3 tiêu chí nghiệp vụ theo yêu cầu:
+1. Gom nhiều phiếu xuất vào một chuyến giao theo khu vực để xe chạy một vòng giao được nhiều điểm thay vì đi lẻ.
+2. Gán tài xế và phương tiện cho chuyến giao.
+3. In danh sách điểm giao của chuyến kèm địa chỉ và số điện thoại người nhận.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Gom nhiều phiếu xuất vào một chuyến giao theo khu vực** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | **Backend**: Mở rộng `CreateDeliveryTripRequest` hỗ trợ `routeName`, `territoryId`, gom danh sách phiếu xuất theo `shipmentVoucherIds` hoặc `orderIds`. Mở rộng `GET /api/warehouse/delivery-trips/eligible-orders` lọc đơn hàng/phiếu xuất đã xuất kho theo kho (`warehouseId`), khu vực (`territoryId`) và từ khóa (`keyword`). Tự động liên kết và lưu `voucherCode` trên từng điểm giao (`DeliveryTripStop`). Loại bỏ đơn hàng đang thuộc chuyến khác hoặc đã chuyển backorder.<br>**Frontend**: Màn hình `Kho hàng → Phân tuyến giao hàng` (`/warehouse/delivery-routes`): Quản lý chọn kho xuất phát, hệ thống tự động tải các đơn hàng đã xuất kho (`EXPORTED`, `SHIPPED`). Tự động trích xuất khu vực (Quận/Huyện/Thị xã/Thành phố) từ địa chỉ giao hàng, hiển thị chip lọc nhanh và nút "Gom tất cả đơn khu vực này", hỗ trợ tích chọn nhiều phiếu xuất để xe chạy một vòng giao liên tục thay vì đi lẻ. Quyền: `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **Gán tài xế và phương tiện cho chuyến** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | **Backend**: API `POST /api/warehouse/delivery-trips` tạo chuyến và `PUT /api/warehouse/delivery-trips/{id}` cập nhật chuyến tiếp nhận `UpdateDeliveryTripRequest` (`driverName`, `driverPhone`, `vehiclePlate`, `routeName`, `territoryId`, `expectedCompletionTime`, `note`). Kiểm tra chặt chẽ chuyến đang ở trạng thái `IN_PROGRESS`, gán tài xế, xe và tuyến giao hàng; ghi log kiểm toán.<br>**Frontend**: Bảng lộ trình chuyến giao cho phép sắp xếp thứ tự các điểm dừng (Điểm 1, Điểm 2, Điểm 3...) bằng nút lên/xuống để tối ưu cung đường vòng chạy. Form gán thông tin bắt buộc: Tên tài xế, Biển số xe/Phương tiện, Thời gian dự kiến hoàn thành; trường mở rộng: Số điện thoại tài xế, Thời điểm xuất phát, Ghi chú lộ trình và ghi chú riêng từng điểm dừng. Gửi danh sách `stops` kèm `stopOrder` chính xác lên API. Quyền: `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **In danh sách điểm giao của chuyến kèm địa chỉ và số điện thoại người nhận** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | **Backend**: Bổ sung bộ 3 API: (1) `GET /api/warehouse/delivery-trips/{id}/manifest` trả JSON bảng kê điểm giao đầy đủ họ tên, SĐT, địa chỉ nhận hàng, mã phiếu xuất, mã đơn hàng, số tiền, danh sách mặt hàng; (2) `GET /api/warehouse/delivery-trips/{id}/manifest/pdf` xuất PDF chuẩn A4 OpenPDF có quốc hiệu, thông tin tài xế/xe/tuyến, bảng kê điểm giao, tổng tiền hàng và chữ ký các bên; (3) `GET /api/warehouse/delivery-trips/{id}/manifest/print` xuất HTML bản in hỗ trợ xem trước và in trực tiếp (`window.print()`).<br>**Frontend**: Phiếu in chuẩn chứng từ kho vận & giao nhận thể hiện đầy đủ: Mã chuyến, Kho xuất phát, Ngày giờ khởi hành, Dự kiến hoàn thành, Họ tên tài xế, SĐT tài xế, Biển số xe; Bảng kê điểm giao theo thứ tự dừng có **Mã đơn/phiếu xuất, Người nhận/Đại lý, Địa chỉ giao hàng, Số điện thoại người nhận**, Tiền hàng/COD, Ghi chú và ô Ký nhận của khách; 3 ô chữ ký (Quản lý kho phân tuyến, Tài xế nhận hàng, Thủ kho). Nút "In danh sách" hỗ trợ in A4 sắc nét qua `window.print()` với `@media print`. Tự động mở xem trước sau khi tạo chuyến và cho phép in lại trên danh sách chuyến gần đây. Quyền: `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **Ma trận phân quyền động (Database-backed Permission Matrix) & Warehouse Scoping** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | Thực thi ma trận quyền DB nghiêm ngặt: Quyền xem/bảng kê/PDF/print/eligible-orders bắt buộc `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT`. Quyền tạo chuyến/cập nhật chuyến/đổi trạng thái điểm giao bắt buộc `WAREHOUSE_EXPORT`. `ROLE_ADMIN` luôn có toàn quyền. Không dùng role-based fallback. Thu hồi quyền trên phiên JWT hiện tại lập tức có hiệu lực trả về `403 Forbidden` trên API request kế tiếp và frontend tự động ẩn/khóa thao tác qua `auth:permissions-changed`. Phân vùng dữ liệu kho (Warehouse Scoping) bảo đảm nhân viên kho chỉ truy cập được các chuyến giao thuộc kho được phân công (`user.getWarehouses()`). Tuyệt đối không lưu dữ liệu kinh doanh vào browser storage. |
+
+Kiểm thử:
+- **Backend**: **47/47 tests Backend DeliveryTrip qua 100%** (`DeliveryTripControllerTest`, `DeliveryTripSecurityTest`, `DeliveryTripServiceTest`, `DeliveryTripIntegrationTest`).
+- **Frontend**: Toàn diện trong `tests/delivery-routes.test.cjs` bao quát trích xuất gom nhóm khu vực, xác thực dữ liệu, sắp xếp thứ tự điểm dừng, tạo payload, sinh mẫu in chứa địa chỉ & SĐT người nhận, cấu hình menu DB và bảo mật lưu trữ.
+- Đã cập nhật đầy đủ `docs/FUNCTION_MAP.md`, `backend/API_DOCUMENTATION.md`, `docs/FRONTEND_ROUTES.md`, `frontend/js/menu-config.js` và `serve_frontend.py`.
+
+## S8-04 — Quản lý chỉ tiêu doanh số (Frontend) — 24/10/2026
+
+Nánh `feature/S8-04-chi-tieu-doanh-so(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ 3 tiêu chí nghiệp vụ theo yêu cầu: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Đặt chỉ tiêu theo tháng cho từng nhân viên và từng khu vực** | Có (API đã có từ trước) | Có | Có | Màn hình `Kinh doanh → Chỉ tiêu doanh số` (`/sales-targets`): Quản lý chọn kỳ tháng (`YYYY-MM`), lọ khu vực và nhân viên, xem được cả bảng theo nhân viên lẫn theo khu vực. Modal đặt/sửa chỉ tiêu với trường số tiền + bảo vệ nhập liệu đầy đủ. Gọi API `POST /api/sales-targets`. Yêu cầu quyền `SALES_TARGET_MANAGE` (hoặc `ROLE_ADMIN`). |
+| **Nhân viên xem được tiến độ của chính mình theo thời gian thực** | Có | Có | Có | Tab “Tiến độ của tôi” gọi API `GET /api/sales-targets/my-progress?period=YYYY-MM`: Hiển thị 4 thẻ KPI (Chỉ tiêu, Doanh số thực tế, Tiến độ %, Còn lại cần đạt), thanh tiến độ trực quan đổi màu (thấp/trung bình/tốt/hoàn thành), bảng chi tiết đơn hàng trong kỳ. Yêu cầu quyền `SALES_TARGET_VIEW_OWN` (hoặc `ROLE_ADMIN`). |
+| **Chỉ tiêu đã qua kỳ thì khoá lại, sửa phải có lý do và được ghi nhật ký** | Có | Có | Có | Kỳ đã qua bị khóa tự động (badge “Khóa” đỏ trên bảng và cảnh báo nổi bật). Khi sửa, modal bắt buộc hiển thị khu vực nhập Lý do sửa (bắt buộc, tối đa 500 ký tự) và kiểm tra validate nghiêm ngặt. Mọi thay đổi truyền kèm `reason` lên API; gương nhật ký thông qua `GET /api/sales-targets/summary` trả về `auditLog[]`. Bảng Nhật ký thay đổi hiển thị rõ người sửa, giá trị cũ/mới và lý do. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Ba quyền rõ ràng: `SALES_TARGET_VIEW` (xem toàn bộ), `SALES_TARGET_MANAGE` (đặt/sửa), `SALES_TARGET_VIEW_OWN` (xem tiến độ của mình). Thu hồi quyền trên phiên hiện tại lập tức ẩn menu, khóa giao diện và hủy toàn bộ request. Lắng nghe `auth:permissions-changed`. Không dùng role-based fallback. `ROLE_ADMIN` luôn có toàn quyền. Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: **7/7 tests S8-04 qua 100%** trong `tests/sales-targets.test.cjs`; toàn bộ **266/266 tests Node** trong dự án qua; **13/13 tests server/route Python** qua. Đã cập nhật `serve_frontend.py`, `frontend/js/menu-config.js` và `docs/FUNCTION_MAP.md`.
+
+## S7-09 — In phiếu thu cho mỗi khoản đã ghi nhận (Frontend) — 24/10/2026
+
+Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ các yêu cầu nghiệp vụ theo ảnh mô tả: **chỉ làm frontend**, không sửa backend.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Phiếu thu có mã duy nhất | Có | Có | Có | Mã phiếu thu duy nhất `PT-YYYYMMDD-XXXX` (do backend sinh tự động khi lưu phiếu qua `POST /api/finance/debt-payments`) được hiển thị nổi bật trên tiêu đề chứng từ, khung xem trước và file PDF xuất ra. |
+| Thông tin đại lý | Có | Có | Có | Thể hiện đầy đủ tên đại lý (`dealerName`), mã đại lý (`dealerCode`) và địa chỉ đơn vị nộp tiền, hỗ trợ kế toán công nợ và đại lý đối soát chứng từ tại chỗ. |
+| Số tiền (bằng số & bằng chữ) | Có | Có | Có | Hiển thị số tiền thu bằng số chuẩn định dạng VND (`15.000.000 ₫`) và tự động chuyển đổi đọc thành chữ chuẩn mực chứng từ kế toán Việt Nam (`numberToVietnameseWords`, ví dụ: "Mười lăm triệu đồng chẵn."). |
+| Hình thức thu tiền & Người thu | Có | Có | Có | Ghi nhận rõ hình thức thu (`paymentMethod`: Tiền mặt, Chuyển khoản, Khác) kèm mã chứng từ gốc/UNC (`referenceCode`), ngày thu tiền (`paymentDate`), ngày giờ ghi nhận và họ tên/tài khoản người thu tiền (`recordedBy`). Kèm bảng kê chi tiết các hoá đơn được đối trừ (`allocations`) và 4 cột chữ ký (Người nộp tiền, Người thu tiền, Kế toán trưởng, Thủ trưởng đơn vị). |
+| In hoặc tải PDF được | Có (APIs S7-02) | Có | Có | Hỗ trợ 2 phương thức: (1) **In phiếu thu**: Nút "In phiếu" trên bảng danh sách, trong modal chi tiết hoặc mở tự động sau khi lập phiếu thu thành công; mở modal xem trước và gọi `window.print()` áp dụng CSS `@media print` chuẩn A4 chuyên nghiệp, ẩn các thanh điều hướng/nút bấm; (2) **Tải PDF**: Tạo trực tiếp file PDF nhúng chuẩn binary `%PDF-1.4` (`application/pdf`) tải về máy `phieu-thu-PT-XXXX.pdf` để gửi đại lý ngay tại chỗ. |
+| Ma trận phân quyền động (Permission Matrix) & An toàn dữ liệu | Có | Có | Có | Quyền `FINANCE_VIEW_DEBT` hoặc `FINANCE_MANAGE` để xem, in và tải PDF phiếu thu. `ROLE_ADMIN` luôn có toàn quyền. Tuyệt đối không role fallback (`ROLE_ACCOUNTANT` mất quyền trong DB sẽ bị ẩn nút và chặn in). Đóng modal in ngay lập tức khi nhận sự kiện `auth:permissions-changed`. Không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: **14/14 tests S7-02/S7-09 qua 100%** trong `tests/debt-payments.test.cjs`; toàn bộ **247/247 test frontend qua 100%**; **13/13 clean routes test qua 100%**. Đã cập nhật `docs/FUNCTION_MAP.md`.
+
+Cập nhật **23/10/2026**, thêm frontend báo cáo doanh số S8-06.
+
+## S8-06 — Báo cáo doanh số đa chiều (Backend & Frontend) — 25/10/2026
+
+Nguồn tiêu chí: User story S8-06 (*"Là Quản lý kinh doanh, tôi muốn xem báo cáo doanh số theo nhiều chiều, để biết mặt hàng nào và khu vực nào đang thực sự sinh lãi"*).
+Đã triển khai hoàn tất **Backend** và sửa các lỗi/bảo mật ma trận quyền trên **Frontend**, kết nối đồng bộ 100%.
+
+| Tiêu chí / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Nhóm theo nhân viên, khu vực, đại lý, nhóm hàng hoặc SKU | **Đã hoàn tất**: Controller `SalesReportController`, Service `SalesReportService` xử lý 5 chiều nhóm, DTO phân trang `SalesReportPageResponse`, options `GET /api/reports/sales/options` | **Đã hoàn tất**: trang `/reports/sales`, bộ lọc chọn chiều nhóm (5 chiều: SKU, CATEGORY, DEALER, REGION, EMPLOYEE), bộ lọc thời gian, khu vực, đại lý, nhóm hàng, nhân viên | Kết nối hoàn tất 100%. Phân quyền yêu cầu `REPORT_SALES` hoặc `ORDER_VIEW`. Thu hồi quyền lập tức trả 403 trên API và ẩn menu/chuyển trang lỗi trên FE. `ROLE_ADMIN` toàn quyền. |
+| Hiển thị doanh số, sản lượng và biên lợi nhuận gộp | **Đã hoàn tất**: Tính toán doanh số, sản lượng quy chuẩn, giá vốn (costPrice) và biên lợi nhuận gộp `grossMargin (%)`, KPI tổng hợp `totalRevenue`, `totalQuantity`, `averageGrossMargin` | **Đã hoàn tất**: Bảng hiển thị cột doanh số, sản lượng, biên LN gộp tự động ẩn/hiện theo quyền; KPI tổng hợp đầu bảng | Kết nối hoàn tất 100%. Biên lợi nhuận chỉ trả về và hiển thị khi có quyền `FINANCE_VIEW_PROFIT_MARGIN` hoặc `ROLE_ADMIN`. Khi không có quyền, backend trả `null` và frontend ẩn hoàn toàn cột margin và KPI margin. |
+| Biên lợi nhuận chỉ Quản lý kinh doanh xem được | **Đã hoàn tất**: Backend kiểm tra quyền `FINANCE_VIEW_PROFIT_MARGIN` (hoặc `ROLE_ADMIN`). Thu hồi quyền trong ma trận DB sẽ ẩn trường margin (không leak giá vốn) | **Đã sửa lỗi**: Cập nhật `canSeeMargin()` kiểm tra động quyền `FINANCE_VIEW_PROFIT_MARGIN` từ ma trận DB thay vì hardcode role tĩnh. Ẩn cột và KPI khi bị thu hồi | Kết nối hoàn tất 100%. Tuyệt đối không dùng role fallback; ma trận phân quyền DB là nguồn duy nhất. |
+| So sánh với cùng kỳ trước và xuất Excel | **Đã hoàn tất**: Nhận tham số `compare=true`, tự động tính toán khoảng thời gian cùng kỳ liền trước, trả `previousRevenue` và `changePercent (%)`; API xuất Excel `/api/reports/sales/export` chuẩn Apache POI (.xlsx) | **Đã hoàn tất**: Checkbox so sánh hiển thị cột DS cùng kỳ và tăng/giảm % (mũi tên xanh/đỏ); xuất Excel client-side (SheetJS) và tải Excel server-side | Kết nối hoàn tất 100%. Đã sửa lỗi timezone ngày địa phương (`formatLocalYmd`), đảm bảo ngày bắt đầu luôn đúng ngày 1 đầu tháng. |
+| Ma trận quyền và thu hồi | **Đã hoàn tất**: `@PreAuthorize("hasRole('ADMIN') or hasAuthority('REPORT_SALES') or hasAuthority('ORDER_VIEW')")`, kiểm tra margin qua `FINANCE_VIEW_PROFIT_MARGIN` | **Đã hoàn tất**: Menu và trang kết nối `REPORT_SALES` và `ORDER_VIEW`, tự động đồng bộ khi nhận sự kiện `auth:permissions-changed` | Kết nối hoàn tất 100%. Thu hồi quyền trả 403 và chuyển hướng ngay lập tức. |
+| Bố cục và tương thích | Đã hoàn tất | Chuẩn app-shell, lề `app-navigation.css`, bảng cuộn nội bộ, responsive desktop/tablet/mobile; không lưu dữ liệu kinh doanh vào localStorage | Không lưu dữ liệu kinh doanh vào browser storage. |
+
+Kiểm thử:
+- **Backend**: 14/14 tests qua 100% (`SalesReportSecurityTest`: 5/5 qua, `SalesReportServiceTest`: 9/9 qua).
+- **Frontend**: 288/288 tests qua 100% (bao gồm 3/3 test mới trong `tests/sales-report.test.cjs` và 33/33 test trong `menu-config.test.cjs`).
+- Đã cập nhật `docs/FUNCTION_MAP.md` và `status.md`.
+
+---
+## S7-08 — Nhắc hạn thanh toán tự động cho đại lý (Frontend) (24/10/2026)
+
+Nhánh `feature/S7-08-chuc-nang-nhac-thanh-toan(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ các tiêu chí nghiệp vụ trong ảnh yêu cầu:
+- Gửi email và thông báo trong ứng dụng trước hạn 3 ngày và khi quá hạn
+- Tác vụ định kỳ chạy mỗi ngày một lần (backend scheduler 7h sáng)
+- Không gửi trùng nhiều lần cho cùng một hoá đơn trong cùng một ngày (backend unique constraint)
+Theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Thông báo trong ứng dụng trước hạn 3 ngày (`PAYMENT_DUE_BEFORE_3_DAYS`)** | Có | Có | Có | Màn hình `Kinh doanh → Thông báo của tôi` (`/dealer-notifications`): Hiển thị thông báo sắp đến hạn thanh toán với badge màu hổ phách/vàng, biểu tượng đồng hồ/lịch, hiển thị rõ số hóa đơn liên quan (`referenceCode`), ngày đến hạn và số tiền. Có nút "Xem hóa đơn" liên kết trực tiếp sang trang công nợ `/dealer-invoices`. |
+| **Thông báo trong ứng dụng khi quá hạn (`PAYMENT_OVERDUE`)** | Có | Có | Có | Hiển thị thông báo quá hạn thanh toán với badge đỏ cảnh báo, biểu tượng cảnh báo nguy hiểm, nội dung nêu rõ số ngày quá hạn và cảnh báo nguy cơ bị tạm khóa đơn hàng nếu không thanh toán sớm. Có nút "Xem hóa đơn". |
+| **Đếm số lượng thông báo chưa đọc (Unread Badge)** | Có | Có | Có | Gọi API `GET /api/portal/notifications/unread-count`: hiển thị badge đỏ số lượng thông báo chưa đọc trên tiêu đề trang và tab lọc. Tích hợp nút chuông thông báo trên topbar của Cổng đặt hàng đại lý (`dealer-portal.html`). |
+| **Đánh dấu thông báo đã đọc (từng thông báo & tất cả)** | Có | Có | Có | Nút "Đã đọc" tại từng thông báo gọi `PUT /api/portal/notifications/{id}/read`, cập nhật ngay giao diện và giảm badge. Nút "Đánh dấu tất cả đã đọc" gọi `PUT /api/portal/notifications/read-all`, chuyển toàn bộ thông báo sang trạng thái đã đọc. |
+| **Bộ lọc & Phân trang thông báo** | Có | Có | Có | Tab chuyển đổi nhanh giữa "Tất cả" và "Chưa đọc"; dropdown lọc theo loại thông báo (`PAYMENT_DUE_BEFORE_3_DAYS`, `PAYMENT_OVERDUE`, `SYSTEM`). Thanh phân trang trước/sau đầy đủ. |
+| **Hỗ trợ Quản trị viên (ROLE_ADMIN Context)** | Có | Có | Có | Tích hợp `DealerPortalContext`: Quản trị viên có thể chọn đại lý để xem trung tâm thông báo của đại lý đó qua dropdown chọn đại lý, tự động gắn query param `dealerId`. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Bắt buộc quyền `NOTIFICATION_VIEW` (hoặc `ROLE_ADMIN`). Thu hồi quyền trên phiên hiện tại lập tức ẩn menu, ẩn giao diện danh sách thông báo và hiển thị thông báo lỗi 403; không dùng role-based fallback. Lắng nghe sự kiện `auth:permissions-changed`. `ROLE_ADMIN` luôn có toàn quyền. |
+
+Kiểm thử: **5/5 tests S7-08 qua 100%** trong `tests/dealer-notifications.test.cjs`, toàn bộ **219/219 tests Node** trong dự án qua, menu config và routing hoạt động chính xác. Đã cập nhật `docs/FUNCTION_MAP.md`.
+
+---
+
+## S7-06 — Biên bản đối chiếu công nợ định kỳ với đại lý (Frontend) — 24/10/2026
+
+Nhánh `feature/S7-06-lap-bien-ban-doi-chieu-cong-no(frontend)`. Phạm vi: **Chỉ làm Frontend (FE)** theo yêu cầu của người dùng ("đọc AGENTS.md và làm theo yêu cầu sau(chỉ frontend)"), tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_frontend_design.md` + `SKILLS/SKILL_backend.md`.
+
+| Tiêu chí / Yêu cầu trong ảnh (S7-06) | Backend | Frontend | Đã kết nối đúng / Ma trận phân quyền |
+|---|:---:|:---:|---|
+| **Sinh biên bản theo kỳ gồm số dư đầu kỳ, phát sinh, số dư cuối kỳ** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Menu Tài chính → Đối chiếu công nợ (`/finance/debt-reconciliation`). Gọi API `GET /api/finance/debt/{dealerId}/statement?from=...&to=...`. Hiển thị mẫu biên bản đối chiếu chuẩn Quốc hiệu tiêu ngữ và Bên bán Bên mua, 4 thẻ KPI chỉ số (Số dư nợ đầu kỳ, Phát sinh tăng, Phát sinh giảm, Dư nợ cuối kỳ), kèm bảng kê chi tiết từng chứng từ phát sinh trong kỳ (Đơn hàng, Phiếu thu, Điều chỉnh HĐ) và kết luận số tiền bằng số. |
+| **Xuất PDF để gửi đại lý ký xác nhận** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Nút "Xuất PDF" gọi trực tiếp API `GET /api/finance/debt/{dealerId}/statement/export?from=...&to=...&format=pdf` tải file PDF chuẩn A4 có đầy đủ thông tin kỳ, số dư và khối chữ ký hai bên. Nút "In biên bản" hỗ trợ xem trước và in trực tiếp qua trình duyệt với CSS `@media print` tối ưu. |
+| **Đại lý xác nhận hoặc phản hồi lệch ngay trên cổng đại lý** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Cung cấp 2 hành động tương tác: "Xác nhận khớp đúng" (ghi nhận đại lý đã đồng ý với số dư công nợ cuối kỳ) và "Phản hồi lệch số liệu" (mở modal nhập số dư sổ sách đại lý, tự động tính chênh lệch, bắt buộc nhập lý do và chứng từ chưa khớp tối đa 500 ký tự). Trạng thái phản hồi được hiển thị trực quan cho cả Kế toán và Đại lý. |
+| **Thực thi Ma trận quyền DB & Không fallback vai trò** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Bắt buộc quyền `FINANCE_VIEW_DEBT` từ ma trận DB (hoặc `ROLE_ADMIN`). Thu hồi quyền ở DB khiến API trả về ngay 403 Forbidden và Frontend ẩn menu/khóa màn hình ngay lập tức. Tự động phản ứng với sự kiện `auth:permissions-changed`. Không dùng role-based fallback. Tài khoản đại lý (`ROLE_DEALER`) được tự động khóa phạm vi chỉ đối chiếu công nợ của chính mình. Tuyệt đối không lưu dữ liệu kinh doanh vào `localStorage` hay `sessionStorage`. |
+
+> Kiểm thử S7-06: Frontend gồm bộ test tự động `tests/debt-reconciliation.test.cjs` (7 ca kiểm thử bao phủ định dạng tiền tệ, ngày giờ, xác thực khoảng ngày, xác thực phản hồi lệch chênh lệch, ma trận phân quyền DB không role fallback, route `/finance/debt-reconciliation`, và cam kết không dùng browser storage). Toàn bộ test suite dự án 221/221 Node.js tests PASS.
+
+# Trạng thái sprint 1–8
+
+## S7-03 — Xem sổ công nợ theo đại lý với phân tích tuổi nợ (Backend) — 25/10/2026
+
+User Story S7-03: *"Là Kế toán công nợ, tôi muốn xem sổ công nợ theo đại lý với phân tích tuổi nợ, để tập trung đòi những khoản nợ lâu nhất trước."*
+Phạm vi: **Chỉ làm Backend (BE)** theo yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt ma trận phân quyền database-backed, không dùng role-based fallback, `ROLE_ADMIN` luôn có toàn quyền, thu hồi quyền `FINANCE_VIEW_DEBT` lập tức trả về `403 Forbidden` trên token JWT hiện tại.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Các cột: phải thu, đã thu, còn nợ, chia theo 4 nhóm tuổi nợ (0–30, 31–60, 61–90 và trên 90 ngày)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Triển khai API `GET /api/finance/debt-aging-ledger` (alias `GET /api/finance/dealer-debt-aging`). Đối trừ FIFO tự động giữa tổng thanh toán đã thu và các chứng từ phát sinh nợ cũ nhất trước (hóa đơn bán hàng + đơn hàng ghi sổ chưa xuất hóa đơn, trừ đi các khoản trả hàng đã xác nhận `FinancialReturnCredits`). Với từng đại lý, tính toán chính xác: tổng phải thu (`totalReceivable`), tổng đã thu (`totalPaid`), còn nợ (`remainingDebt`), nợ trong hạn (`inTermDebt`), nợ quá hạn (`overdueDebt`), tuổi nợ tối đa (`maxDebtAgeDays`), số ngày quá hạn tối đa (`maxOverdueDays`), và 4 nhóm tuổi nợ chuẩn: `bucket0To30` (0–30 ngày), `bucket31To60` (31–60 ngày), `bucket61To90` (61–90 ngày), `bucketOver90` (trên 90 ngày). Đảm bảo tính nhất quán toán học: `bucket0To30 + bucket31To60 + bucket61To90 + bucketOver90 = remainingDebt`. Trả về cả dạng số `BigDecimal` và dạng chuỗi định dạng tiền tệ formatted 2 chữ số lẻ để FE hiển thị an toàn tuyệt đối. Sắp xếp danh sách ưu tiên đòi nợ: nợ trên 90 ngày lớn nhất đứng đầu (`bucketOver90` desc) -> `bucket61To90` desc -> `bucket31To60` desc -> `maxDebtAgeDays` desc -> `remainingDebt` desc. |
+| **Lọc riêng nhóm quá hạn (`overdueOnly = true`)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Hỗ trợ tham số query `overdueOnly=true`. Khi bật cờ, hệ thống chỉ lọc và trả về các đại lý có nợ quá hạn (`isOverdue = true`, tức ngày chốt `asOfDate > dueDate` của khoản nợ chưa tất toán). Khi `overdueOnly=false`, trả về toàn bộ đại lý có phát sinh công nợ. |
+| **Hiển thị tổng cộng ở chân bảng (Summary)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Đối tượng `summary` tính tổng toán học ở chân bảng khớp chính xác với tổng toàn bộ các cột đại lý chi tiết: tổng phải thu (`totalReceivable`), tổng đã thu (`totalPaid`), tổng còn nợ (`totalRemainingDebt`), tổng nợ trong hạn (`totalInTermDebt`), tổng nợ quá hạn (`totalOverdueDebt`), tổng 4 nhóm tuổi nợ (`totalBucket0To30`, `totalBucket31To60`, `totalBucket61To90`, `totalBucketOver90`), đếm tổng số đại lý phát sinh nợ (`dealerCount`) và số đại lý có nợ quá hạn (`overdueDealerCount`). Cung cấp đầy đủ các trường formatted ở chân bảng. |
+| **Xuất được ra Excel (`.xlsx`)** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Triển khai API xuất Excel chuyên nghiệp `GET /api/finance/debt-aging-ledger/export` (alias `/export/excel`, `/excel`) sử dụng Apache POI sinh file `.xlsx` định dạng chuẩn. File Excel bao gồm: tiêu đề báo cáo tiếng Việt in hoa đậm, khối thông tin bộ lọc (ngày chốt sổ, trạng thái lọc quá hạn, từ khóa tìm kiếm, ngày giờ trích xuất hệ thống), header 19 cột chi tiết được style màu nền thương hiệu, căn lề tự động, định dạng số tiền VND chuẩn kế toán (`#,##0.00`), dòng **TỔNG CỘNG** ở chân bảng in đậm viền kép, tự động căn chỉnh độ rộng cột (`autoSizeColumn`), và áp dụng cơ chế chống mã độc bảng tính (Formula Injection Safe) tự động làm sạch các ký tự bắt đầu nguy hiểm (`=`, `+`, `-`, `@`). |
+| **Ma trận phân quyền động (Database-backed Permission Matrix) & Bảo mật** | ✅ Có | ⏳ Chưa (Yêu cầu chỉ làm BE) | ⏳ Chờ FE kết nối API | **Backend**: Kiểm soát chặt chẽ bằng ma trận phân quyền từ cơ sở dữ liệu (`RolePermissionConfig`): Bắt buộc quyền `FINANCE_VIEW_DEBT` hoặc vai trò quản trị `ROLE_ADMIN`. Thu hồi quyền `FINANCE_VIEW_DEBT` khỏi vai trò của người dùng trên DB lập tức khiến API trả về `403 Forbidden` ngay trên phiên/token JWT hiện tại mà không cần đăng nhập lại. Tuyệt đối không dùng role-based fallback. Chưa xác thực trả về `401 Unauthorized`. Phân quyền cấp dòng (Row-Level Security): `ROLE_SALES` chỉ xem được các đại lý mình phụ trách; `ROLE_DEALER` chỉ xem được dữ liệu công nợ của chính đại lý mình; `ROLE_ADMIN` luôn có toàn quyền xem tất cả. |
+
+Kiểm thử đạt:
+- **Unit Tests (`DealerDebtAgingLedgerServiceTest`)**: 8/8 tests PASS (100%) — kiểm thử tính toán phải thu/đã thu/còn nợ, phân bổ 4 nhóm tuổi nợ, phân loại nợ trong hạn/quá hạn, đối trừ FIFO, sắp xếp nợ lâu nhất trước, lọc `overdueOnly`, tính tổng summary chân bảng, chặn ngày chốt tương lai (`IllegalArgumentException`), chặn truy cập khi thiếu quyền (`AccessDeniedException`), Row-Level Security cho Sales, và xuất Excel.
+- **Integration Tests (`DealerDebtAgingLedgerIntegrationTest`)**: 7/7 tests PASS (100%) — kiểm thử Spring Boot Test với Spring Security: `ROLE_ADMIN` gọi thành công 200 OK, `ROLE_ACCOUNTANT` có quyền `FINANCE_VIEW_DEBT` gọi thành công 200 OK, lọc `overdueOnly=true`, xuất Excel `.xlsx` kiểm tra POI headers và dòng TỔNG CỘNG chân bảng, thu hồi quyền động `FINANCE_VIEW_DEBT` lập tức trả 403 Forbidden, người dùng không có quyền bị chặn 403, và unauthenticated bị chặn 401.
+- **Tổng cộng**: 15/15 tests PASS (100%).
+
+## S7-07 — Đại lý xem công nợ của chính mình và danh sách hóa đơn (Frontend) (24/10/2026)
+
+Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ các tiêu chí nghiệp vụ trong ảnh yêu cầu:
+- Danh sách hoá đơn kèm số tiền, hạn thanh toán, trạng thái
+- Xem và tải lại hoá đơn đã phát hành (PDF, xem bản in HTML, chứng từ điều chỉnh)
+- Hiển thị tổng còn nợ và hạn mức còn lại (hạn mức nợ, số ngày nợ tối đa, hạn mức còn được lấy hàng thực tế availableOrderLimit)
+Theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Hiển thị tổng còn nợ và hạn mức còn lại** | Có (đã có từ trước) | Có | Có | Gọi API `GET /api/portal/debt/summary` (hoặc `/portal/debt`): hiển thị trực quan các thẻ chỉ số Tổng còn nợ (`currentDebt`), Hạn mức công nợ (`debtLimit`), Hạn mức còn lại (`remainingLimit`), Hạn mức còn được lấy hàng (`availableOrderLimit`), Số HĐ chưa thanh toán/quá hạn, số ngày nợ tối đa (`maxDebtDays`). Cảnh báo rõ ràng nếu bị chặn hoặc có nợ quá hạn. Yêu cầu quyền `FINANCE_VIEW_DEBT` (hoặc `ROLE_ADMIN`). |
+| **Danh sách hoá đơn kèm số tiền, hạn thanh toán, trạng thái** | Có (đã có từ trước) | Có | Có | Màn hình `Kinh doanh → Công nợ của tôi` (`/dealer-invoices`): Bảng danh sách hóa đơn phân trang, tìm kiếm từ khóa, lọc theo trạng thái thanh toán (`UNPAID`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`), trạng thái phát hành (`ISSUED`, `ADJUSTED`, `CANCELLED`), lọc ngày; hiển thị Số hóa đơn, Ngày lập, Hạn thanh toán (kèm tag quá hạn/ngày còn lại), Tổng tiền, Đã trả, Còn nợ, TT thanh toán và phát hành. Tfoot tính tổng trang. Yêu cầu quyền `INVOICE_VIEW` (hoặc `ROLE_ADMIN`). |
+| **Xem và tải lại hoá đơn đã phát hành** | Có (đã có từ trước) | Có | Có | Thao tác trên từng hóa đơn: nút **Xem** mở modal hiển thị đầy đủ thông tin bên mua, danh sách mặt hàng thực tế (`items`), tổng thanh toán, tiền đã trả, còn nợ và chứng từ điều chỉnh liên kết; nút **In** mở bản in HTML qua API `/api/portal/invoices/{id}/print-preview`; nút **PDF** tải file PDF qua API `/api/portal/invoices/{id}/pdf?download=true`; hỗ trợ tải PDF chứng từ điều chỉnh qua `/api/portal/invoices/{id}/adjustments/{adjustmentId}/pdf`. Yêu cầu quyền `INVOICE_VIEW` (hoặc `ROLE_ADMIN`). |
+| **Xuất Excel danh sách hóa đơn & công nợ** | Không yêu cầu BE riêng | Có | Có | Tích hợp xuất file `.xlsx` (`CongNo_HoaDon_YYYY-MM-DD.xlsx`) từ danh sách hóa đơn đang lọc bằng thư viện `vendor/xlsx.full.min.js`. |
+| **Hỗ trợ Quản trị viên (ROLE_ADMIN)** | Có | Có | Có | Quản trị viên có thể chọn đại lý cần xem công nợ và hóa đơn thông qua bộ chọn đại lý (`DealerPortalContext`), tự động gắn query param `dealerId`. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Bắt buộc quyền `INVOICE_VIEW` để xem danh sách/chi tiết/PDF/in hóa đơn và `FINANCE_VIEW_DEBT` để xem tổng quan công nợ. Thu hồi quyền trên phiên hiện tại lập tức ẩn các vùng dữ liệu tương ứng, đóng modal và hiển thị thông báo truy cập bị từ chối; không dùng role-based fallback. Lắng nghe sự kiện `auth:permissions-changed`. `ROLE_ADMIN` luôn có toàn quyền truy cập. |
+
+Kiểm thử: **5/5 tests S7-07 qua 100%** trong `tests/dealer-invoices.test.cjs`, toàn bộ **219/219 tests Node** trong dự án qua, menu config và routing hoạt động chính xác. Đã cập nhật `docs/FUNCTION_MAP.md`.
+
+---
+
+## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Frontend) — 24/10/2026
+
+Nhánh `feature/S7-02-ghi-nhan-thanh-toan(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 5 tiêu chí nghiệp vụ theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Ghi số tiền, hình thức thu, ngày thu, người thu, ghi chú | Có | Có | Có | Màn hình `/finance/debt-payments`: Form lập phiếu thu tiền hỗ trợ đầy đủ các trường: số tiền (`amount`), hình thức thu (`paymentMethod`: Tiền mặt, Chuyển khoản, Khác), ngày thu (`paymentDate`), người thu (`recordedBy`), mã tham chiếu/UNC (`referenceCode`) và ghi chú (`note`). Mã phiếu thu `PT-YYYYMMDD-XXXX` do backend sinh tự động. Quyền yêu cầu: `FINANCE_MANAGE` hoặc `ROLE_ADMIN`. |
+| Chọn đối trừ vào hoá đơn cụ thể, hoặc tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO) | Có | Có | Có | Hỗ trợ 2 chế độ: (1) Tự động FIFO (`autoAllocate = true`): Có nút "Xem trước đối trừ FIFO" gọi `POST /api/finance/debt-payments/preview-allocation` hiển thị hoá đơn nào được cấn trừ bao nhiêu, nợ còn lại và trạng thái mới; (2) Chọn đối trừ cụ thể (`autoAllocate = false`): Tự động nạp hoá đơn còn nợ của đại lý từ `GET /api/finance/dealers/{dealerId}/unpaid-invoices`, cho phép nhập tiền cấn trừ từng hoá đơn, có nút điền nhanh "Trả hết", tự động kiểm tra tổng cấn trừ phải khớp số tiền thu và không vượt nợ từng hoá đơn. |
+| Cho phép thu một phần; hoá đơn chuyển sang Thanh toán một phần | Có | Có | Có | Khi thu một phần nợ của hoá đơn, trạng thái hiển thị rõ badge "Thanh toán một phần" (`PARTIALLY_PAID`). Khi đã thanh toán đủ, chuyển thành badge "Đã thanh toán" (`PAID`). Danh sách hoá đơn theo đại lý và chi tiết phiếu thu thể hiện trực quan các mức trạng thái này. |
+| Không cho thu vượt tổng công nợ còn lại | Có | Có | Có | Hệ thống tự động tính tổng nợ còn lại của đại lý và hiển thị banner cảnh báo. Validate trực tiếp ở client: nếu số tiền thu lớn hơn tổng công nợ còn lại của đại lý, hiển thị lỗi đỏ rõ ràng và ngăn không cho ghi nhận; ở chế độ thủ công, cấm đối trừ từng hoá đơn vượt quá số nợ còn lại của hoá đơn đó. |
+| Đã ghi nhận thì không xoá, chỉ lập bút toán điều chỉnh | Có | Có | Có | Tuyệt đối không có nút xoá phiếu thu trên giao diện (bảo toàn tính bất biến). Cung cấp form và modal "Lập bút toán điều chỉnh" (`POST /api/finance/debt-payments/{id}/adjust`): hỗ trợ cả `REVERSAL` (hoàn trả nợ toàn bộ) và `PARTIAL_REVERSAL` (điều chỉnh giảm một phần kèm số tiền giảm), bắt buộc nhập lý do điều chỉnh (tối đa 500 ký tự). Sinh mã `BTDC-YYYYMMDD-XXXX`. |
+| Tra cứu để biết chính xác đại lý còn nợ hoá đơn nào | Có | Có | Có | Tab "Hoá đơn nợ theo đại lý" kết nối API `GET /api/finance/dealers/{dealerId}/invoices`: chọn đại lý và bộ lọc trạng thái để xem chi tiết từng hoá đơn (tổng tiền, đã trả, còn nợ lại, số ngày quá hạn); có nút xem "Lịch sử đối trừ" gọi `GET /api/finance/orders/{orderId}/settlements`. |
+| Ma trận phân quyền động (Permission Matrix) & An toàn dữ liệu | Có | Có | Có | Kết nối chặt chẽ với ma trận phân quyền động trong DB. Quyền `FINANCE_VIEW_DEBT` để xem danh sách phiếu thu, xem chi tiết và tra cứu hoá đơn nợ. Quyền `FINANCE_MANAGE` để lập phiếu thu tiền mới và lập bút toán điều chỉnh. `ROLE_ADMIN` luôn có toàn quyền. Không role fallback. Lắng nghe sự kiện `auth:permissions-changed` cập nhật tức thì. Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: **9/9 tests S7-02 qua 100%** trong `tests/debt-payments.test.cjs`; toàn bộ **242/242 test frontend qua 100%**; **13/13 clean routes test qua 100%**. Đã cập nhật `serve_frontend.py`, `frontend/js/menu-config.js` và `docs/FUNCTION_MAP.md`.
+
+---
+## S8-03 — Lập phiếu điều chỉnh tồn kho có phê duyệt (Frontend) — 24/10/2026
+
+Nhánh `feature/S8-03-chuc-nang-tao-phieu-dieu-chinh-ton-kho-co-phe-duyet(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ 4 tiêu chí nghiệp vụ theo yêu cầu người dùng: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Dùng cho hàng hỏng, hàng mất, hàng hết hạn phải huỷ | Có | Có | Có | Form tạo phiếu tại `/warehouse/adjustments` cho phép chọn danh mục lý do chuẩn hoá: `DAMAGED` (Hàng hỏng), `LOST` (Hàng mất), `EXPIRED` (Hàng hết hạn phải huỷ), `OTHER` (Lý do khác). Bộ lọc hỗ trợ lọc riêng từng nhóm lý do. |
+| Bắt buộc chọn lý do và ghi rõ giá trị tổn thất | Có | Có | Có | Validate form bắt buộc chọn lý do, bắt buộc nhập chi tiết biên bản giải trình (tối đa 500 ký tự); tự động tính giá trị tổn thất từng dòng hàng (`quantity * unitPrice`) và tổng giá trị tổn thất toàn phiếu (VND), bắt buộc giá trị tổn thất > 0 mới cho submit. |
+| Chỉ Quản lý kho được duyệt; người lập và người duyệt không được là một | Có | Có | Có | Thực thi nguyên tắc phân quyền và kiểm soát nội bộ (Segregation of Duties): Người lập cần quyền `WAREHOUSE_ADJUST`. Người duyệt cần quyền `WAREHOUSE_APPROVE` (hoặc `ROLE_ADMIN`). Ràng buộc `createdBy !== currentUser.username`: nếu người dùng hiện tại là người lập phiếu, hệ thống hiển thị cảnh báo kiểm soát nội bộ và vô hiệu hoá các nút Duyệt/Từ chối. |
+| Mọi phiếu điều chỉnh đều xuất hiện trên thẻ kho | Có | Có | Có | Mỗi dòng hàng trên chi tiết phiếu điều chỉnh có link trực tiếp "Xem thẻ kho" (`/warehouse/stock-card?productId=...&warehouseId=...`). Phiếu ghi sổ với loại `WarehouseVoucherType.ADJUSTMENT` tự động đưa vào thẻ kho sản phẩm qua `StockCardService`. |
+| Ma trận phân quyền động (Permission Matrix) & An toàn dữ liệu | Có | Có | Có | Kết nối chặt chẽ với ma trận phân quyền động `RolePermissionConfig`. Thu hồi `WAREHOUSE_VIEW` chặn truy cập; thu hồi `WAREHOUSE_ADJUST` ẩn/chặn form lập phiếu; thu hồi `WAREHOUSE_APPROVE` ẩn khu vực duyệt. Lắng nghe `auth:permissions-changed` phản ứng tức thì. Tuyệt đối không dùng role fallback và không lưu dữ liệu nghiệp vụ vào localStorage/sessionStorage. |
+
+Kiểm thử: **6/6 tests S8-03 qua 100%** trong `tests/warehouse-adjustments.test.cjs`; toàn bộ **220/220 test frontend qua 100%**. Đã cập nhật `serve_frontend.py`, `frontend/js/menu-config.js` và `docs/FUNCTION_MAP.md`.
+
+---
+
 ## S7-02 — Ghi nhận thanh toán và đối trừ vào công nợ (Backend) (22/10/2026)
 
 Nhánh `feature/S7-02/ghi-nhan-thanh-toan`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS`. Yêu cầu người dùng: **chỉ làm Backend**.
@@ -63,37 +345,42 @@ Chỉ đồng bộ `origin/develop` tại `c09694f`, xử lý 5 file xung đột
 | Nguồn lỗi build S8-07 | Service xuất Excel và ba DTO tương ứng giống hệt origin/develop; không phát sinh từ 5 file giải quyết xung đột. Giữ nguyên, không sửa trong lượt chỉ đồng bộ |
 | Phạm vi DB | Không chạy backend nghiệp vụ, không reset DB/seed hoặc tạo/sửa/hủy chứng từ |
 
-## S8-09 — Công nợ quá hạn theo tuổi nợ (24/10/2026, chỉ frontend)
+## S8-09 — Công nợ quá hạn theo tuổi nợ (25/10/2026, Backend hoàn tất)
 
-Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Nhánh `feature/S8-09-frontend-xem_bao_cao_cong_no_qua_han_theo_tuoi_no`. Đã đọc AGENTS.md và hai SKILLS; giữ shell/content frame SaleStock. Không sửa bất kỳ file backend/schema/quyền mặc định; chưa commit/push/merge.
+Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Tuân thủ đầy đủ `AGENTS.md` và `SKILLS/SKILL_backend.md`. Đã xây dựng toàn bộ backend gồm Controller, Service, DTO, Repository query, dịch vụ xuất Excel Apache POI và bộ kiểm thử tự động unit + integration.
 
-| Yêu cầu | Backend | Frontend | Kết nối/kiểm chứng |
-|---|---|---|---|
-| Tổng hợp nhóm tuổi nợ và nhân viên | Chưa có API/DTO/service S8-09 | Đã dựng bộ lọc ngày chốt/nhân viên/chưa phân công, ba chỉ số, bảng nhóm và nhân viên; ngưỡng từ adapter, không tự tính nghiệp vụ | **Chưa nối thật**. Adapter sản phẩm available=false, thông báo chờ backend, số liệu “—”, không có request phỏng đoán/dữ liệu demo |
-| Đại lý rủi ro cao nhất | Chưa có tiêu chí/xếp hạng S8-09 | Sẵn sàng hiển thị riskBasis/riskRank/riskLabel từ server, giữ đồng hạng, mở dòng ưu tiên và phân trang 20/50/100 | Logic kiểm thử bằng fixture riêng; không lấy nợ cao nhất hoặc cờ vi phạm làm xếp hạng thay backend |
-| Xuất Excel | Chưa có snapshot báo cáo thật | Sẵn logic bốn sheet theo toàn bộ snapshot, giữ chính xác tiền dạng text, không formula/hyperlink, tên file theo ngày/bộ lọc | **Khóa trên bản chạy thật đến khi nối API**; kiểm thử file tải xuống đủ dòng, vượt giới hạn an toàn Number, chống công thức |
-| Ma trận quyền DB | REPORT_FINANCE đã có catalog; API 403 riêng S8-09 chưa tồn tại để nghiệm thu | Menu/guard/nút theo REPORT_FINANCE, ADMIN luôn có quyền; không fallback ACCOUNTANT, scope nội bộ loại đại lý-only | Test non-admin một vai trò VIEWER, cấp/thu hồi cùng JWT, hủy dữ liệu trễ; quyền API backend thật **chờ triển khai** |
-| Lỗi/đổi bộ lọc/xuất bất đồng bộ | Không thay đổi backend | Xóa số cũ và khóa xuất khi thay bộ lọc, mất quyền, dữ liệu lỗi/không đầy đủ; hủy đọc cũ, bỏ phản hồi trễ, chống bấm xuất liên tiếp | Kiểm thử Chrome cách ly; báo cáo rỗng hợp lệ khác với thiếu API, không hiện 0 giả |
-| Tài liệu/đối chiếu | Chỉ đọc source để xác nhận thiếu S8-09 | FUNCTION_MAP và FRONTEND_ROUTES đã bổ sung vị trí; tài liệu hợp đồng **đề xuất**, không giả thành API có sẵn | `docs/S8-09_FRONTEND_CONTRACT.md`; phải thống nhất với thành viên backend trước khi bật adapter |
+| Yêu cầu (S8-09) | Backend | Frontend | Kết nối / Ma trận phân quyền |
+|---|:---:|:---:|---|
+| **AC1: Tổng hợp nhóm tuổi nợ và theo nhân viên phụ trách** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Endpoint `GET /api/reports/debt-aging/options` trả về ngày chốt tối đa, múi giờ, 3 nhóm tuổi nợ chuẩn (`recent`: 1–14 ngày, `middle`: 15–44 ngày, `old`: từ 45 ngày) và danh sách nhân viên. Endpoint `GET /api/reports/debt-aging` tính toán đối trừ FIFO cho từng hóa đơn/chứng từ, tổng hợp `bucketTotals` và `employeeTotals` (gồm nhóm chưa phân công `employeeId: null`). Tính nhất quán toán học 100%. |
+| **AC2: Chỉ ra đại lý có rủi ro cao nhất (xử lý trước)** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Thuật toán tính toán `maxOverdueDays` và `overdueAmount`, sắp xếp giảm dần theo số ngày quá hạn lớn nhất $\rightarrow$ tổng tiền quá hạn $\rightarrow$ ID đại lý. Gán `riskRank` bắt đầu từ 1 (đại lý rủi ro cao nhất xếp rank 1, hỗ trợ đồng hạng) và `riskLabel` (`Ưu tiên cao`, `Cần theo dõi`, `Theo dõi`). Thuyết minh tiêu chí rõ ràng trong `riskBasis`. |
+| **AC3: Xuất Excel (`.xlsx`)** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Endpoint `GET /api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet chuyên nghiệp: *Thông tin chung*, *Nhóm tuổi nợ*, *Theo nhân viên*, *Chi tiết đại lý rủi ro*. Xử lý số tiền dạng text an toàn nếu vượt quá 15 chữ số, chống Spreadsheet Formula Injection (`=`, `+`, `-`, `@`). |
+| **Ma trận phân quyền DB & Không role fallback** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Áp dụng quyền `REPORT_FINANCE` từ ma trận phân quyền DB (`RolePermissionConfig`) hoặc `ROLE_ADMIN`. Thu hồi `REPORT_FINANCE` lập tức trả HTTP 403 Forbidden trên cùng JWT token. Tài khoản đại lý `ROLE_DEALER` bị từ chối 403 Forbidden. Nhân viên `ROLE_SALES` bị giới hạn trong phạm vi đại lý do mình phụ trách. |
 
-Phối hợp Antigravity CLI bằng model **Claude Opus 4.6 (Thinking)** rà luồng xuất Excel/quyền/race/formula. Nhận xét được đối chiếu với code và kiểm thử, bổ sung các ca đổi bộ lọc giữa lúc xuất, thu hồi giữa hai lần kiểm tra, bấm kép và corpus `=`, `+`, `-`, `@`, tab/CR. Không thay bảo vệ frontend bằng backend mới ngoài phạm vi.
+### Kết quả kiểm thử Backend S8-09
+- **Unit tests**: `DebtAgingReportServiceTest` (5/5 tests pass) kiểm tra chi tiết tính năng tùy chọn bộ lọc, không cho phép ngày chốt tương lai, đối trừ FIFO, phân bổ 3 nhóm tuổi nợ, phân hạng rủi ro rank 1 cho đại lý nợ dài ngày nhất, báo cáo rỗng và bộ lọc đại lý chưa phân công.
+- **Integration & Security tests**: `DebtAgingReportIntegrationTest` (6/6 tests pass) kiểm thử trọn vẹn luồng HTTP MockMvc với database H2 cách ly:
+  1. `testGetOptionsWithPermission`: Tài khoản có `REPORT_FINANCE` gọi options thành công 200 OK.
+  2. `testGetReportSuccessAndRiskOrder`: Xem báo cáo 200 OK, kiểm tra cấu trúc dữ liệu JSON đầy đủ, thứ tự đại lý rủi ro cao nhất xếp rank 1 với nhãn `Ưu tiên cao`, số liệu nhóm tuổi nợ và nhân viên khớp tuyệt đối.
+  3. `testAdminAlwaysHasAccess`: Tài khoản `ROLE_ADMIN` luôn có toàn quyền truy cập 200 OK.
+  4. `testPermissionRevocationReturns403`: Thu hồi `REPORT_FINANCE` khỏi vai trò của user lập tức trả về 403 Forbidden trên cùng JWT token.
+  5. `testDealerRoleDenied403`: Tài khoản đại lý `ROLE_DEALER` bị chặn 403 Forbidden khi truy cập báo cáo tài chính nội bộ.
+  6. `testExportExcelReturnsValidWorkbook`: Xuất file Excel thành công 200 OK, đúng Content-Type và đọc được 4 sheet hợp lệ qua Apache POI.
+- **Tổng cộng**: **11/11 tests S8-09 backend đạt 100%**.
 
-Kết quả cuối: **209/209 unit tests JS**, **13/13 tests server/route**, **18/18 kịch bản Chrome S8-09** và **216/216 kiểm tra bố cục trên 36 trang × 6 kích thước** qua. Đã xem ảnh pending-backend/desktop/mobile và đọc lại file Excel tải xuống bằng bộ đọc XLSX. Kiểm tra FUNCTION_MAP có 69 story, không trùng ID, đúng thứ tự. `git diff --check` sạch; không có diff trong backend. Khi chạy đồng thời hai bộ Chrome trên server Python thử nghiệm, từng gặp timeout khởi tạo/trạng thái sidebar; chạy lại từng bộ riêng đều qua, không đổi code shell để che lỗi test.
+Tài liệu API đã được cập nhật đầy đủ tại `backend/API_DOCUMENTATION.md`, vị trí tính năng cập nhật tại `docs/FUNCTION_MAP.md`.
 
-Kiểm thử frontend dùng script/trang thật + adapter HTTP mock **chỉ trong tests**, không tạo/sửa/xóa dữ liệu DB nghiệp vụ. Không coi các fixture là bằng chứng API đã hoạt động hoặc backend đã thực thi REPORT_FINANCE. Lệnh: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/debt-aging.browser.cjs`; `node tests/content-layout.browser.cjs` (`NAV_TEST_URL` trỏ frontend cổng 5538).
+## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend & Frontend) — 24/10/2026
 
-## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend) — 24/10/2026
-
-Phạm vi thực hiện: **Chỉ làm Backend (BE)** theo đúng yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_backend.md`.
+Phạm vi thực hiện: **Cả Backend (BE) và Frontend (FE)** hoàn thành đầy đủ, tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_frontend_design.md` + `SKILLS/SKILL_backend.md`.
 
 | Tiêu chí / Hạng mục (S8-07) | Backend | Frontend | Đã kết nối đúng / Ma trận phân quyền |
 |---|:---:|:---:|---|
-| **AC1: Giá trị tồn theo kho và theo nhóm hàng** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | API `GET /api/reports/inventory-turnover`, `/by-warehouse`, `/by-category`, `/by-warehouse-category` tổng hợp đầy đủ số lượng tồn thực tế, giữ chỗ, khả dụng, xuất trong kỳ, giá trị tồn kho (`inventoryValue`), tỷ trọng giá trị (`valueSharePercent`) và giá trị hàng chậm luân chuyển đang chôn vốn (`slowMovingValue`) theo từng kho, từng nhóm hàng (hỗ trợ cả nhóm cha – con) và ma trận Kho × Nhóm hàng. |
-| **AC2: Số ngày tồn bình quân của từng SKU, chỉ ra hàng chậm luân chuyển đang chôn vốn** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | API `GET /api/reports/inventory-turnover/skus` và `/slow-moving` tính tồn bình quân `averageInventoryQuantity = (openingQuantity + closingQuantity) / 2`, hệ số vòng quay `turnoverRate`, số ngày tồn bình quân `averageDaysInInventory = (averageInventoryQuantity * periodDays) / outboundQuantity`, phân loại trạng thái luân chuyển (`FAST_MOVING`, `NORMAL_MOVING`, `SLOW_MOVING`, `DEAD_STOCK`, `OUT_OF_STOCK`), đánh dấu `slowMoving = true` và tính giá trị vốn bị chôn (`tiedUpCapitalValue`) kèm thuyết minh nguyên nhân. |
-| **AC3: Xuất Excel (`.xlsx`)** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | API `GET /api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) sinh file `.xlsx` gồm 4 sheet (`Giá trị tồn theo kho`, `Giá trị tồn theo nhóm hàng`, `Vòng quay & Số ngày tồn SKU`, `Hàng chậm luân chuyển`), định dạng tiền tệ/số lượng chuẩn và chống Spreadsheet Formula Injection (`=`, `+`, `-`, `@`). |
-| **Thực thi Ma trận phân quyền DB (`RolePermissionConfig`) & Phạm vi kho** | ✅ Đã hoàn thành | ❌ Chưa làm (theo yêu cầu chỉ làm BE) | Kiểm tra quyền tại cả `SecurityConfig`, `@PreAuthorize` ở `InventoryTurnoverReportController` và `InventoryTurnoverReportServiceImpl`. Bắt buộc có quyền `REPORT_INVENTORY` (hoặc `ROLE_ADMIN`) từ ma trận DB; không dùng role-based fallback. Thu hồi `REPORT_INVENTORY` khỏi `ROLE_WAREHOUSE_MANAGER` lập tức trả về `403 Forbidden` trên cùng JWT; giới hạn phạm vi kho theo phân công của người dùng (`user.warehouses`). |
+| **AC1: Giá trị tồn theo kho và theo nhóm hàng** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã kết nối đúng**: Menu Báo cáo → Tồn kho & Vòng quay (`/reports/inventory-turnover`). Giao diện gồm 5 tab trực quan: Giá trị theo kho, Giá trị theo nhóm hàng, Ma trận Kho × Nhóm hàng, Cảnh báo chôn vốn, Vòng quay & Số ngày tồn SKU. Gọi API `GET /api/reports/inventory-turnover`, hiển thị đầy đủ tổng tồn, giá trị tồn kho, tỷ trọng (%) và giá trị chậm luân chuyển. |
+| **AC2: Số ngày tồn bình quân của từng SKU, chỉ ra hàng chậm luân chuyển đang chôn vốn** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã kết nối đúng**: Gọi API `GET /api/reports/inventory-turnover`, hiển thị chi tiết số ngày tồn bình quân `averageDaysInInventory`, hệ số vòng quay `turnoverRate`, gắn badge trạng thái luân chuyển (`FAST_MOVING`, `NORMAL_MOVING`, `SLOW_MOVING`, `DEAD_STOCK`, `OUT_OF_STOCK`). Tab riêng cho hàng chậm luân chuyển chôn vốn (`slowMoving = true`), hiển thị giá trị vốn bị chôn `tiedUpCapitalValue` kèm nguyên nhân và liên kết trực tiếp đến Thẻ kho (`/inventory/stock-card?sku=...`). Hỗ trợ bộ lọc ngưỡng ngày, trạng thái và phân trang. |
+| **AC3: Xuất Excel (`.xlsx`)** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã kết nối đúng**: Nút "Xuất Excel" gọi trực tiếp API `GET /api/reports/inventory-turnover/export` với các tham số lọc hiện tại, nhận luồng nhị phân Blob `.xlsx` và kích hoạt tải về file chuẩn (gồm 4 sheet dữ liệu, định dạng số/tiền chuẩn, chống Spreadsheet Formula Injection). Có chống click kép và hiển thị spinner khi đang tải. |
+| **Thực thi Ma trận phân quyền DB (`RolePermissionConfig`) & Không fallback vai trò** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã kết nối đúng**: Kiểm tra quyền `REPORT_INVENTORY` (hoặc `ROLE_ADMIN`) từ ma trận phân quyền DB. Frontend menu ẩn khi thiếu quyền, trang hiển thị lỗi 403 / thông báo từ chối truy cập nếu mất quyền, tự động phản ứng với sự kiện `auth:permissions-changed`. Tuyệt đối không fallback theo vai trò hardcoded. Backend thực thi `@PreAuthorize("hasAuthority('REPORT_INVENTORY') or hasRole('ADMIN')")`, thu hồi quyền trả về ngay 403 Forbidden. |
 
-Kiểm thử Backend S8-07: Gồm `InventoryTurnoverReportServiceTest` (4 unit tests), `InventoryTurnoverReportSecurityTest` (4 `@WebMvcTest` security matrix tests), và `InventoryTurnoverReportIntegrationTest` (4 `@SpringBootTest` + H2 MySQL mode end-to-end tests kiểm chứng giá trị tồn theo kho/nhóm hàng, số ngày tồn bình quân SKU, phát hiện hàng chậm luân chuyển đang chôn vốn, xuất Excel `.xlsx` 4 sheet, giới hạn phạm vi kho và thu hồi quyền `REPORT_INVENTORY` tức thời trên cùng JWT). Đã cập nhật `backend/API_DOCUMENTATION.md` và `docs/FUNCTION_MAP.md`.
+> Kiểm thử S8-07: Backend gồm 12 ca kiểm thử (Unit, Security, Integration test). Frontend gồm bộ test tự động `tests/inventory-turnover.test.cjs` (6 ca kiểm thử bao phủ định dạng số/tiền tệ, tính toán trạng thái luân chuyển, xác thực khoảng ngày, ma trận phân quyền `REPORT_INVENTORY`, không fallback role, loại trừ đại lý, route `/reports/inventory-turnover`, và cam kết không dùng `localStorage`/`sessionStorage`). Toàn bộ test suite dự án 220/220 test Node.js PASS.
 
 ## S7-01 — Frontend phát hành hóa đơn bán hàng — 23/10/2026
 
@@ -988,7 +1275,7 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 |---|---|---|---|---|---|---|
 | S7-01 | Phát hành hoá đơn bán hàng từ phiếu đã giao | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | Đầy đủ ma trận: INVOICE_VIEW, INVOICE_CREATE, INVOICE_ADJUST từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend theo 5 tiêu chí user story. Sinh theo thực giao, số nhảy liên tục, gộp phiếu giao cùng đại lý, hóa đơn bất biến chỉ lập điều chỉnh, xuất PDF và HTML print preview. Đã kiểm thử 30 test mới (unit, controller, security, integration). Chưa làm FE theo yêu cầu. |
 | S7-04 | Hệ thống tự cảnh báo và khoá bán công nợ | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | FINANCE_VIEW_DEBT, FINANCE_MANAGE từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend: tự gắn cờ đại lý quá hạn/vượt hạn mức, chặn/cần duyệt khi tạo đơn, scheduler đánh giá hàng ngày và sau thu tiền. 24 test mới. Chưa làm FE theo yêu cầu. |
-| S7-07 | Đại lý tự xem công nợ, hạn mức còn lại và tải lại hoá đơn | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | FINANCE_VIEW_DEBT, INVOICE_VIEW, ORDER_VIEW từ ma trận DB; cách ly RLS theo đại lý liên kết; ADMIN toàn quyền, không role fallback | Đã hoàn thành 100% backend: hiển thị tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, danh sách hóa đơn kèm số tiền/hạn thanh toán/trạng thái FIFO, xem và tải lại PDF/bản in hóa đơn & điều chỉnh. Thu hồi quyền trên JWT hiện tại trả 403. Chưa làm FE theo yêu cầu. |
+| S7-07 | Đại lý tự xem công nợ, hạn mức còn lại và tải lại hoá đơn | Có | Có | Đã kết nối, rà lại 25/10/2026 | FINANCE_VIEW_DEBT / INVOICE_VIEW độc lập; hồ sơ đại lý từ DB; ADMIN toàn quyền; ORDER_VIEW không đọc được tổng nợ | Xem mục S7-07 đầu file: sửa dữ liệu sau trả hàng, số tiền chính xác, PDF/HTML, phân trang, cấp/thu hồi quyền và phản hồi muộn. |
 
 ## Việc cần làm tiếp
 
@@ -998,6 +1285,39 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 4. Nối preview chiết khấu cho cổng/đặt lại, UI sales xác nhận đơn cổng; nghiệm thu MySQL/SMTP/360px theo AC.
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
+
+
+## S6-08 — Backend xác nhận giao hàng kèm chứng từ (25/10/2026)
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Người nhận thực tế, thời điểm giao, ảnh biên bản ký nhận | Đã bổ sung API multipart, lưu DB, tải ảnh có kiểm tra quyền | Chưa làm theo phạm vi yêu cầu | Chưa nối UI |
+| Giao thất bại và nhập hàng trả kho | Bắt buộc lý do; giữ API nhập trả kho tường minh S6-07; chặn sửa sau trả kho | Không sửa | Backend dùng lại luồng hiện có |
+| Hóa đơn Sprint 7 | DELIVERED và thực giao chỉ ghi sau xác nhận hợp lệ cho đơn thuộc chuyến | Không sửa | Nối dữ liệu S7-01; phát hành hóa đơn là thao tác riêng |
+| Ma trận quyền DB | WAREHOUSE_EXPORT cho xác nhận, VIEW/EXPORT cho ảnh; ADMIN toàn quyền; phạm vi kho; token đọc lại quyền mỗi request | Chưa có action S6-08 | BE có kiểm tra; chưa xác minh UI ẩn/hiện S6-08 |
+
+Chi tiết hợp đồng và giới hạn: `backend/API_DOCUMENTATION.md`, mục S6-08. Không commit/push tự động.
+
+Kiểm chứng S6-08: 92 tests thuộc 10 lớp service/controller/security/integration đều đạt (0 failures, 0 errors, 0 skipped), gồm lưu/tải ảnh qua DB H2, token cũ sau thu hồi quyền trả 403, chặn bỏ qua chứng từ và dữ liệu thực giao cho hóa đơn. Chưa chạy với MySQL triển khai thực tế; chưa kiểm thử UI S6-08.
+
+## S8-08 — Xuất báo cáo tồn kho ra tệp Excel (2026-10-23)
+
+Branch `feature/S8-08/xuat-bao-cao-ton-kho-ra-tep-excel` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend, không commit/push.
+
+| Yêu cầu | Backend | Frontend | Kết nối/phân quyền và bằng chứng |
+|---|---|---|---|
+| Xuất theo bộ lọc đang áp dụng | Hoàn thành: API GET `/api/warehouse/stock-ledger/export`, nhận warehouseId/categoryId/keyword/stockStatus/belowMinimum; dùng chung chuẩn hóa và truy vấn của bảng | Nút cũ vẫn xuất phía client, chưa nối endpoint mới | Kiểm thử workbook khớp API bảng với toàn bộ bộ lọc; ký tự `%`, `_` được tìm literal; xuất tất cả kết quả, không chỉ trang hiện tại |
+| Giữ nguyên ba cột tồn | Hoàn thành: Tồn thực tế, Đang giữ chỗ, Tồn khả dụng là ba cột số riêng biệt; giữ mẫu 12 cột hiện có | Không sửa mẫu frontend | XLSX được mở lại bằng POI; kiểm số thập phân 12.3456 / 2.1111 / 10.2345, kiểu Number và header |
+| Tên tệp chứa mã kho và ngày xuất | Hoàn thành: `So-ton-kho_KHO-A_2026-10-23.xlsx`, nhiều kho có các mã hoặc mã đầu kèm số kho; ngày Việt Nam | Chưa nhận tên mới do chưa nối API | Test header Content-Disposition và clock; CORS expose header để FE có thể dùng tên tệp backend |
+| Quyền từ ma trận DB và phạm vi kho | Hoàn thành: WAREHOUSE_VIEW hoặc ADMIN, không fallback từ vai trò/quyền kho khác; áp phân công kho hiện có | Nút cũ đã dùng WAREHOUSE_VIEW và xử lý sự kiện thu hồi; chưa nối API mới | Test cùng JWT: cấp quyền cho phép, thu hồi trả 403; kho ngoài phạm vi trả 403; ADMIN toàn quyền |
+| Xuất đủ dữ liệu và quản lý tài nguyên | Hoàn thành: Slice 1.000 dòng/lô, SXSSF cửa sổ 100; tệp tạm được dọn cả khi lỗi; mặc định tối đa 100.000 dòng, vượt thì trả 400, không cắt thiếu | Chưa nối luồng tải backend | Test đủ 1.002 dòng qua hai lô và không rò tệp tạm khi vượt giới hạn |
+| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 29/29 tests qua, không failure/error/skip | Không sửa file frontend | Gồm 6 ca tích hợp XLSX/JWT/DB và hồi quy sổ tồn/phân quyền; H2 MySQL mode, chưa kiểm MySQL/Microsoft Excel thật |
+
+Không thêm quyền mới, không thay đổi ma trận đã lưu hay dữ liệu tồn. Chưa nghiệm thu end-to-end nút xuất với tên mới cho đến khi frontend gọi API tải XLSX thay cho trình tạo file client hiện tại.
+
+Lệnh kiểm thử: `mvn -q clean "-Dtest=StockLedgerExcelIntegrationTest,StockLedgerServiceTest,StockLedgerControllerTest,PermissionRevocationTest,RolePermissionConfigTest" test`.
+
+---
 
 ## S8-02 — Lập chứng từ điều chỉnh giảm công nợ khi trả hàng (2026-10-23)
 
@@ -1056,22 +1376,19 @@ DB đã có cấu hình phải được ADMIN cấp quyền mới từ ma trận
 
 Lệnh kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfigTest,PermissionRevocationTest,FinanceControllerTest,DebtRiskSecurityTest" test`.
 
-## S8-10 — Xuất sổ chi tiết công nợ đại lý (2026-10-23)
+## S8-10 — Xuất sổ chi tiết công nợ đại lý (Backend & Frontend) — 24/10/2026
 
-Branch `feature/S8-10/xuat-so-chi-tiet-cong-no` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend; không commit/push.
+Phạm vi thực hiện: **Cả Backend (BE) và Frontend (FE)** hoàn thành đầy đủ, tuân thủ nghiêm ngặt `AGENTS.md` và `SKILLS/SKILL_frontend_design.md` + `SKILLS/SKILL_backend.md`.
 
-| Yêu cầu | Backend | Frontend | Kết nối/phân quyền và bằng chứng |
-|---|---|---|---|
-| Liệt kê phát sinh tăng/giảm theo thời gian và số dư lũy kế | Hoàn thành: hợp nhất đơn ghi nợ, phiếu thu và điều chỉnh hóa đơn; thứ tự thời điểm/nguồn/ID; tính đầu kỳ, tăng/giảm, cuối kỳ bằng BigDecimal | Chưa triển khai | GET `/api/finance/debt/{dealerId}/statement`; test không cộng lại hóa đơn gốc, giữ credit âm và cách ly đại lý |
-| Lọc khoảng thời gian | Hoàn thành: from/to bao gồm hai ngày biên, opening lấy toàn bộ trước kỳ; kỳ rỗng vẫn có số dư đúng | Chưa triển khai | Test đầu kỳ 800, tăng 320, giảm 180, cuối kỳ 940; đổi từ ngày 19 thì đầu kỳ 1040, cuối kỳ vẫn 940 |
-| Xuất PDF | Hoàn thành: A4 ngang, font Unicode nhúng, thông tin đại lý/kỳ, bảng lặp header và số trang | Chưa nối | GET `/statement/export?from=...&to=...&format=pdf`; mở/trích text PDF và render kiểm tra cả 3 trang bằng Poppler |
-| Xuất Excel | Hoàn thành: cùng dữ liệu với PDF/JSON, sáu cột, đầu kỳ/tổng/cuối kỳ; tiền lớn hơn 15 chữ số có nghĩa ghi text chính xác | Chưa nối | format=xlsx; test mở lại POI, số dư 940, số tiền lớn 9007199254740993.01 không bị sai và chuỗi công thức là text |
-| Ma trận quyền DB và phạm vi đại lý | Hoàn thành: FINANCE_VIEW_DEBT, ADMIN luôn có quyền, không fallback FINANCE_MANAGE/role; scope SALES được giao và DEALER liên kết | Quyền/menu công nợ hiện có; chưa có nút/luồng S8-10 để nghiệm thu ẩn/hiện | Test non-admin một vai trò, thu hồi cùng JWT trả 403 cho JSON/PDF/XLSX; SALES ngoài phạm vi bị từ chối |
-| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 44/44 tests qua, 0 lỗi/skip | Không sửa frontend | 10 ca tích hợp sổ và 34 test hồi quy tài chính/phân quyền; H2 MySQL mode, chưa MySQL thật |
+| Tiêu chí / Yêu cầu (S8-10) | Backend | Frontend | Đã kết nối đúng / Ma trận phân quyền |
+|---|:---:|:---:|---|
+| **Liệt kê phát sinh tăng/giảm theo thời gian và số dư lũy kế** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Menu Tài chính → Sổ chi tiết công nợ (`/finance/debt-statement`). Gọi API `GET /api/finance/debt/{dealerId}/statement`. Hiển thị 4 thẻ KPI (Số dư đầu kỳ, Tổng phát sinh tăng, Tổng phát sinh giảm, Số dư cuối kỳ). Bảng liệt kê chi tiết từng chứng từ với nhãn loại chứng từ (Đơn hàng, Phiếu thu, Điều chỉnh HĐ), số tiền tăng, giảm và số dư nợ lũy kế (làm nổi bật số dư âm thể hiện thanh toán dư / credit). |
+| **Lọc khoảng thời gian** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Bộ lọc chọn đại lý kèm khoảng ngày `from` và `to`, hỗ trợ các nút chọn nhanh (Tháng này, Tháng trước, 30 ngày qua, Quý này, Năm nay). Kiểm tra tính hợp lệ trước khi gửi, hỗ trợ đọc tham số `dealerId`, `from`, `to` từ URL query params. |
+| **Xuất PDF** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Nút "Xuất PDF" gọi API `GET /api/finance/debt/{dealerId}/statement/export?from=...&to=...&format=pdf`, tải về file PDF khổ A4 ngang định dạng chuẩn, có chống click lặp và spinner khi đang tải. |
+| **Xuất Excel** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Nút "Xuất Excel" gọi API `GET /api/finance/debt/{dealerId}/statement/export?from=...&to=...&format=xlsx`, tải về file `.xlsx` chính xác 6 cột, bảo toàn định dạng số tiền lớn dạng text tránh lỗi làm tròn của Excel. |
+| **Ma trận quyền DB và Không fallback role** | ✅ Có | ✅ Có | **Đã kết nối đúng**: Bắt buộc quyền `FINANCE_VIEW_DEBT` từ ma trận DB (hoặc `ROLE_ADMIN`). Thu hồi quyền ở DB khiến API trả về ngay 403 Forbidden và Frontend ẩn menu, hiển thị thông báo từ chối truy cập. Tự động phản ứng với sự kiện `auth:permissions-changed`. Không dùng role-based fallback (ROLE_ACCOUNTANT không có quyền sẽ bị từ chối). Đại lý (ROLE_DEALER) chỉ được xem chính mình. Không lưu dữ liệu nghiệp vụ vào `localStorage` hay `sessionStorage`. |
 
-Không sửa dữ liệu tài chính hoặc hành vi API tổng hợp cũ. Sổ giữ số dư có dấu và bao gồm điều chỉnh; API tổng hợp cũ trên branch chưa trừ/cộng điều chỉnh và có cắt âm nên số hiển thị có thể khác sổ. Dữ liệu xuất là chứng từ hiện có/trạng thái hiện tại, không tái dựng lịch sử đã xóa. Mặc định tối đa 20.000 dòng kỳ, vượt trả 400 chứ không xuất thiếu; SUM đầu kỳ không bị cắt theo giới hạn dòng kỳ.
-
-Lệnh kiểm thử: `mvn -q clean "-Dtest=DealerDebtStatementIntegrationTest,FinanceControllerTest,DebtRiskSecurityTest,PermissionRevocationTest,RolePermissionConfigTest" test`.
+> Kiểm thử S8-10: Backend gồm 44 tests liên quan PASS (10 ca tích hợp sổ và 34 test hồi quy). Frontend gồm bộ test tự động `tests/debt-statement.test.cjs` (7 ca kiểm thử bao phủ định dạng tiền tệ, ngày tháng, xác thực khoảng ngày, ma trận phân quyền DB, không fallback role, route `/finance/debt-statement`, và cam kết không dùng browser storage). Toàn bộ test suite 221/221 Node.js tests PASS.
 
 ## S8-01 — Frontend trả hàng đại lý (2026-10-24)
 
@@ -1087,3 +1404,138 @@ Nhánh `feature/S8-01-frontend-nhap_phieu_tra_hang_tu_dai_ly_va_nhap_lai_kho`. P
 | Giao diện và tài liệu | Không chỉnh backend/API docs | Dùng chung shell/gutter, hỗ trợ desktop/tablet/mobile; cập nhật FUNCTION_MAP và FRONTEND_ROUTES | 190 test Node, 11 test route, 14 kịch bản Chrome và 204 kiểm tra bố cục / 34 trang qua; HTTP fixtures cách ly, không ghi DB nghiệp vụ, chưa nghiệm thu MySQL thật |
 
 **Lưu ý bàn giao backend:** bộ `DealerReturnSecurityTest` hiện có chạy 6 ca, 3 qua/3 thất bại. Các ca `admin_AlwaysAllowed`, `createReturn_WithOrderCreatePermission_Returns200`, `createReturn_WithoutOrderCreatePermission_Returns403` nhận HTTP 400 (`HttpMessageNotReadableException`) thay vì 200/403 khi gửi JSON do test dựng từ DTO. Không sửa backend hoặc bộ test để ép xanh; cần thành viên backend kiểm tra. Không tuyên bố toàn bộ S8-01 đã nghiệm thu end-to-end.
+
+
+## S6-08 — Giải quyết xung đột với develop (25/10/2026)
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Xác nhận giao hàng S6-08 | Giữ xác nhận ảnh, khóa đơn và kiểm tra đủ hàng; giữ kiểm tra backordered từ develop | Không sửa mã frontend | Nối luồng xuất kho S6-05 và dữ liệu hóa đơn S7-01 |
+| Ma trận quyền | Giữ WAREHOUSE_EXPORT, quyền xem ảnh và phạm vi kho | Không bổ sung UI S6-08 | Giữ kiểm tra quyền DB; chưa xác minh UI S6-08 |
+
+Giữ toàn bộ phần tài liệu của cả hai nhánh; chưa commit hoặc push bản giải quyết xung đột.
+
+Kiểm chứng sau giải quyết xung đột: 110 tests thuộc 11 lớp đều đạt (0 failures, 0 errors, 0 skipped), gồm DeliveryTripIntegrationTest, OrderShipmentIntegrationTest, InvoiceIntegrationTest và thu hồi quyền với token cũ. Không còn file unmerged hoặc dấu conflict trong 4 file đã xử lý; diff riêng S6-08 so với origin/develop qua kiểm tra whitespace.
+
+
+## S6-08 — Hòa nhập S6-06 mới trên develop (25/10/2026)
+
+Nguyên nhân xung đột mới: develop tiếp nhận PR #172 sau lần hòa nhập trước. Giữ cả confirmDelivery/getDeliveryProof của S6-08 và updateTrip của S6-06.
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Xác nhận ảnh và cập nhật tuyến/tài xế | Giữ đầy đủ hai luồng và kiểm tra quyền DB | Không sửa | Giữ backend S6-06/S6-08; UI lưu S6-08 chưa nối |
+
+Bản giải quyết để người dùng tự hoàn tất merge commit và push.
+
+Kiểm chứng lần hòa nhập này: 123 tests / 11 lớp đều đạt, 0 failures/errors/skipped. Đã fetch lại và xác nhận MERGE_HEAD trùng origin/develop tại 3d10ced8d22ccee811de935358f017e6bfe61b70. Không còn file unmerged; diff S6-08 so với develop qua kiểm tra whitespace. Chưa commit/push.
+
+## S8-03 — Lập phiếu điều chỉnh tồn kho có phê duyệt (Backend) — 25/10/2026
+
+Nhánh `feature/S8-03-backend-lap_phieu_dieu_chinh_ton_kho_co_phe_duyet`, tạo từ `origin/develop`.
+
+| Hạng mục | Backend | Frontend | Kết nối / phân quyền |
+|---|---|---|---|
+| Lập phiếu hàng hỏng/mất/hết hạn, ghi lý do và giá trị tổn thất | Có: lưu `PENDING_APPROVAL`, không đổi tồn; lưu giá trị tổn thất theo dòng và tổng | Có: form hiện có gửi API lập phiếu chờ duyệt | `WAREHOUSE_ADJUST`; Admin được phép |
+| Duyệt/từ chối, tách người lập và người duyệt | Có: khóa phiếu/kho/tồn, kiểm tra tồn khả dụng; cập nhật tồn và audit cùng transaction; từ chối phải có lý do | Có: nút duyệt/từ chối gọi API thật | `WAREHOUSE_APPROVE`; người lập không tự xử lý phiếu; mặc định ma trận cấp cho Quản lý kho |
+| Thẻ kho | Có: phiếu `APPROVED` tạo phát sinh âm; phiếu chờ/từ chối không xuất hiện | Có: liên kết Thẻ kho từ chi tiết phiếu | Dữ liệu kho vẫn theo phạm vi được giao và `WAREHOUSE_VIEW` |
+
+Đã cập nhật `backend/API_DOCUMENTATION.md`; vị trí giao diện S8-03 đã có trong `docs/FUNCTION_MAP.md`. Không chạy test theo chỉ thị vận hành; `mvn -q -DskipTests compile` thành công, `git diff --check` sạch.
+
+## S8-08 — Xuất báo cáo tồn kho ra tệp Excel (Frontend) — 25/10/2026
+
+
+
+Nhánh `feature/S8-8-chuc-nang-nhap-xuat-bao-cao-ton-kho(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ các tiêu chí nghiệp vụ theo yêu cầu: **chỉ làm frontend**, kết nối trực tiếp vào API máy chủ đã có sẵn.
+
+
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+
+|---|:---:|:---:|:---:|---|
+
+| **Xuất theo bộ lọc đang áp dụng** | Hoàn thành | Hoàn thành | Có | Nút "Xuất Excel" trên trang `Kho hàng → Tồn kho` (`/warehouse/inventory`) gọi endpoint `GET /api/warehouse/stock-ledger/export`, truyền đầy đủ các tham số lọc `warehouseId`, `categoryId`, `keyword`, `stockStatus`, `belowMinimum` theo đúng bộ lọc đang áp dụng trên giao diện. Xuất toàn bộ kết quả phù hợp, không giới hạn trong trang phân trang hiện tại. |
+
+| **Giữ nguyên ba cột tồn** | Hoàn thành | Hoàn thành | Có | Cả trên giao diện bảng và trong tệp Excel (.xlsx) xuất về đều giữ nguyên 3 cột tồn số riêng biệt: "Tồn thực tế", "Đang giữ chỗ", "Tồn khả dụng", định dạng số chuẩn xác, độc lập không gộp dòng. |
+
+| **Tên tệp chứa mã kho và ngày xuất** | Hoàn thành | Hoàn thành | Có | Tên tệp tải về nhận trực tiếp từ header `Content-Disposition` do backend sinh (e.g. `So-ton-kho_KHO-HN_2026-10-25.xlsx`), hỗ trợ giải mã chuẩn RFC 5987 UTF-8 (`filename*=UTF-8''...`). Khi không có header, frontend fallback theo cấu trúc `So-ton-kho_<Mã kho>_<YYYY-MM-DD>.xlsx` đảm bảo luôn có mã kho và ngày xuất. |
+
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Hoàn thành | Hoàn thành | Có | Bắt buộc quyền `WAREHOUSE_VIEW` từ Database-backed Permission Matrix (hoặc vai trò `ROLE_ADMIN`). Tuyệt đối không role-based fallback (các vai trò `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF`, `ROLE_ACCOUNTANT` nếu bị thu hồi quyền trong ma trận DB đều bị cấm). Lắng nghe sự kiện `auth:permissions-changed`, thu hồi quyền lập tức hủy request xuất, khóa/vô hiệu hóa nút xuất và chuyển hướng 403. Không lưu dữ liệu tồn kho vào localStorage/sessionStorage. |
+
+
+
+Kiểm thử: **8/8 tests S8-08 qua 100%** trong `tests/stock-ledger.test.cjs`; toàn bộ **279/279 tests Node** trong dự án qua 100%. Đã cập nhật `frontend/js/stock-ledger-utils.js`, `frontend/js/stock-ledger.js`, `frontend/warehouse/inventory.html`, `tests/stock-ledger.browser.cjs` và `docs/FUNCTION_MAP.md`.
+
+
+
+
+## S8-06 — Báo cáo doanh số đa chiều (chỉ frontend) — 23/10/2026
+
+
+
+Nguồn tiêu chí: User story S8-06 (*"Là Quản lý kinh doanh, tôi muốn xem báo cáo doanh số theo nhiều chiều, để biết mặt hàng nào và khu vực nào đang thực sự sinh lãi"*). Chỉ triển khai **frontend** theo yêu cầu.
+
+
+
+| Tiêu chí / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+
+|---|---|---|---|
+
+| Nhóm theo nhân viên, khu vực, đại lý, nhóm hàng hoặc SKU | Chưa làm — cần API `GET /api/reports/sales` và `GET /api/reports/sales/options` | Đã làm: trang `/reports/sales`, bộ lọc chọn chiều nhóm (5 chiều), bộ lọc thời gian, khu vực, đại lý, nhóm hàng, nhân viên | Trang yêu cầu quyền `ORDER_VIEW` từ ma trận; menu chỉ hiện cho `ROLE_ADMIN` và `ROLE_SALES_MANAGER` có `ORDER_VIEW` |
+
+| Hiển thị doanh số, sản lượng và biên lợi nhuận gộp | Chưa làm — API cần trả `revenue`, `quantity`, `grossMargin` theo chiều nhóm | Đã làm: bảng có cột doanh số, sản lượng; cột biên LN gộp tự ẩn/hiện theo quyền xem margin; KPI tổng hợp phía trên bảng | Biên lợi nhuận chỉ hiển thị khi `ROLE_SALES_MANAGER` hoặc `ROLE_ADMIN`; không dùng role fallback |
+
+| Biên lợi nhuận chỉ Quản lý kinh doanh xem được | Chưa làm — backend cần kiểm role trước khi trả `grossMargin` | Đã làm: cột margin, KPI margin và dữ liệu margin trong Excel chỉ hiển thị khi `canSeeMargin()` = true (ROLE_SALES_MANAGER hoặc ROLE_ADMIN) | Frontend ẩn cột; backend cần bổ sung kiểm tra và không trả trường `grossMargin` cho role khác |
+
+| So sánh với cùng kỳ trước và xuất Excel | Chưa làm — API cần nhận tham số `compare=true` và trả `previousRevenue`, `changePercent` | Đã làm: checkbox so sánh cùng kỳ hiện thêm cột DS cùng kỳ và tăng/giảm %; xuất Excel dùng XLSX bao gồm margin (nếu có quyền) và so sánh (nếu bật) | Xuất Excel kiểm lại quyền trước khi tải dữ liệu; hủy xuất khi mất quyền |
+
+| Ma trận quyền và thu hồi | Chưa làm — controller cần `ORDER_VIEW` và kiểm margin theo role | Đã làm: guard trang `ORDER_VIEW`; thu hồi quyền chuyển 403 và ẩn menu/xóa dữ liệu; đồng bộ quyền mỗi 15 giây qua `auth:permissions-changed` | Frontend kết nối đúng ma trận; **backend chưa có API**, cần triển khai để trang hoạt động đầy đủ |
+
+| Bố cục và tương thích | Không cần thay đổi | Dùng app-shell, app-navigation, lề chung `app-navigation.css`; bảng cuộn nội bộ; responsive desktop/tablet/mobile | Không lưu dữ liệu nghiệp vụ vào browser storage; route đã cập nhật trong `serve_frontend.py` và `FRONTEND_ROUTES.md` |
+
+
+
+Giới hạn: **backend chưa có API** `/api/reports/sales` và `/api/reports/sales/options` — trang sẽ hiển thị lỗi khi gọi API. Cần triển khai backend để trang hoạt động. Không tự commit/merge/push.
+
+
+
+---
+
+
+
+
+## S8-09 — Công nợ quá hạn theo tuổi nợ (24/10/2026, chỉ frontend)
+
+
+
+Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Nhánh `feature/S8-09-frontend-xem_bao_cao_cong_no_qua_han_theo_tuoi_no`. Đã đọc AGENTS.md và hai SKILLS; giữ shell/content frame SaleStock. Không sửa bất kỳ file backend/schema/quyền mặc định; chưa commit/push/merge.
+
+
+
+| Yêu cầu | Backend | Frontend | Kết nối/kiểm chứng |
+
+|---|---|---|---|
+
+| Tổng hợp nhóm tuổi nợ và nhân viên | Chưa có API/DTO/service S8-09 | Đã dựng bộ lọc ngày chốt/nhân viên/chưa phân công, ba chỉ số, bảng nhóm và nhân viên; ngưỡng từ adapter, không tự tính nghiệp vụ | **Chưa nối thật**. Adapter sản phẩm available=false, thông báo chờ backend, số liệu “—”, không có request phỏng đoán/dữ liệu demo |
+
+| Đại lý rủi ro cao nhất | Chưa có tiêu chí/xếp hạng S8-09 | Sẵn sàng hiển thị riskBasis/riskRank/riskLabel từ server, giữ đồng hạng, mở dòng ưu tiên và phân trang 20/50/100 | Logic kiểm thử bằng fixture riêng; không lấy nợ cao nhất hoặc cờ vi phạm làm xếp hạng thay backend |
+
+| Xuất Excel | Chưa có snapshot báo cáo thật | Sẵn logic bốn sheet theo toàn bộ snapshot, giữ chính xác tiền dạng text, không formula/hyperlink, tên file theo ngày/bộ lọc | **Khóa trên bản chạy thật đến khi nối API**; kiểm thử file tải xuống đủ dòng, vượt giới hạn an toàn Number, chống công thức |
+
+| Ma trận quyền DB | REPORT_FINANCE đã có catalog; API 403 riêng S8-09 chưa tồn tại để nghiệm thu | Menu/guard/nút theo REPORT_FINANCE, ADMIN luôn có quyền; không fallback ACCOUNTANT, scope nội bộ loại đại lý-only | Test non-admin một vai trò VIEWER, cấp/thu hồi cùng JWT, hủy dữ liệu trễ; quyền API backend thật **chờ triển khai** |
+
+| Lỗi/đổi bộ lọc/xuất bất đồng bộ | Không thay đổi backend | Xóa số cũ và khóa xuất khi thay bộ lọc, mất quyền, dữ liệu lỗi/không đầy đủ; hủy đọc cũ, bỏ phản hồi trễ, chống bấm xuất liên tiếp | Kiểm thử Chrome cách ly; báo cáo rỗng hợp lệ khác với thiếu API, không hiện 0 giả |
+
+| Tài liệu/đối chiếu | Chỉ đọc source để xác nhận thiếu S8-09 | FUNCTION_MAP và FRONTEND_ROUTES đã bổ sung vị trí; tài liệu hợp đồng **đề xuất**, không giả thành API có sẵn | `docs/S8-09_FRONTEND_CONTRACT.md`; phải thống nhất với thành viên backend trước khi bật adapter |
+
+
+
+Phối hợp Antigravity CLI bằng model **Claude Opus 4.6 (Thinking)** rà luồng xuất Excel/quyền/race/formula. Nhận xét được đối chiếu với code và kiểm thử, bổ sung các ca đổi bộ lọc giữa lúc xuất, thu hồi giữa hai lần kiểm tra, bấm kép và corpus `=`, `+`, `-`, `@`, tab/CR. Không thay bảo vệ frontend bằng backend mới ngoài phạm vi.
+
+
+
+Kết quả cuối: **209/209 unit tests JS**, **13/13 tests server/route**, **18/18 kịch bản Chrome S8-09** và **216/216 kiểm tra bố cục trên 36 trang × 6 kích thước** qua. Đã xem ảnh pending-backend/desktop/mobile và đọc lại file Excel tải xuống bằng bộ đọc XLSX. Kiểm tra FUNCTION_MAP có 69 story, không trùng ID, đúng thứ tự. `git diff --check` sạch; không có diff trong backend. Khi chạy đồng thời hai bộ Chrome trên server Python thử nghiệm, từng gặp timeout khởi tạo/trạng thái sidebar; chạy lại từng bộ riêng đều qua, không đổi code shell để che lỗi test.
+
+
+
+Kiểm thử frontend dùng script/trang thật + adapter HTTP mock **chỉ trong tests**, không tạo/sửa/xóa dữ liệu DB nghiệp vụ. Không coi các fixture là bằng chứng API đã hoạt động hoặc backend đã thực thi REPORT_FINANCE. Lệnh: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/debt-aging.browser.cjs`; `node tests/content-layout.browser.cjs` (`NAV_TEST_URL` trỏ frontend cổng 5538).
