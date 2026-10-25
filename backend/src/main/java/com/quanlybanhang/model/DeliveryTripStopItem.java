@@ -38,6 +38,20 @@ public class DeliveryTripStopItem {
     @Column(name = "unit", length = 50)
     private String unit;
 
+    /** Frozen outbound accounting, never obtained from mutable product conversion settings. */
+    private Long sourceVoucherItemId;
+    private Long orderItemId;
+    @Column(precision = 12, scale = 4)
+    private BigDecimal conversionFactor;
+    @Column(precision = 15, scale = 4)
+    private BigDecimal baseQuantity;
+    @Column(length = 50)
+    private String baseUnit;
+    @Column(length = 50)
+    private String lotNumber;
+    private java.time.LocalDate manufacturingDate;
+    private java.time.LocalDate expiryDate;
+
     @Column(name = "quantity", precision = 15, scale = 4, nullable = false)
     @Builder.Default
     private BigDecimal quantity = BigDecimal.ZERO;

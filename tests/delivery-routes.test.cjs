@@ -23,6 +23,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const Utils = require('../frontend/js/warehouse-delivery-routes-utils.js');
+
+test('S6-06 sends distinct shipment voucher sources when the same order has multiple exports',()=>{
+ const stops=[101,102].map(id=>({orderId:10,shipmentVoucherId:id,deliveryAddress:'Quận 1',totalAmount:100}));
+ const body=Utils.buildCreateTripPayload({warehouseId:1,driverName:'Tài xế',vehiclePlate:'TEST'},stops);
+ assert.deepEqual(body.stops.map(s=>s.shipmentVoucherId),[101,102]);
+ assert.deepEqual(body.stops.map(s=>s.orderId),[10,10]);
+});
 const menuSource = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.js'), 'utf8');
 const menu = vm.runInNewContext(`${menuSource}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);

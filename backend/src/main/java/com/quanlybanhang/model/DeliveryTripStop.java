@@ -38,6 +38,11 @@ public class DeliveryTripStop {
     @Column(name = "voucher_code", length = 50)
     private String voucherCode;
 
+    /** One immutable shipment may belong to only one delivery stop. Legacy stops have no voucher. */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shipment_voucher_id", unique = true)
+    private WarehouseVoucher shipmentVoucher;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dealer_id")
     private Dealer dealer;
@@ -107,6 +112,9 @@ public class DeliveryTripStop {
 
     @Column(name = "returned_at")
     private LocalDateTime returnedAt;
+
+    @Column(name = "return_reason", length = 500)
+    private String returnReason;
 
     @Column(name = "note", length = 500)
     private String note;

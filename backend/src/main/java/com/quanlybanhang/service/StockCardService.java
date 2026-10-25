@@ -180,7 +180,8 @@ public class StockCardService {
         for(var i:returnItemRepo.findForStockCard(product.getId(),scopeIds)){
             var s=i.getStop();var t=s.getTrip();var w=t.getWarehouse();
             if(scopeIds.contains(w.getId()))raw.add(new RawEntry(s.getReturnedAt(),"IMPORT","Nhập trả chuyến giao",
-                    i.getQuantity(),product.getUnit(),i.getQuantity(),product.getUnit(),w.getId(),w.getCode(),w.getName(),"DELIVERY_RETURN",s.getId(),t.getTripCode(),s.getNote()));
+                    i.getBaseQuantity()==null?i.getQuantity():i.getBaseQuantity(),i.getBaseUnit()==null?product.getUnit():i.getBaseUnit(),
+                    i.getQuantity(),i.getUnit()==null?product.getUnit():i.getUnit(),w.getId(),w.getCode(),w.getName(),"DELIVERY_RETURN",s.getId(),t.getTripCode(),s.getReturnReason()==null?s.getNote():s.getReturnReason()));
         }
         if(dealerReturnItemRepo!=null){
             for(var i:dealerReturnItemRepo.findForStockCard(product.getId(),scopeIds)){

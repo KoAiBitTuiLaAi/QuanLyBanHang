@@ -164,6 +164,7 @@
   function buildCreateTripPayload(formData, stagedStops) {
     const stops = (stagedStops || []).map((stop, index) => ({
       orderId: stop.orderId || null,
+      shipmentVoucherId: stop.shipmentVoucherId || null,
       orderCode: stop.orderCode || null,
       dealerId: stop.dealerId || null,
       dealerName: stop.dealerName || null,

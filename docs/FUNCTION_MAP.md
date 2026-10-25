@@ -74,10 +74,10 @@
 - S6-03: Kho hàng → Phiếu soạn hàng → Tạo lượt soạn, gộp đơn → Mở lượt, nhập thực soạn/lý do thiếu, Lưu dòng → Hoàn tất/Hủy lượt.
 - S6-04: Kho hàng → Lô & hạn sử dụng → Gợi ý xuất FEFO → Chọn kho/SKU/số lượng, lấy gợi ý, chọn lô khác kèm lý do, Xác nhận xuất lô.
 - S6-05: Kho hàng → Xuất kho theo đơn → Chờ xuất kho, Xác nhận xuất kho, Còn nợ hàng (xuất bù), Các phiếu đã xác nhận (chỉ đọc).
-- S6-06: Kho hàng → Phân tuyến giao hàng → Chọn kho, gom phiếu theo khu vực, gán tài xế/xe, lập lộ trình và in danh sách điểm giao.
+- S6-06: Kho hàng → Phân tuyến giao hàng → Gom từng phiếu xuất (kể cả xuất thiếu) theo khu vực, gán tài xế/xe, sắp điểm giao và in danh sách.
 - S6-07: Kho hàng → Theo dõi chuyến giao → Tiền hàng trên đường, điểm đã giao/còn lại, lọc kho/trạng thái/quá hạn, Xem điểm giao và chuyến còn hàng chưa xử lý.
-- S6-08: Một phần: Kho hàng → Xác nhận giao hàng → Xem đơn thật, mở form/xem trước ảnh; backend có API xác nhận ảnh và tải chứng từ theo chuyến/điểm giao, frontend chưa nối lưu xác nhận/hoàn kho.
-- S6-09: Cổng đại lý → Đơn hàng của tôi → Chi tiết đơn hàng → Theo dõi giao hàng (5 mốc thời gian: Đã duyệt, Đang soạn, Đã xuất, Đang giao, Đã giao; thực giao từng dòng hàng; thông tin chuyến xe & tài xế).
+- S6-08: Kho hàng → Xác nhận giao hàng → Mở điểm giao, lưu người nhận/thời điểm/ảnh ký nhận, ghi nhận giao không thành công, xác nhận nhập trả kho, xem/tải ảnh.
+- S6-09: Cổng đại lý → Đơn hàng của tôi → Chi tiết đơn hàng → Theo dõi giao hàng → Xem 5 mốc thời gian và thực giao từng dòng hàng.
 
 ## Sprint 7 — Tài chính và công nợ
 

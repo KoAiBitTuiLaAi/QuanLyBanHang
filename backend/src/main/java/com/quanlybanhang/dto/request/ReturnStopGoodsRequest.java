@@ -15,8 +15,10 @@ import lombok.*;
 public class ReturnStopGoodsRequest {
 
     @NotBlank(message = "Lý do hoàn trả kho không được để trống")
+    @jakarta.validation.constraints.Size(max = 500)
     private String returnReason;
 
+    @jakarta.validation.constraints.Size(max = 500)
     private String note;
 }
 
