@@ -4,6 +4,42 @@ Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
+## S7-03 — Sổ công nợ theo đại lý với phân tích tuổi nợ (25/10/2026)
+
+API Sổ công nợ theo đại lý với phân tích tuổi nợ phục vụ kế toán công nợ theo dõi các khoản phải thu, đã thu, còn nợ và phân bổ theo 4 nhóm tuổi nợ (0–30, 31–60, 61–90 và trên 90 ngày) để tập trung đòi những khoản nợ lâu nhất trước.
+
+| Method | Endpoint (sau `/api`) | Quyền / hành vi |
+|---|---|---|
+| GET | `/finance/debt-aging-ledger` (alias `/finance/dealer-debt-aging`) | Quyền `FINANCE_VIEW_DEBT` hoặc `ROLE_ADMIN`. Lấy sổ công nợ theo đại lý kèm phân tích 4 nhóm tuổi nợ, nợ trong hạn, nợ quá hạn, tổng cộng chân bảng |
+| GET | `/finance/debt-aging-ledger/export` (alias `/finance/debt-aging-ledger/export/excel`, `/finance/dealer-debt-aging/export`) | Quyền `FINANCE_VIEW_DEBT` hoặc `ROLE_ADMIN`. Xuất sổ công nợ ra file Excel `.xlsx` với đầy đủ tiêu đề, khối bộ lọc, 19 cột chi tiết, dòng tổng cộng chân bảng và định dạng tiền tệ VND |
+
+### Query Parameters
+
+| Tham số | Kiểu | Mặc định | Ý nghĩa |
+|---|---|---|---|
+| `asOfDate` | `LocalDate` (`YYYY-MM-DD`) | Ngày hiện tại (`today`) | Ngày chốt sổ tính tuổi nợ (không được chọn ngày trong tương lai) |
+| `overdueOnly` | `Boolean` | `false` | Lọc riêng nhóm đại lý có nợ quá hạn (`true`: chỉ trả về đại lý có `isOverdue = true`) |
+| `dealerId` | `Long` | `null` | Lọc theo ID đại lý cụ thể |
+| `search` | `String` | `null` | Tìm kiếm theo mã đại lý, tên đại lý hoặc số điện thoại |
+
+### Đặc tả nghiệp vụ
+1. **Đối trừ FIFO**: Tiền đã thu/thanh toán của đại lý được trừ tuần tự cho các hóa đơn/đơn hàng ghi sổ cũ nhất trước (theo ngày chứng từ tăng dần).
+2. **Phân tích 4 nhóm tuổi nợ**: Khoản nợ còn lại chưa thanh toán được tính tuổi nợ `debtAge = asOfDate - documentDate` và phân bổ vào 4 nhóm:
+   - `0–30 ngày` (`bucket0To30`)
+   - `31–60 ngày` (`bucket31To60`)
+   - `61–90 ngày` (`bucket61To90`)
+   - `Trên 90 ngày` (`bucketOver90`)
+3. **Phân loại nợ**:
+   - `inTermDebt`: Nợ trong hạn (chưa quá `dueDate`).
+   - `overdueDebt`: Nợ quá hạn (ngày chốt `asOfDate > dueDate`), kèm `maxOverdueDays`.
+4. **Sắp xếp ưu tiên đòi nợ**: Đại lý có nợ trên 90 ngày lớn nhất đứng đầu (`bucketOver90` desc) -> `bucket61To90` desc -> `bucket31To60` desc -> tuổi nợ tối đa `maxDebtAgeDays` desc -> tổng còn nợ `remainingDebt` desc -> ID đại lý.
+5. **Tổng cộng ở chân bảng (Summary)**: Khớp chính xác tổng toán học các cột tiền của từng đại lý, đếm `dealerCount` và `overdueDealerCount`.
+6. **Bảo toàn độ chính xác tài chính**: Bên cạnh các trường số `BigDecimal`, trả về đầy đủ các trường chuỗi formatted định dạng chuẩn 2 chữ số lẻ (`totalReceivableFormatted`, `totalPaidFormatted`, `remainingDebtFormatted`, `bucket0To30Formatted`,...).
+7. **Phân quyền và bảo mật**:
+   - Ma trận phân quyền database-backed: Yêu cầu quyền `FINANCE_VIEW_DEBT` hoặc `ROLE_ADMIN`. Thu hồi quyền ngay lập tức trả về `403 Forbidden` trên token JWT hiện tại. Tuyệt đối không dùng role-based fallback.
+   - Row-level security: `ROLE_SALES` chỉ xem được các đại lý mình được phân công phụ trách. `ROLE_DEALER` chỉ xem được dữ liệu công nợ của chính đại lý mình.
+   - Chống Formula Injection trên file Excel: Tự động escape các ký tự khởi đầu nguy hiểm (`=`, `+`, `-`, `@`).
+
 ## S7-06 — Biên bản đối chiếu công nợ đã lưu và phản hồi đại lý (25/10/2026)
 
 Trang `/finance/debt-reconciliation`, menu **Tài chính → Đối chiếu công nợ**, dùng cho kế toán và đại lý theo quyền. Tạo biên bản chụp số liệu đầu kỳ, tăng/giảm, cuối kỳ và từng chứng từ trong một transaction `REPEATABLE_READ`; toàn bộ bản số liệu và thông tin đại lý được lưu tại `debt_reconciliations.snapshot_json`. Không sửa/xóa bản đã lưu, không tính lại khi xem/PDF. Có thể lập một biên bản mới cho cùng kỳ để đối chiếu lại sau khi xử lý phản hồi.
