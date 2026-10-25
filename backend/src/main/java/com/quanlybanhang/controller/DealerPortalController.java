@@ -85,6 +85,8 @@ public class DealerPortalController {
 
         boolean isAdmin = currentUser.getRoles().stream()
                 .anyMatch(r -> r.getName() == ERole.ROLE_ADMIN);
+        if (!isAdmin && currentUser.getRoles().stream().noneMatch(r -> r.getName() == ERole.ROLE_DEALER))
+            throw new AccessDeniedException("Cổng này chỉ dành cho tài khoản đại lý hoặc quản trị viên");
 
         if (isAdmin && requestedDealerId != null) {
             return dealerRepository.findById(requestedDealerId)
@@ -119,7 +121,7 @@ public class DealerPortalController {
     @PreAuthorize("hasAuthority('ORDER_VIEW')")
     public ApiResponse getProfile(Principal principal, @RequestParam(required = false) Long dealerId) {
         Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
-        DealerDebtResponse debt = dealerDebtService.getDealerDebtInfo(dealer);
+        DealerDebtResponse debt = portalHas("FINANCE_VIEW_DEBT") ? dealerDebtService.getDealerDebtInfo(dealer) : new DealerDebtResponse();
         List<DealerDeliveryPointResponse> points = deliveryPointService.getDeliveryPointsByDealer(dealer.getId());
 
         User sales = dealer.getAssignedUser();
@@ -242,11 +244,10 @@ public class DealerPortalController {
      * S4-10, S7-07: Tra cứu thông tin công nợ, tổng còn nợ, hạn mức và hạn mức còn lại của đại lý.
      */
     @GetMapping("/debt")
-    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('ORDER_VIEW', 'FINANCE_VIEW_DEBT')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('FINANCE_VIEW_DEBT')")
     public ApiResponse getDebt(Principal principal, @RequestParam(required = false) Long dealerId) {
         Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
-        DealerDebtResponse debt = dealerDebtService.getDealerDebtInfo(dealer);
-        return ApiResponse.success("Thông tin công nợ đại lý", debt);
+        return ApiResponse.success("Thông tin công nợ đại lý", portalDebt(dealer));
     }
 
     /**
@@ -257,8 +258,19 @@ public class DealerPortalController {
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('FINANCE_VIEW_DEBT')")
     public ApiResponse getDebtSummary(Principal principal, @RequestParam(required = false) Long dealerId) {
         Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
-        DealerDebtResponse debt = dealerDebtService.getDealerDebtInfo(dealer);
-        return ApiResponse.success("Tổng quan công nợ và hạn mức của đại lý", debt);
+        return ApiResponse.success("Tổng quan công nợ và hạn mức của đại lý", portalDebt(dealer));
+    }
+
+    private DealerDebtResponse portalDebt(Dealer dealer) {
+        var debt = dealerDebtService.getDealerDebtInfo(dealer);
+        if (!portalHas("INVOICE_VIEW")) debt.setInvoices(Collections.emptyList());
+        return debt;
+    }
+
+    private boolean portalHas(String permission) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream().anyMatch(g ->
+                "ROLE_ADMIN".equals(g.getAuthority()) || permission.equals(g.getAuthority()));
     }
 
     /**
@@ -327,13 +339,14 @@ public class DealerPortalController {
         String username = principal != null ? principal.getName() : "system";
         byte[] pdfBytes = invoicePdfService.generateInvoicePdf(id, username);
 
-        String filename = "hoa-don-" + inv.getInvoiceNumber() + ".pdf";
-        String disposition = download
-                ? "attachment; filename=\"" + filename + "\""
-                : "inline; filename=\"" + filename + "\"";
+        String filename = "hoa-don-" + String.valueOf(inv.getInvoiceNumber()).replaceAll("[\\r\\n\\\\/]", "_") + ".pdf";
+        String disposition = (download ? org.springframework.http.ContentDisposition.attachment()
+                : org.springframework.http.ContentDisposition.inline())
+                .filename(filename, java.nio.charset.StandardCharsets.UTF_8).build().toString();
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .cacheControl(org.springframework.http.CacheControl.noStore())
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdfBytes);
     }
@@ -354,6 +367,7 @@ public class DealerPortalController {
         String username = principal != null ? principal.getName() : "system";
         String html = invoicePdfService.generateInvoicePrintHtml(id, username);
         return ResponseEntity.ok()
+                .cacheControl(org.springframework.http.CacheControl.noStore())
                 .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
                 .body(html);
     }
@@ -402,6 +416,7 @@ public class DealerPortalController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .cacheControl(org.springframework.http.CacheControl.noStore())
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdfBytes);
     }
@@ -476,6 +491,20 @@ public class DealerPortalController {
             throw new AccessDeniedException("Đơn hàng không thuộc đại lý đang chọn");
         }
         return ApiResponse.success("Chi tiết đơn hàng", order);
+    }
+
+    /**
+     * S6-09: Theo dõi trạng thái giao hàng của đơn hàng dành cho Đại lý.
+     * Hiển thị 5 mốc thời gian: đã duyệt, đang soạn, đã xuất, đang giao, đã giao.
+     * Xem được số lượng thực giao từng dòng hàng và thông tin xe/tài xế để chủ động bố trí người nhận.
+     */
+    @GetMapping({"/orders/{id}/tracking", "/orders/{id}/delivery-tracking"})
+    @PreAuthorize("hasAuthority('ORDER_VIEW')")
+    public ApiResponse getOrderDeliveryTracking(@PathVariable Long id, Principal principal,
+                                                @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        DealerDeliveryTrackingResponse tracking = orderService.getDealerOrderDeliveryTracking(id, dealer.getId());
+        return ApiResponse.success("Theo dõi giao hàng của đơn", tracking);
     }
 
     /**

@@ -53,11 +53,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.jpa.hibernate.ddl-auto=create-drop", "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
         "spring.jpa.show-sql=false", "app.jwt.secret=dealer-self-debt-test-secret-at-least-32-characters",
         "app.bootstrap.admin-password=PortalFixture2026!", "app.bootstrap.admin-email=portal-fixture@example.invalid",
-        "app.seed-demo-users=false", "app.seed-demo-data=false"
+        "app.seed-demo-users=false", "app.seed-demo-data=false", "app.payment-reminder.scheduler.enabled=false"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("S7-07 Integration Test - Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn")
 class DealerSelfDebtPortalIntegrationTest {
 
@@ -105,6 +106,108 @@ class DealerSelfDebtPortalIntegrationTest {
     private Order orderB1;
     private String dealerAToken;
     private String adminToken;
+    @Autowired private InvoiceRepository invoiceRepository;
+    @Autowired private ReturnOrderRepository returnRepository;
+    @Autowired private DebtPaymentRepository payments;
+
+    private JsonNode readPortal(String path, String token, int expected) throws Exception {
+        var response = mockMvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + token)).andReturn().getResponse();
+        assertThat(response.getStatus()).as("%s: %s", path, response.getContentAsString()).isEqualTo(expected);
+        return objectMapper.readTree(response.getContentAsByteArray()).path("data");
+    }
+
+    @Test void revokedInvoicePermissionCannotLeakThroughDebtSummaryAndDebtCannotLeakThroughProfile() throws Exception {
+        invoiceService.issueInvoice(CreateInvoiceRequest.builder().dealerId(dealerA.getId()).orderIds(List.of(orderA1.getId())).build(), "accountant");
+        rolePermissionConfig.updateRolePermissions(ERole.ROLE_DEALER, Set.of(Permission.FINANCE_VIEW_DEBT));
+        for (String path : List.of("/api/portal/debt", "/api/portal/debt/summary"))
+            assertThat(readPortal(path, dealerAToken, 200).path("invoices").size()).isZero();
+        readPortal("/api/portal/invoices", dealerAToken, 403);
+        rolePermissionConfig.updateRolePermissions(ERole.ROLE_DEALER, Set.of(Permission.ORDER_VIEW, Permission.INVOICE_VIEW));
+        var profile = readPortal("/api/portal/profile", dealerAToken, 200);
+        assertThat(profile.path("currentDebt").isNull()).isTrue();
+        assertThat(profile.path("debtLimit").isNull()).isTrue();
+        assertThat(profile.path("remainingLimit").isNull()).isTrue();
+        readPortal("/api/portal/debt/summary", dealerAToken, 403);
+        readPortal("/api/portal/debt", dealerAToken, 403);
+        readPortal("/api/portal/debt/payments", dealerAToken, 403);
+        readPortal("/api/portal/invoices", dealerAToken, 200);
+        rolePermissionConfig.updateRolePermissions(ERole.ROLE_DEALER, Set.of(Permission.FINANCE_VIEW_DEBT, Permission.INVOICE_VIEW));
+        assertThat(readPortal("/api/portal/debt/summary", dealerAToken, 200).path("invoices").size()).isEqualTo(1);
+    }
+
+    @Test void invalidFiltersAreRejectedAndHugePageDoesNotOverflow() throws Exception {
+        invoiceService.issueInvoice(CreateInvoiceRequest.builder().dealerId(dealerA.getId()).orderIds(List.of(orderA1.getId())).build(), "accountant");
+        for (String query : List.of("page=-1", "size=0", "size=101", "paymentStatus=INVALID", "startDate=2026-10-25&endDate=2026-10-01", "startDate=bad"))
+            readPortal("/api/portal/invoices?" + query, dealerAToken, 400);
+        var page = readPortal("/api/portal/invoices?page=2147483647&size=100", dealerAToken, 200);
+        assertThat(page.path("content").size()).isZero();
+        assertThat(page.path("totalElements").asInt()).isEqualTo(1);
+    }
+
+    @Test void confirmedReturnReducesInvoiceExactlyOnceAndPaidFlagMatchesActualBalance() throws Exception {
+        var inv = invoiceService.issueInvoice(CreateInvoiceRequest.builder().dealerId(dealerA.getId()).orderIds(List.of(orderA1.getId())).build(), "accountant");
+        var source = invoiceRepository.findById(inv.getId()).orElseThrow();
+        String original = source.getAdjustedTotalAmount().toPlainString();
+        var returned = returnRepository.saveAndFlush(ReturnOrder.builder().returnCode("TR-" + UUID.randomUUID()).invoice(source).dealer(dealerA)
+                .returnReason("Trả hàng").totalReturnAmount(new BigDecimal("2500000.25")).status(ReturnOrderStatus.DRAFT).build());
+        payments.saveAndFlush(DebtPayment.builder().dealer(dealerA).paymentCode("PT-" + UUID.randomUUID()).paymentDate(LocalDate.now()).amount(new BigDecimal("4000000.00")).build());
+        String path = "/api/portal/invoices/" + inv.getId();
+        assertThat(readPortal(path, dealerAToken, 200).path("exactAmounts").path("effectiveAmount").asText()).isEqualTo("10000000.00");
+        returned.setStatus(ReturnOrderStatus.CONFIRMED); returned.setConfirmedAt(LocalDateTime.now()); returnRepository.saveAndFlush(returned);
+        var detail = readPortal(path, dealerAToken, 200);
+        assertThat(detail.path("exactAmounts").path("effectiveAmount").asText()).isEqualTo("7499999.75");
+        assertThat(detail.path("exactAmounts").path("remainingAmount").asText()).isEqualTo("3499999.75");
+        assertThat(detail.path("isPaid").asBoolean()).isFalse();
+        var summary = readPortal("/api/portal/debt/summary", dealerAToken, 200);
+        assertThat(summary.path("exactAmounts").path("currentDebt").asText()).isEqualTo("18499999.75");
+        assertThat(summary.path("invoices").get(0).path("remainingAmount")).isEqualTo(detail.path("remainingAmount"));
+        payments.saveAndFlush(DebtPayment.builder().dealer(dealerA).paymentCode("PT-" + UUID.randomUUID()).paymentDate(LocalDate.now()).amount(new BigDecimal("3499999.75")).build());
+        var paid = readPortal(path, dealerAToken, 200);
+        assertThat(paid.path("paymentStatus").asText()).isEqualTo("PAID");
+        assertThat(paid.path("isPaid").asBoolean()).isTrue();
+        assertThat(paid.path("exactAmounts").path("remainingAmount").asText()).isEqualTo("0.00");
+        assertThat(invoiceRepository.findById(inv.getId()).orElseThrow().getAdjustedTotalAmount().toPlainString()).isEqualTo(original);
+    }
+
+    @Test void exactCreditLimitPreservesCentsAndLockedDealerCannotOrder() throws Exception {
+        dealerA.setDebtLimit(new BigDecimal("9007199254740993.25")); dealerRepository.saveAndFlush(dealerA);
+        var summary = readPortal("/api/portal/debt/summary", dealerAToken, 200);
+        assertThat(summary.path("exactAmounts").path("debtLimit").asText()).isEqualTo("9007199254740993.25");
+        assertThat(summary.path("exactAmounts").path("remainingLimit").asText()).isEqualTo("9007199229740993.25");
+        dealerA.setLocked(true); dealerRepository.saveAndFlush(dealerA);
+        assertThat(readPortal("/api/portal/debt/summary", dealerAToken, 200).path("availableOrderLimit").decimalValue()).isEqualByComparingTo("0");
+    }
+
+    @Test void htmlPreviewEscapesDealerAndItemContentAndPdfPreservesCents() throws Exception {
+        var inv = invoiceService.issueInvoice(CreateInvoiceRequest.builder().dealerId(dealerA.getId()).orderIds(List.of(orderA1.getId())).build(), "accountant");
+        var source = invoiceRepository.findById(inv.getId()).orElseThrow();
+        source.setDealerName("<img src=x onerror=alert(1)>"); source.setNote("<script>alert(1)</script>");
+        source.setAdjustedTotalAmount(new BigDecimal("123.45"));
+        source.getItems().get(0).setProductName("<img src=x>"); invoiceRepository.saveAndFlush(source);
+        String path = "/api/portal/invoices/" + inv.getId();
+        var html = mockMvc.perform(get(path + "/print-preview").header(HttpHeaders.AUTHORIZATION, "Bearer " + dealerAToken)).andReturn().getResponse();
+        assertThat(html.getStatus()).isEqualTo(200);
+        assertThat(html.getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).doesNotContain("<script>", "<img src=x").contains("&lt;script&gt;", "123,45", "phẩy bốn năm đồng");
+        assertThat(html.getHeader("Cache-Control")).contains("no-store");
+        var pdf = mockMvc.perform(get(path + "/pdf").header(HttpHeaders.AUTHORIZATION, "Bearer " + dealerAToken)).andReturn().getResponse();
+        assertThat(pdf.getStatus()).isEqualTo(200);
+        var reader = new com.lowagie.text.pdf.PdfReader(pdf.getContentAsByteArray());
+        try {assertThat(new com.lowagie.text.pdf.parser.PdfTextExtractor(reader).getTextFromPage(1)).contains("123,45", "phẩy bốn năm đồng");}
+        finally {reader.close();}
+    }
+
+    @Test void overpaymentDoesNotIncreaseCreditAboveGrantedLimitAndCancelledInvoiceIsArchived() throws Exception {
+        var inv = invoiceService.issueInvoice(CreateInvoiceRequest.builder().dealerId(dealerA.getId()).orderIds(List.of(orderA1.getId())).build(), "accountant");
+        var source = invoiceRepository.findById(inv.getId()).orElseThrow(); source.setStatus(InvoiceStatus.CANCELLED); invoiceRepository.saveAndFlush(source);
+        var archived = readPortal("/api/portal/invoices/" + inv.getId(), dealerAToken, 200);
+        assertThat(archived.path("remainingAmount").decimalValue()).isEqualByComparingTo("0");
+        assertThat(archived.path("paymentStatus").asText()).isEqualTo("CANCELLED");
+        assertThat(archived.path("isPaid").asBoolean()).isFalse();
+        payments.saveAndFlush(DebtPayment.builder().dealer(dealerA).paymentCode("PT-" + UUID.randomUUID()).paymentDate(LocalDate.now()).amount(new BigDecimal("30000000")).build());
+        var summary = readPortal("/api/portal/debt/summary", dealerAToken, 200);
+        assertThat(summary.path("currentDebt").decimalValue()).isEqualByComparingTo("0");
+        assertThat(summary.path("remainingLimit").decimalValue()).isEqualByComparingTo("50000000");
+    }
 
     @BeforeEach
     void setUp() throws Exception {
@@ -390,9 +493,10 @@ class DealerSelfDebtPortalIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + dealerAToken))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF))
-                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"hoa-don-" + invA.getInvoiceNumber() + ".pdf\""))
                 .andReturn();
+        var disposition = org.springframework.http.ContentDisposition.parse(pdfRes.getResponse().getHeader(HttpHeaders.CONTENT_DISPOSITION));
+        assertThat(disposition.getType()).isEqualTo("attachment");
+        assertThat(disposition.getFilename()).isEqualTo("hoa-don-" + invA.getInvoiceNumber() + ".pdf");
         byte[] pdfBytes = pdfRes.getResponse().getContentAsByteArray();
         assertThat(pdfBytes).isNotEmpty();
         assertThat(new String(pdfBytes, 0, 4)).isEqualTo("%PDF");

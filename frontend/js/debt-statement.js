@@ -29,7 +29,147 @@
     loading: false,
     exportingPdf: false,
     exportingExcel: false,
+    activeTab: "aging",
+    agingRequest: 0,
+    agingData: null,
+    agingBusy: false,
   };
+
+  const agingEscape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+  const agingMoney = (formatted, value) => {
+    if (typeof formatted === "string" && formatted.trim()) return formatted;
+    const number = Number(value);
+    return Number.isFinite(number) ? new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(number) + " ₫" : "—";
+  };
+
+  function setActiveTab(name, focus = false) {
+    if (!["aging", "statement"].includes(name)) return;
+    state.activeTab = name;
+    const isAging = name === "aging";
+    const agingTab = $("debt-tab-aging");
+    const statementTab = $("debt-tab-statement");
+    const agingPanel = $("debt-panel-aging");
+    const statementPanel = $("debt-panel-statement");
+    if (!agingTab || !statementTab || !agingPanel || !statementPanel) return;
+    agingTab.setAttribute("aria-selected", String(isAging));
+    statementTab.setAttribute("aria-selected", String(!isAging));
+    agingTab.tabIndex = isAging ? 0 : -1;
+    statementTab.tabIndex = isAging ? -1 : 0;
+    agingPanel.hidden = !isAging;
+    statementPanel.hidden = isAging;
+    if (focus) (isAging ? agingTab : statementTab).focus();
+  }
+
+  function renderAgingLedger(data) {
+    const rows = Array.isArray(data?.dealers) ? data.dealers : [];
+    const summary = data?.summary || {};
+    const cells = rows.map(row => `<tr${row.isOverdue ? ' class="ds-overdue-row"' : ""}>
+      <td>${agingEscape(row.dealerName || `Đại lý #${row.dealerId}`)}${row.isOverdue ? '<span class="ds-overdue-badge">Quá hạn</span>' : ""}</td>
+      <td>${agingEscape(row.dealerCode || "—")}</td>
+      <td>${agingEscape(agingMoney(row.totalReceivableFormatted, row.totalReceivable))}</td>
+      <td>${agingEscape(agingMoney(row.totalPaidFormatted, row.totalPaid))}</td>
+      <td>${agingEscape(agingMoney(row.remainingDebtFormatted, row.remainingDebt))}</td>
+      <td>${agingEscape(agingMoney(row.bucket0To30Formatted, row.bucket0To30))}</td>
+      <td>${agingEscape(agingMoney(row.bucket31To60Formatted, row.bucket31To60))}</td>
+      <td>${agingEscape(agingMoney(row.bucket61To90Formatted, row.bucket61To90))}</td>
+      <td>${agingEscape(agingMoney(row.bucketOver90Formatted, row.bucketOver90))}</td>
+    </tr>`);
+    $("ds-rows").innerHTML = cells.length
+      ? cells.join("")
+      : '<tr><td colspan="9" class="ds-empty">Không có đại lý phù hợp với bộ lọc.</td></tr>';
+    const totals = {
+      "ds-t-recv": [summary.totalReceivableFormatted, summary.totalReceivable],
+      "ds-t-paid": [summary.totalPaidFormatted, summary.totalPaid],
+      "ds-t-remain": [summary.totalRemainingDebtFormatted, summary.totalRemainingDebt],
+      "ds-t-0": [summary.totalBucket0To30Formatted, summary.totalBucket0To30],
+      "ds-t-1": [summary.totalBucket31To60Formatted, summary.totalBucket31To60],
+      "ds-t-2": [summary.totalBucket61To90Formatted, summary.totalBucket61To90],
+      "ds-t-3": [summary.totalBucketOver90Formatted, summary.totalBucketOver90],
+    };
+    Object.entries(totals).forEach(([id, [formatted, value]]) => { $(id).textContent = agingMoney(formatted, value); });
+    $("ds-totals").hidden = false;
+    $("ds-summary").textContent = `${rows.length} đại lý · ${Number(summary.overdueDealerCount || 0)} đại lý quá hạn · Ngày chốt ${data.asOfDate || "—"}`;
+    $("ds-export").disabled = rows.length === 0;
+  }
+
+  async function loadAgingLedger() {
+    if (!await syncPermissions()) return;
+    const requestId = ++state.agingRequest;
+    const progress = $("ds-progress");
+    const error = $("ds-error");
+    const reload = $("ds-reload");
+    const apply = $("ds-apply");
+    state.agingBusy = true;
+    if (progress) progress.hidden = false;
+    if (error) { error.hidden = true; error.textContent = ""; }
+    if (reload) reload.disabled = true;
+    if (apply) apply.disabled = true;
+    $("ds-export").disabled = true;
+    try {
+      const params = new URLSearchParams();
+      const search = $("ds-search").value.trim();
+      const asOfDate = $("ds-as-of").value;
+      if (search) params.set("search", search);
+      if (asOfDate) params.set("asOfDate", asOfDate);
+      params.set("overdueOnly", String($("ds-overdue").checked));
+      const response = await Auth.apiFetch(`/finance/debt-aging-ledger?${params.toString()}`);
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.success || !json?.data || !Array.isArray(json.data.dealers)) {
+        throw new Error(json?.message || `Không tải được tổng quan công nợ (HTTP ${response.status}).`);
+      }
+      if (requestId !== state.agingRequest || !await syncPermissions()) return;
+      state.agingData = json.data;
+      renderAgingLedger(json.data);
+    } catch (err) {
+      if (requestId === state.agingRequest) {
+        state.agingData = null;
+        $("ds-totals").hidden = true;
+        $("ds-rows").innerHTML = '<tr><td colspan="9" class="ds-empty">Chưa tải được dữ liệu. Hãy thử lại.</td></tr>';
+        if (error) { error.textContent = err.message || "Không tải được dữ liệu công nợ."; error.hidden = false; }
+      }
+    } finally {
+      if (requestId === state.agingRequest) {
+        state.agingBusy = false;
+        if (progress) progress.hidden = true;
+        if (reload) reload.disabled = false;
+        if (apply) apply.disabled = false;
+      }
+    }
+  }
+
+  async function exportAgingLedger() {
+    if (!state.agingData || !state.agingData.dealers?.length || !await syncPermissions()) return;
+    const requestId = state.agingRequest;
+    const button = $("ds-export");
+    button.disabled = true;
+    try {
+      const params = new URLSearchParams();
+      const search = $("ds-search").value.trim();
+      const asOfDate = $("ds-as-of").value;
+      if (search) params.set("search", search);
+      if (asOfDate) params.set("asOfDate", asOfDate);
+      params.set("overdueOnly", String($("ds-overdue").checked));
+      const response = await Auth.apiFetch(`/finance/debt-aging-ledger/export?${params.toString()}`);
+      if (!response.ok) {
+        const json = await response.json().catch(() => null);
+        throw new Error(json?.message || `Không xuất được Excel (HTTP ${response.status}).`);
+      }
+      const blob = await response.blob();
+      if (requestId !== state.agingRequest || !await syncPermissions()) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `So-cong-no-tuoi-no_${$("ds-as-of").value || "hien-tai"}.xlsx`;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      const error = $("ds-error");
+      error.textContent = err.message || "Không xuất được Excel.";
+      error.hidden = false;
+    } finally {
+      button.disabled = !state.agingData?.dealers?.length;
+    }
+  }
 
   /**
    * Cập nhật hiển thị theo quyền hạn hiện tại của người dùng
@@ -46,6 +186,10 @@
     const resultPanel = $("statement-result-panel");
     const initialState = $("statement-initial-state");
     const errorNotice = $("statement-error");
+    const tabs = document.querySelector(".debt-tabs");
+    const agingPanel = $("debt-panel-aging");
+    const statementTabPanel = $("debt-panel-statement");
+    const agingWorkspace = $("ds-workspace");
 
     if (!hasPermission) {
       if (accessNotice) accessNotice.hidden = false;
@@ -53,12 +197,22 @@
       if (resultPanel) resultPanel.hidden = true;
       if (initialState) initialState.hidden = true;
       if (errorNotice) errorNotice.hidden = true;
+      if (tabs) tabs.hidden = true;
+      if (agingPanel) agingPanel.hidden = true;
+      if (statementTabPanel) statementTabPanel.hidden = true;
+      if (agingWorkspace) agingWorkspace.hidden = true;
       state.currentStatement = null;
+      state.agingRequest++;
+      state.agingData = null;
+      state.agingBusy = false;
       return false;
     }
 
     if (accessNotice) accessNotice.hidden = true;
     if (filterCard) filterCard.hidden = false;
+    if (tabs) tabs.hidden = false;
+    if (agingWorkspace) agingWorkspace.hidden = false;
+    setActiveTab(state.activeTab);
     return true;
   }
 
@@ -440,6 +594,33 @@
     const hasPerm = await syncPermissions();
     if (!hasPerm) return;
 
+    const agingDate = $("ds-as-of");
+    if (agingDate && !agingDate.value) {
+      const today = new Date();
+      agingDate.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    }
+    $("debt-tab-aging")?.addEventListener("click", () => setActiveTab("aging"));
+    $("debt-tab-statement")?.addEventListener("click", () => setActiveTab("statement"));
+    document.querySelector(".debt-tabs")?.addEventListener("keydown", event => {
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        setActiveTab(state.activeTab === "aging" ? "statement" : "aging", true);
+      }
+    });
+    $("ds-filters")?.addEventListener("submit", event => { event.preventDefault(); state.agingData = null; loadAgingLedger(); });
+    $("ds-reload")?.addEventListener("click", () => { state.agingData = null; loadAgingLedger(); });
+    $("ds-export")?.addEventListener("click", exportAgingLedger);
+    ["ds-search", "ds-as-of", "ds-overdue"].forEach(id => $(id)?.addEventListener("input", () => {
+      state.agingRequest++;
+      state.agingBusy = false;
+      state.agingData = null;
+      $("ds-progress").hidden = true;
+      $("ds-reload").disabled = false;
+      $("ds-apply").disabled = false;
+      $("ds-export").disabled = true;
+      $("ds-summary").textContent = "Bộ lọc đã thay đổi. Hãy áp dụng để tải số liệu mới.";
+    }));
+
     // Gắn giá trị ngày mặc định
     const defaultRange = DebtStatementUtils.getDefaultDateRange();
     const fromInput = $("filter-from");
@@ -520,8 +701,13 @@
 
     // Lắng nghe thay đổi ma trận quyền tức thì
     window.addEventListener("auth:permissions-changed", async () => {
-      await syncPermissions();
+      state.agingRequest++;
+      state.agingData = null;
+      state.agingBusy = false;
+      const allowed = await syncPermissions();
+      if (allowed && state.activeTab === "aging") loadAgingLedger();
     });
+    loadAgingLedger();
   }
 
   // Chạy khởi tạo

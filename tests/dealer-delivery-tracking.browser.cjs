@@ -86,6 +86,16 @@ const token='test.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+
     await d.page.locator('[data-delivery-milestone="delivered"] time').waitFor();
     assert.doesNotMatch(await d.page.locator('[data-delivery-milestone="delivered"] time').textContent(),/00:00/);
     assert.match(await d.page.locator('[data-delivery-milestone="picking"]').textContent(),/Chưa có dữ liệu/);
+    d.state.order.pickingAt='2026-10-23T09:30:00';d.state.order.exportedAt='2026-10-23T10:00:00';d.state.order.shippingAt='2026-10-23T11:00:00';
+    d.state.order.deliveryMilestones=[{milestoneKey:'picking',timestamp:'2026-10-23T09:35:00',status:'COMPLETED'}];
+    await d.page.locator('#btn-refresh-dealer-delivery').click();
+    await d.page.locator('[data-delivery-milestone="picking"] time').waitFor();
+    assert.equal(await d.page.locator('[data-delivery-milestone="picking"] time').getAttribute('datetime'),'2026-10-23T09:35:00');
+    assert.equal(await d.page.locator('[data-delivery-milestone="shipping"] time').getAttribute('datetime'),'2026-10-23T11:00:00');
+    d.state.order.status='SHIPPING';d.state.order.deliveredAt='2026-10-23T12:00:00';
+    await d.page.locator('#btn-refresh-dealer-delivery').click();
+    await d.page.locator('[data-delivery-milestone="shipping"]').getByText('Trạng thái hiện tại').waitFor();
+    assert.equal(await d.page.locator('[data-delivery-milestone="delivered"] time').count(),0);
     const originalItems=d.state.order.items;
     d.state.order.items=null;
     await d.page.locator('#btn-refresh-dealer-delivery').click();

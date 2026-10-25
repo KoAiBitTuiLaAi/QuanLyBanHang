@@ -271,6 +271,33 @@ public class WarehouseController {
         return ApiResponse.success("Điều chỉnh tồn kho thành công", response);
     }
 
+    /** S8-03: create an auditable pending loss adjustment; stock is unchanged until approval. */
+    @PostMapping("/adjustment-vouchers")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_ADJUST')")
+    public ApiResponse createLossAdjustment(@Valid @RequestBody WarehouseVoucherRequest request, Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        return ApiResponse.success("Đã lập phiếu điều chỉnh chờ phê duyệt",
+                warehouseService.createLossAdjustment(request, username));
+    }
+
+    /** S8-03: approval applies stock movement atomically; creator cannot approve own voucher. */
+    @PostMapping("/adjustment-vouchers/{id}/approve")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_APPROVE')")
+    public ApiResponse approveLossAdjustment(@PathVariable Long id, Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        return ApiResponse.success("Đã phê duyệt phiếu điều chỉnh và cập nhật tồn kho",
+                warehouseService.approveLossAdjustment(id, username));
+    }
+
+    /** S8-03: rejection is recorded without changing inventory. */
+    @PostMapping("/adjustment-vouchers/{id}/reject")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_APPROVE')")
+    public ApiResponse rejectLossAdjustment(@PathVariable Long id, @RequestBody Map<String, String> body, Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        return ApiResponse.success("Đã từ chối phiếu điều chỉnh",
+                warehouseService.rejectLossAdjustment(id, username, body == null ? null : body.get("reason")));
+    }
+
     /**
      * API lập phiếu điều chỉnh từ phiếu kho đã xác nhận (S5-04).
      * Chỉ Quản lý kho và Quản trị viên được quyền điều chỉnh.

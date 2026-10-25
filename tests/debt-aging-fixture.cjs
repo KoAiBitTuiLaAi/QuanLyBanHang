@@ -1,4 +1,4 @@
-// Proposed frontend contract fixtures ONLY; no S8-09 backend endpoint exists yet.
+// Synthetic S8-09 API responses used only by isolated frontend tests.
 const U=require('../frontend/js/debt-aging-utils.js');
 function options(){return {defaultAsOfDate:'2026-10-24',timezone:'Asia/Ho_Chi_Minh',buckets:[{key:'recent',label:'Quá hạn 1–14 ngày',minDays:1,maxDays:14},{key:'middle',label:'Quá hạn 15–44 ngày',minDays:15,maxDays:44},{key:'old',label:'Quá hạn từ 45 ngày',minDays:45,maxDays:null}],employees:[{id:1,code:'NV01',name:'Nguyễn An'},{id:2,code:'NV02',name:'Trần Bình'}]};}
 function report(filters={asOfDate:'2026-10-24',employeeId:null,unassignedOnly:false},size=45){

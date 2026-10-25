@@ -19,6 +19,10 @@ public class DeliveryTripOptionsResponse {
     private List<StatusOption> tripStatuses;
     private List<StatusOption> stopStatuses;
     private boolean canManage;
+    private List<StatusOption> failureReasons;
+    private long proofMaxBytes;
+    private long proofMaxPixels;
+    private List<String> proofContentTypes;
 
     @Getter
     @Setter

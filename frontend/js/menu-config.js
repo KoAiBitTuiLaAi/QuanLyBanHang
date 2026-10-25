@@ -1,4 +1,4 @@
-/**
+﻿/**
  * menu-config.js — Cấu hình menu theo vai trò (S1-06).
  *
  * Mục menu không thuộc quyền thì không hiển thị.
@@ -112,7 +112,7 @@ const MenuConfig = (() => {
       label: "Công nợ của tôi",
       icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
       href: "/dealer-invoices",
-      permission: "INVOICE_VIEW",
+      permissions: ["INVOICE_VIEW", "FINANCE_VIEW_DEBT"],
       roles: ["ROLE_ADMIN", "ROLE_DEALER"],
     },
     {
@@ -139,8 +139,8 @@ const MenuConfig = (() => {
       label: "Báo cáo doanh số",
       icon: '<path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 4-9"/>',
       href: "/reports/sales",
-      permission: "ORDER_VIEW",
-      roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER"],
+      permissions: ["REPORT_SALES", "ORDER_VIEW"],
+      roles: ALL_ROLES,
     },
     {
       id: "dealers",
@@ -230,13 +230,8 @@ const MenuConfig = (() => {
       label: "Xác nhận giao hàng",
       icon: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><rect x="7" y="14" width="7" height="4" rx="1"/><path d="M14 8h5l3 3v6a1 1 0 0 1-1 1h-2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
       href: "/warehouse/delivery",
-      permission: "WAREHOUSE_EXPORT",
-      requiredPermissions: ["ORDER_VIEW"],
-      roles: [
-        "ROLE_ADMIN",
-        "ROLE_WAREHOUSE_MANAGER",
-        "ROLE_WAREHOUSE_STAFF",
-      ],
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
     },
     {
       id: "warehouse-stock-card",
@@ -326,7 +321,7 @@ const MenuConfig = (() => {
       icon: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
       href: "/finance/debt-payments",
       roles: ALL_ROLES,
-      permissions: ["FINANCE_VIEW_DEBT", "FINANCE_MANAGE"],
+      permission: "FINANCE_VIEW_DEBT",
     },
     {
       id: "debt-adjustment",
@@ -349,7 +344,7 @@ const MenuConfig = (() => {
     {
       id: "debt-statement",
       section: "Tài chính",
-      label: "Sổ chi tiết công nợ",
+      label: "Sổ công nợ",
       icon: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10M6 14h6"/>',
       href: "/finance/debt-statement",
       roles: ALL_ROLES,

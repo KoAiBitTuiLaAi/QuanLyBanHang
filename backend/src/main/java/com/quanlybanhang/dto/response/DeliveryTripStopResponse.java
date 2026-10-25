@@ -16,6 +16,8 @@ public class DeliveryTripStopResponse {
     private Long id;
     private Long orderId;
     private String orderCode;
+    private Long shipmentVoucherId;
+    private String voucherCode;
     private Long dealerId;
     private String dealerName;
     private Long deliveryPointId;
@@ -33,6 +35,12 @@ public class DeliveryTripStopResponse {
     private LocalDateTime failedAt;
     private Boolean returnedToWarehouse;
     private LocalDateTime returnedAt;
+    private String returnReason;
+    private boolean canConfirm;
+    private boolean canReturn;
+    private String orderStatus;
+    private String orderStatusDisplayName;
+    private boolean orderFullyDelivered;
     private String note;
     private List<DeliveryTripStopItemResponse> items;
 }

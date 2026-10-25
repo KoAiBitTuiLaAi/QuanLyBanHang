@@ -1,10 +1,24 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),{test}=require('node:test');
 const U=require('../frontend/js/debt-aging-utils.js'),F=require('./debt-aging-fixture.cjs');
 const filters={asOfDate:'2026-10-24',employeeId:null,unassignedOnly:false};
-test('S8-09 production adapter is explicitly disconnected and contains no guessed request/demo data',async()=>{
+test('S8-09 production adapter calls the implemented API with scoped filters and preserves the abort signal',async()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../frontend/js/debt-aging-api.js'),'utf8'),calls=[];
+  const context={URLSearchParams,Auth:{async apiFetch(url,options){calls.push({url,options});return{ok:true,status:200,json:async()=>({success:true,data:{url}})};}}};
+  const adapter=vm.runInNewContext(source+';DebtAgingApi',context),signal={aborted:false};
+  assert.equal(adapter.available,true);await adapter.options({signal});
+  await adapter.report({asOfDate:'2026-10-24',employeeId:null,unassignedOnly:false},{signal});
+  await adapter.report({asOfDate:'2026-10-24',employeeId:17,unassignedOnly:false},{signal});
+  await adapter.report({asOfDate:'2026-10-24',employeeId:null,unassignedOnly:true},{signal});
+  assert.deepEqual(calls.map(call=>call.url),['/reports/debt-aging/options','/reports/debt-aging?asOfDate=2026-10-24','/reports/debt-aging?asOfDate=2026-10-24&employeeId=17','/reports/debt-aging?asOfDate=2026-10-24&unassignedOnly=true']);
+  assert.ok(calls.every(call=>call.options.method==='GET'&&call.options.signal===signal));
+  assert.doesNotMatch(source,/localStorage|sessionStorage|__test_aging/);
+});
+test('S8-09 production adapter rejects HTTP failures, unsuccessful envelopes and malformed JSON',async()=>{
   const source=fs.readFileSync(path.join(__dirname,'../frontend/js/debt-aging-api.js'),'utf8');
-  const adapter=vm.runInNewContext(source+';DebtAgingApi');assert.equal(adapter.available,false);await assert.rejects(()=>adapter.options(),/chưa được kết nối/);await assert.rejects(()=>adapter.report(),/chưa được kết nối/);
-  assert.doesNotMatch(source,/fetch\(|apiFetch\(|localStorage|sessionStorage/);
+  for(const response of [{ok:false,status:403,json:async()=>({success:false,message:'Không có quyền'})},{ok:true,status:200,json:async()=>({success:false,message:'Báo cáo chưa đầy đủ'})},{ok:true,status:200,json:async()=>{throw Error('invalid json');}}]){
+    const context={URLSearchParams,Auth:{apiFetch:async()=>response}},adapter=vm.runInNewContext(source+';DebtAgingApi',context);
+    await assert.rejects(()=>adapter.options(),/Không có quyền|Báo cáo chưa đầy đủ|HTTP 200/);
+  }
 });
 test('S8-09 financial strings preserve digits, fractions, zero and reject unsafe numeric values',()=>{
   assert.equal(U.money('9007199254740993.25'),'9.007.199.254.740.993,25 ₫');assert.equal(U.money('0.00'),'0 ₫');assert.equal(U.decimal(U.amount('12.3')),'12.30');

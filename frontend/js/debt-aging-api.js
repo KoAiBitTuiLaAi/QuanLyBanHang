@@ -1,10 +1,31 @@
-/* S8-09 integration boundary. No backend contract exists on this branch.
- * Replace these methods only after agreeing and implementing the real API.
- * Do not reuse dashboard/flagged-dealer data to fabricate aging or risk ranks.
- * Proposed shapes: docs/S8-09_FRONTEND_CONTRACT.md. Fixtures live in tests only.
- */
+/* S8-09 production adapter. The backend owns aging calculations and risk ranking. */
 const DebtAgingApi = Object.freeze({
-  available: false,
-  async options() { throw new Error('Backend báo cáo tuổi nợ chưa được kết nối.'); },
-  async report() { throw new Error('Backend báo cáo tuổi nợ chưa được kết nối.'); },
+  available: true,
+  async options({ signal } = {}) {
+    return this.request('/reports/debt-aging/options', { signal });
+  },
+  async report(filters, { signal } = {}) {
+    const query = new URLSearchParams();
+    query.set('asOfDate', filters.asOfDate);
+    if (filters.employeeId !== null) query.set('employeeId', String(filters.employeeId));
+    if (filters.unassignedOnly) query.set('unassignedOnly', 'true');
+    return this.request(`/reports/debt-aging?${query}`, { signal });
+  },
+  async request(path, { signal } = {}) {
+    const response = await Auth.apiFetch(path, {
+      method: 'GET',
+      signal,
+      headers: { Accept: 'application/json' },
+    });
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    if (!response.ok || body?.success !== true || !Object.hasOwn(body, 'data')) {
+      throw new Error(body?.message || `Không tải được báo cáo công nợ (HTTP ${response.status}).`);
+    }
+    return body.data;
+  },
 });

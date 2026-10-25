@@ -19,5 +19,13 @@ public interface DeliveryTripStopRepository extends JpaRepository<DeliveryTripSt
 
     List<DeliveryTripStop> findByOrderId(Long orderId);
 
+    List<DeliveryTripStop> findByOrderIdOrderByIdDesc(Long orderId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select s from DeliveryTripStop s where s.order.id = :orderId order by s.id")
+    List<DeliveryTripStop> findByOrderIdForUpdate(@org.springframework.data.repository.query.Param("orderId") Long orderId);
+
+    boolean existsByShipmentVoucherId(Long voucherId);
+
     boolean existsByOrderIdAndTrip_Status(Long orderId, DeliveryTripStatus status);
 }

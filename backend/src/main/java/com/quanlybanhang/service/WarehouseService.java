@@ -68,6 +68,9 @@ public interface WarehouseService {
     WarehouseVoucherResponse exportGoods(WarehouseVoucherRequest request, String username);
 
     WarehouseVoucherResponse adjustInventory(WarehouseVoucherRequest request, String username);
+    WarehouseVoucherResponse createLossAdjustment(WarehouseVoucherRequest request, String username);
+    WarehouseVoucherResponse approveLossAdjustment(Long id, String username);
+    WarehouseVoucherResponse rejectLossAdjustment(Long id, String username, String reason);
 
     List<WarehouseInventoryResponse> getInventory(Long warehouseId);
 

@@ -90,4 +90,10 @@ public class DealerDebtResponse {
     private java.time.LocalDateTime debtFlaggedAt;
     private java.time.LocalDateTime lastDebtEvaluatedAt;
     private com.quanlybanhang.model.DebtFlagAction effectiveAction;
+    public java.util.Map<String, String> getExactAmounts() {
+        return com.quanlybanhang.util.ExactAmounts.of("currentDebt", currentDebt, "debtLimit", debtLimit,
+                "remainingLimit", remainingLimit, "availableOrderLimit", availableOrderLimit,
+                "totalInvoicedAmount", totalInvoicedAmount, "uninvoicedOrderDebt", uninvoicedOrderDebt,
+                "overdueAmount", overdueAmount, "totalPaid", totalPaid);
+    }
 }

@@ -1,4 +1,4 @@
-// Chrome uses real UI/scripts; ONLY tests replace the disconnected adapter asset.
+// Chrome uses real UI/scripts; most scenarios replace only the adapter transport for isolated API fixtures.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {chromium}=require('playwright'),F=require('./debt-aging-fixture.cjs'),U=require('../frontend/js/debt-aging-utils.js'),XLSX=require('../frontend/js/vendor/xlsx.full.min.js');
 const base=process.env.NAV_TEST_URL||'http://127.0.0.1:5538',output=path.join(os.tmpdir(),'qlbh-s809');
@@ -18,6 +18,11 @@ const adapter=`const DebtAgingApi={available:true,async options({signal}){return
       if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
       state.calls.push({endpoint,query:url.search,method:req.method(),auth:req.headers().authorization});let data,status=200;
       if(endpoint==='/auth/permissions'){await pause(state.permissionDelay);if(state.revokeSecondCheck&&++state.exportChecks===2)state.permissions=[];data={roles:state.roles,permissions:state.permissions};}
+      else if(endpoint==='/reports/debt-aging/options'){data=structuredClone(state.options);await pause(state.optionsDelay);}
+      else if(endpoint==='/reports/debt-aging'){
+        const filters={asOfDate:url.searchParams.get('asOfDate'),employeeId:url.searchParams.get('employeeId')?Number(url.searchParams.get('employeeId')):null,unassignedOnly:url.searchParams.get('unassignedOnly')==='true'};
+        status=state.reportStatus;data=F.report(filters,state.size);data.complete=state.complete;await pause(state.reportDelay);
+      }
       else if(endpoint==='/__test_aging/options'){status=state.optionsStatus;data=structuredClone(state.options);await pause(state.optionsDelay);}
       else if(endpoint==='/__test_aging/report'){
         const filters={asOfDate:url.searchParams.get('asOfDate'),employeeId:url.searchParams.get('employeeId')?Number(url.searchParams.get('employeeId')):null,unassignedOnly:url.searchParams.get('unassignedOnly')==='true'};
@@ -40,15 +45,14 @@ const adapter=`const DebtAgingApi={available:true,async options({signal}){return
   }
   const check=async(name,run)=>{await run();cases++;console.log('PASS '+name);};
   try{
-    await check('Production pending backend is honest, no guessed APIs/data/export even on synthetic clicks',async()=>{
-      const s=await setup({adapter:false});await s.page.locator('#aging-pending').waitFor({state:'visible'});assert.match(await s.page.locator('#aging-pending').textContent(),/Chưa kết nối backend S8-09/);
-      for(const id of ['aging-as-of','aging-employee','aging-load','aging-export'])assert.equal(await s.page.locator('#'+id).isDisabled(),true);
-      assert.equal(await s.page.locator('#aging-total').textContent(),'—');assert.equal(await s.page.locator('#aging-as-of').inputValue(),'');
-      await s.page.evaluate(()=>{document.getElementById('aging-filters').dispatchEvent(new Event('submit',{cancelable:true}));document.getElementById('aging-export').dispatchEvent(new Event('click'));});
-      await s.page.locator('#aging-reload').click();await s.page.locator('#aging-group').selectOption('employee');assert.equal(await s.page.locator('#aging-employee-view').isVisible(),true);assert.ok(s.state.calls.every(call=>call.endpoint==='/auth/permissions'));
-      await s.page.screenshot({path:path.join(output,'pending-backend.png'),fullPage:true});await s.context.close();
+    await check('Production adapter loads options and a scoped report from the implemented S8-09 endpoints',async()=>{
+      const s=await setup({adapter:false});await s.ready();assert.equal(await s.page.locator('#aging-pending').isVisible(),false);
+      assert.equal(await s.page.locator('#aging-as-of').inputValue(),'2026-10-24');assert.ok(s.state.calls.some(call=>call.endpoint==='/reports/debt-aging/options'));
+      await s.page.locator('#aging-employee').selectOption('1');await s.load();assert.ok(s.state.calls.some(call=>call.endpoint==='/reports/debt-aging'&&call.query.includes('employeeId=1')));
+      assert.equal(await s.page.locator('#aging-count').textContent(),'15');assert.ok(s.state.calls.every(call=>call.method==='GET'&&call.auth==='Bearer '+token));
+      await s.context.close();
     });
-    await check('Proposed adapter loads server options, no automatic report, then exact totals and server-ranked priority',async()=>{
+    await check('Isolated adapter fixture loads server options, no automatic report, then exact totals and server-ranked priority',async()=>{
       const s=await setup();await s.ready();assert.equal(s.state.calls.filter(c=>c.endpoint.endsWith('/report')).length,0);assert.equal(await s.page.locator('#aging-as-of').inputValue(),'2026-10-24');
       await s.load();const report=F.report();assert.equal(await s.page.locator('#aging-total').textContent(),U.money(report.totals.overdueAmount));assert.equal(await s.page.locator('#aging-count').textContent(),'45');assert.equal(await s.page.locator('#aging-oldest').textContent(),'90 ngày');
       assert.match(await s.page.locator('#aging-priority').textContent(),/Đại lý 1/);assert.doesNotMatch(await s.page.locator('#aging-priority').textContent(),/Đại lý 2/);assert.match(await s.page.locator('#aging-risk-basis').textContent(),/Tiêu chí xếp hạng từ máy chủ/);assert.match(await s.page.locator('#aging-buckets').textContent(),/1–14/);

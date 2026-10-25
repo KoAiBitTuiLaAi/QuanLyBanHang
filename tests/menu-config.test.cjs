@@ -8,6 +8,15 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S7-07 dealer debt page allows either independent permission and hides after both are revoked', () => {
+  for (const permission of ['FINANCE_VIEW_DEBT', 'INVOICE_VIEW']) {
+    assert.ok(ids({roles:['ROLE_DEALER'], permissions:[permission]}).includes('dealer-invoices'));
+    assert.ok(!ids({roles:['ROLE_ACCOUNTANT'], permissions:[permission]}).includes('dealer-invoices'));
+  }
+  assert.ok(!ids({roles:['ROLE_DEALER'], permissions:['ORDER_VIEW']}).includes('dealer-invoices'));
+  assert.ok(ids({roles:['ROLE_ADMIN'], permissions:[]}).includes('dealer-invoices'));
+});
+
 test('S8-02 financial returns allow VIEW or ADJUST, no extra dealer or finance grant and no accountant fallback',()=>{
  for(const role of ['ROLE_VIEWER','ROLE_ACCOUNTANT','ROLE_SALES']){
   assert.ok(!ids({roles:[role],permissions:[]}).includes('debt-adjustment'));
@@ -80,7 +89,8 @@ test('S6-08 delivery and stocktaking remain separate and follow their own matrix
   assert.ok(menu.menuItems.some(i=>i.id==='delivery-confirmation'&&i.href==='/warehouse/delivery'));
   const has=permissions=>ids({roles:['ROLE_VIEWER'],permissions}).includes('delivery-confirmation');
   assert.equal(has(['ORDER_VIEW','WAREHOUSE_EXPORT']),true);
-  assert.equal(has(['ORDER_VIEW']),false);assert.equal(has(['WAREHOUSE_EXPORT']),false);
+  assert.equal(has(['ORDER_VIEW']),false);assert.equal(has(['WAREHOUSE_EXPORT']),true);
+  assert.equal(has(['WAREHOUSE_VIEW']),true);assert.equal(has([]),false);
   assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('delivery-confirmation'));
   
 });
@@ -300,5 +310,5 @@ test('group labels remain correct when earlier menu items are hidden by permissi
   const warehouse = menu.getMenuForUser({ roles: ['ROLE_VIEWER'], permissions: ['WAREHOUSE_VIEW'] });
   assert.ok(warehouse.some(item => item.id === 'product-units'));
   assert.equal(warehouse.find(item => item.id === 'product-units').section, 'Kho hàng');
-  assert.ok(!warehouse.some(item => item.id === 'delivery-confirmation'));
+  assert.equal(warehouse.find(item => item.id === 'delivery-confirmation').section, 'Kho hàng');
 });

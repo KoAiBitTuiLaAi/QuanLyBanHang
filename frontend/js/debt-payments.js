@@ -39,6 +39,16 @@
     },
   };
 
+  const receiptClient = DebtReceiptClient.createReceiptClient({
+    apiFetch: (...args) => Auth.apiFetch(...args),
+    canPrint: () => DebtPaymentsUtils.canPrintReceipt(Auth.getUser()),
+    area: $('dp-receipt-print-area'), modal: $('modal-receipt-print'),
+    message: $('dp-receipt-message'),
+    buttons: ['btn-print-receipt-action', 'btn-print-receipt-action-footer',
+      'btn-download-receipt-pdf', 'btn-download-receipt-pdf-footer'].map($),
+    onError: message => showGlobalMessage('error', message),
+  });
+
   /**
    * Escape HTML chống XSS
    */
@@ -98,7 +108,8 @@
     const canPrint = DebtPaymentsUtils.canPrintReceipt(user);
     const receiptModal = $('modal-receipt-print');
     if (!canPrint && receiptModal && !receiptModal.hidden) {
-      receiptModal.hidden = true;
+      receiptClient.close();
+      state.currentReceiptPayment = null;
     }
 
     return true;
@@ -133,6 +144,8 @@
    * Đóng tất cả các modal
    */
   function closeAllModals() {
+    receiptClient.close();
+    state.currentReceiptPayment = null;
     ['modal-payment-create', 'modal-payment-detail', 'modal-adjustment-create', 'modal-order-settlements', 'modal-receipt-print'].forEach((id) => {
       const el = $(id);
       if (el) el.hidden = true;
@@ -436,83 +449,14 @@
    * Mở modal xem trước và in phiếu thu / tải PDF (S7-09).
    */
   async function openReceiptPrintModal(idOrPayment) {
-    const user = Auth.getUser();
-    if (!DebtPaymentsUtils.canPrintReceipt(user)) {
-      showGlobalMessage('error', 'Bạn không có quyền xem hoặc in phiếu thu.');
-      return;
-    }
-
-    let payment = null;
-    if (typeof idOrPayment === 'object' && idOrPayment !== null) {
-      payment = idOrPayment;
-    } else {
-      payment = state.payments.find((p) => String(p.id) === String(idOrPayment));
-      if (!payment || !payment.allocations) {
-        try {
-          const res = await Auth.apiFetch(`/finance/debt-payments/${idOrPayment}`);
-          const json = await res.json().catch(() => null);
-          if (res.ok && json?.success && json?.data) {
-            payment = json.data;
-          }
-        } catch (e) {
-          console.warn('Không tải được allocations chi tiết, dùng thông tin phiếu thu sẵn có:', e);
-        }
-      }
-    }
-
-    if (!payment) {
-      showGlobalMessage('error', 'Không tìm thấy thông tin phiếu thu để in.');
-      return;
-    }
-
-    state.currentReceiptPayment = payment;
-
-    const printArea = $('dp-receipt-print-area');
-    if (printArea) {
-      printArea.innerHTML = DebtPaymentsUtils.renderReceiptHtml(payment);
-    }
-
-    const modal = $('modal-receipt-print');
-    if (modal) {
-      modal.hidden = false;
-    }
+    const id = typeof idOrPayment === 'object' ? idOrPayment?.id : idOrPayment;
+    state.currentReceiptPayment = id ? { id } : null;
+    await receiptClient.open(id);
   }
 
-  /**
-   * Tạo và tải file PDF phiếu thu về máy (S7-09).
-   */
-  function downloadReceiptPdf(payment) {
+  async function downloadReceiptPdf(payment) {
     const target = payment || state.currentReceiptPayment || state.currentDetailPayment;
-    if (!target) {
-      showGlobalMessage('error', 'Chưa có thông tin phiếu thu để tải PDF.');
-      return;
-    }
-
-    const user = Auth.getUser();
-    if (!DebtPaymentsUtils.canPrintReceipt(user)) {
-      showGlobalMessage('error', 'Bạn không có quyền tải PDF phiếu thu.');
-      return;
-    }
-
-    try {
-      const blob = DebtPaymentsUtils.generateReceiptPdfBlob(target);
-      if (!blob) {
-        throw new Error('Không thể tạo nội dung file PDF.');
-      }
-      const pCode = target.paymentCode || `PT-${target.id || 'NEW'}`;
-      const fileName = `phieu-thu-${pCode}.pdf`;
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (err) {
-      showGlobalMessage('error', 'Lỗi khi xuất file PDF: ' + err.message);
-    }
+    await receiptClient.download(target?.id);
   }
 
   /**
@@ -1201,6 +1145,7 @@
     document.querySelectorAll('[data-close-modal]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const modalType = btn.dataset.closeModal;
+        if (modalType === 'receipt-print') { receiptClient.close(); state.currentReceiptPayment = null; }
         const modal = $(`modal-${modalType}`);
         if (modal) modal.hidden = true;
       });
@@ -1287,10 +1232,10 @@
 
     // ── Thao tác trên Modal xem trước & In phiếu thu (S7-09) ──
     $('btn-print-receipt-action')?.addEventListener('click', () => {
-      window.print();
+      receiptClient.print();
     });
     $('btn-print-receipt-action-footer')?.addEventListener('click', () => {
-      window.print();
+      receiptClient.print();
     });
 
     $('btn-download-receipt-pdf')?.addEventListener('click', () => {
@@ -1363,7 +1308,10 @@
     });
 
     // ── Lắng nghe sự kiện ma trận quyền thay đổi (auth:permissions-changed) ──
+    window.addEventListener('pagehide', () => receiptClient.close());
     window.addEventListener('auth:permissions-changed', () => {
+      receiptClient.close();
+      state.currentReceiptPayment = null;
       const canView = syncPermissions();
       if (canView) {
         if (state.activeTab === 'payments') {

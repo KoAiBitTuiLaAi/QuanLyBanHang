@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sổ chi tiết công nợ | SaleStock</title>
+  <title>Sổ công nợ | SaleStock</title>
   <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/dashboard.css">
   <link rel="stylesheet" href="/css/app-shell.css">
@@ -17,16 +17,63 @@
       <!-- Header -->
       <header class="statement-header">
         <div class="statement-title">
-          <h1>Sổ chi tiết công nợ đại lý</h1>
-          <p>Đối chiếu toàn bộ phát sinh tăng giảm theo thời gian kèm số dư luỹ kế, xuất PDF và Excel.</p>
+          <h1>Sổ công nợ</h1>
+          <p>Tổng quan tuổi nợ của các đại lý và tra cứu sổ chi tiết theo kỳ.</p>
         </div>
       </header>
 
       <!-- Access / Error notices -->
       <div id="statement-access" class="statement-notice statement-notice--warning" hidden>
-        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem và xuất sổ chi tiết công nợ. Quản trị viên luôn có quyền.
+        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem và xuất sổ công nợ. Quản trị viên luôn có quyền.
       </div>
       <div id="statement-error" class="statement-notice statement-notice--error" role="alert" hidden></div>
+
+      <div class="debt-tabs" role="tablist" aria-label="Chế độ xem sổ công nợ" hidden>
+        <button id="debt-tab-aging" class="debt-tab" type="button" role="tab" aria-selected="true" aria-controls="debt-panel-aging">Tổng quan công nợ</button>
+        <button id="debt-tab-statement" class="debt-tab" type="button" role="tab" aria-selected="false" aria-controls="debt-panel-statement" tabindex="-1">Sổ chi tiết</button>
+      </div>
+
+      <section id="debt-panel-aging" class="debt-tab-panel" role="tabpanel" aria-labelledby="debt-tab-aging" tabindex="0" hidden>
+        <header class="ds-heading">
+          <div>
+            <h2>Tổng quan công nợ theo tuổi nợ</h2>
+            <p>Ưu tiên đại lý có khoản nợ lâu nhất; số liệu được chốt theo ngày chọn.</p>
+          </div>
+          <div class="ds-actions">
+            <button id="ds-reload" class="btn btn--secondary" type="button">Tải dữ liệu</button>
+            <button id="ds-export" class="btn btn--primary" type="button" disabled>Xuất Excel</button>
+          </div>
+        </header>
+        <p id="ds-error" class="ds-error" role="alert" hidden></p>
+        <section id="ds-workspace" hidden>
+          <form id="ds-filters" class="ds-filters">
+            <label for="ds-search">Tìm đại lý<input id="ds-search" type="search" placeholder="Mã hoặc tên đại lý" maxlength="100"></label>
+            <label for="ds-as-of">Ngày chốt<input id="ds-as-of" type="date"></label>
+            <label class="ds-check"><input id="ds-overdue" type="checkbox"> Chỉ đại lý quá hạn</label>
+            <button id="ds-apply" class="btn btn--primary" type="submit">Áp dụng bộ lọc</button>
+          </form>
+          <div id="ds-progress" class="ds-progress" role="status" hidden>Đang tải dữ liệu công nợ…</div>
+          <div class="ds-panel">
+            <div class="ds-scroll" role="region" aria-label="Sổ công nợ theo đại lý" tabindex="0">
+              <table>
+                <thead><tr>
+                  <th scope="col">Đại lý</th><th scope="col">Mã</th><th scope="col">Phải thu</th><th scope="col">Đã thu</th><th scope="col">Còn nợ</th>
+                  <th scope="col">0–30 ngày</th><th scope="col">31–60 ngày</th><th scope="col">61–90 ngày</th><th scope="col">Trên 90 ngày</th>
+                </tr></thead>
+                <tbody id="ds-rows"><tr><td colspan="9" class="ds-empty">Bấm “Tải dữ liệu” để xem sổ công nợ.</td></tr></tbody>
+                <tfoot id="ds-totals" hidden><tr>
+                  <td colspan="2">Tổng cộng</td><td id="ds-t-recv"></td><td id="ds-t-paid"></td><td id="ds-t-remain"></td>
+                  <td id="ds-t-0"></td><td id="ds-t-1"></td><td id="ds-t-2"></td><td id="ds-t-3"></td>
+                </tr></tfoot>
+              </table>
+            </div>
+          </div>
+          <p id="ds-summary" class="ds-help" role="status"></p>
+          <p class="ds-help">Tuổi nợ tính theo ngày phát sinh chứng từ. Bảng ưu tiên các khoản nợ lâu ngày.</p>
+        </section>
+      </section>
+
+      <section id="debt-panel-statement" class="debt-tab-panel" role="tabpanel" aria-labelledby="debt-tab-statement" tabindex="0" hidden>
 
       <!-- Filter Card -->
       <section class="statement-filter-card">
@@ -149,6 +196,7 @@
         <div class="statement-notice statement-notice--info">
           Số dư âm thể hiện đại lý đã thanh toán dư (credit balance). Sổ phản ánh các chứng từ hiện có trong hệ thống tại thời điểm xuất.
         </div>
+      </section>
       </section>
     </main>
   </div>

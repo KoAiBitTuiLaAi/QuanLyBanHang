@@ -1,4 +1,4 @@
-/* S8-09 frontend. Production transport is deliberately disconnected until BE exists. */
+/* S8-09 frontend. The backend supplies authoritative aging groups and risk order. */
 (async()=>{
   if(!Auth.requireLogin())return;
   await Auth.ready;

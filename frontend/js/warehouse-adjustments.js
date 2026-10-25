@@ -587,12 +587,13 @@
           quantity: it.quantity,
           unit: it.unit,
           price: it.unitPrice,
+          lossValue: it.lossValue,
           delta: -Math.abs(Number(it.quantity)),
           note: `Tổn thất: ${Utils.formatMoney(it.lossValue)}`,
         })),
       };
 
-      const res = await Auth.apiFetch("/warehouse/adjust", {
+      const res = await Auth.apiFetch("/warehouse/adjustment-vouchers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -736,26 +737,8 @@
 
     try {
       // Ghi sổ phê duyệt điều chỉnh lên backend
-      const payload = {
-        warehouseId: state.currentVoucher.warehouseId,
-        type: "ADJUSTMENT",
-        status: "RECORDED", // Ghi sổ và cập nhật trừ tồn kho thật
-        adjustmentReason: state.currentVoucher.adjustmentReason,
-        note: `${state.currentVoucher.note || ""} | Phê duyệt bởi: ${currentUser.username}`,
-        referenceVoucherId: state.currentVoucher.id,
-        items: (state.currentVoucher.items || []).map((it) => ({
-          productId: it.productId,
-          quantity: it.quantity,
-          unit: it.unit,
-          price: it.price,
-          delta: -Math.abs(Number(it.quantity)),
-        })),
-      };
-
-      const res = await Auth.apiFetch("/warehouse/adjust", {
+      const res = await Auth.apiFetch(`/warehouse/adjustment-vouchers/${state.currentVoucher.id}/approve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -790,13 +773,19 @@
     rejectBtn.textContent = "Đang xử lý...";
 
     try {
-      // Ghi nhận trạng thái từ chối
-      state.currentVoucher.status = "REJECTED";
-      state.currentVoucher.note = (state.currentVoucher.note || "") + ` [Từ chối: ${rejectReason}]`;
+      const res = await Auth.apiFetch(`/warehouse/adjustment-vouchers/${state.currentVoucher.id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: rejectReason }),
+      });
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null);
+        throw new Error(errorBody?.message || `Không thể từ chối phiếu (mã ${res.status})`);
+      }
 
       showSuccess(`Đã từ chối phiếu điều chỉnh ${state.currentVoucher.voucherCode || ""}.`);
       closeDetailPanel();
-      renderList();
+      await loadAdjustmentVouchers();
     } catch (e) {
       showDetailError(e.message || "Lỗi khi từ chối phiếu");
     } finally {

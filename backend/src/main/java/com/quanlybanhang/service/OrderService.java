@@ -262,4 +262,13 @@ public interface OrderService {
      * Giá được áp lại theo bảng giá hiện hành, đơn mới tạo ở trạng thái Chờ duyệt.
      */
     DealerPortalReorderResponse createPortalReorder(Long sourceOrderId, DealerPortalReorderRequest request, String username);
+
+    /**
+     * S6-09: Delivery milestones and actual quantities within the selected dealer scope.
+     */
+    com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse getDealerOrderDeliveryTracking(Long orderId, Long dealerId);
+
+    /** S6-09: Delivery tracking within the authenticated staff member's order scope. */
+    com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse getOrderDeliveryTrackingForStaff(Long orderId, String username);
 }
+

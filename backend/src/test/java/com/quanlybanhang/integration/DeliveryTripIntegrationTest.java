@@ -120,6 +120,12 @@ class DeliveryTripIntegrationTest {
     @Test
     @DisplayName("Luồng đầy đủ S6-07: Tạo chuyến, theo dõi tiền hàng trên đường, hàng FAILED không tự về kho")
     void testDeliveryTripLifecycleAndInTransitMoneyTracking() throws Exception {
+        var source=com.quanlybanhang.model.Order.builder().orderCode("LEGACY-"+UUID.randomUUID())
+                .warehouse(warehouse).status("EXPORTED").totalAmount(new BigDecimal("20000000")).build();
+        source.addItem(com.quanlybanhang.model.OrderItem.builder().product(prod2).unit("thùng").quantity(new BigDecimal("50"))
+                .conversionFactor(BigDecimal.ONE).baseQuantity(new BigDecimal("50")).baseUnit("thùng")
+                .price(new BigDecimal("400000")).totalAmount(new BigDecimal("20000000")).build());
+        source=orders.save(source);
         // 1. Tạo chuyến giao hàng với 2 điểm
         Map<String, Object> createReq = Map.of(
                 "warehouseId", warehouse.getId(),
@@ -134,6 +140,7 @@ class DeliveryTripIntegrationTest {
                         ),
                         Map.of(
                                 "deliveryAddress", "Điểm giao 2 - Đống Đa",
+                                "orderId", source.getId(),
                                 "deliveryAmount", 20000000.00,
                                 "stopOrder", 2,
                                 "items", List.of(
@@ -436,7 +443,12 @@ class DeliveryTripIntegrationTest {
                 .createdAt(LocalDateTime.now())
                 .build());
 
-        // 3. Khởi tạo Phiếu xuất kho (WarehouseVoucher EXPORT)
+        var original=com.quanlybanhang.model.OrderItem.builder().product(prod1).quantity(BigDecimal.ONE)
+                .exportedQuantity(BigDecimal.ONE).unit("thùng").baseUnit("thùng").baseQuantity(BigDecimal.ONE)
+                .conversionFactor(BigDecimal.ONE).price(new BigDecimal("15000000"))
+                .totalAmount(new BigDecimal("15000000")).build();
+        order.addItem(original);order=orders.save(order);
+        // 3. Khởi tạo Phiếu xuất kho (WarehouseVoucher EXPORT) có dòng nguồn đóng băng.
         var voucher = vouchers.save(com.quanlybanhang.model.WarehouseVoucher.builder()
                 .voucherCode("PXDH-" + uid)
                 .type(com.quanlybanhang.model.WarehouseVoucherType.EXPORT)
@@ -448,6 +460,10 @@ class DeliveryTripIntegrationTest {
                 .recordedAt(LocalDateTime.now())
                 .build());
 
+        voucher.addItem(com.quanlybanhang.model.WarehouseVoucherItem.builder().product(prod1)
+                .shipmentOrderItemId(order.getItems().get(0).getId()).quantity(BigDecimal.ONE).unit("thùng")
+                .conversionFactor(BigDecimal.ONE).baseQuantity(BigDecimal.ONE).baseUnit("thùng").build());
+        voucher=vouchers.save(voucher);
         // 4. Lấy danh sách đơn hàng/phiếu xuất đủ điều kiện theo khu vực (S6-06)
         matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_VIEW, Permission.WAREHOUSE_EXPORT));
 
