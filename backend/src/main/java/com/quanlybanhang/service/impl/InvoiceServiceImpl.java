@@ -343,9 +343,14 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Transactional(readOnly = true)
     public Page<InvoiceResponse> getDealerInvoices(Long dealerId, InvoiceStatus status, String paymentStatus,
                                                    LocalDate startDate, LocalDate endDate, String keyword, int page, int size) {
-        if (dealerId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ID đại lý không được để trống");
+        if (dealerId == null || dealerId < 1 || page < 0 || size < 1 || size > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đại lý/trang không hợp lệ; số dòng phải từ 1 đến 100");
         }
+        if (startDate != null && endDate != null && startDate.isAfter(endDate))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ngày bắt đầu không được sau ngày kết thúc");
+        if (paymentStatus != null && !paymentStatus.isBlank() && !Set.of("UNPAID", "PARTIALLY_PAID", "PAID", "OVERDUE", "CANCELLED")
+                .contains(paymentStatus.trim().toUpperCase(Locale.ROOT)))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Trạng thái thanh toán không hợp lệ");
         List<InvoiceResponse> allDealerInvoices = getDealerInvoiceList(dealerId);
 
         List<InvoiceResponse> filtered = allDealerInvoices.stream()
@@ -382,8 +387,8 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, size);
-        int fromIndex = Math.min(safePage * safeSize, filtered.size());
-        int toIndex = Math.min(fromIndex + safeSize, filtered.size());
+        int fromIndex = (int) Math.min((long) safePage * safeSize, filtered.size());
+        int toIndex = (int) Math.min((long) fromIndex + safeSize, filtered.size());
         List<InvoiceResponse> pageContent = filtered.subList(fromIndex, toIndex);
 
         return new PageImpl<>(pageContent, PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate", "id")), filtered.size());
@@ -864,7 +869,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .invoiceCode(invoice.getInvoiceCode())
                 .invoiceDate(invoice.getInvoiceDate())
                 .dueDate(dueDate)
-                .isPaid(Boolean.TRUE.equals(invoice.getIsPaid()))
+                .isPaid(invoice.getStatus() != InvoiceStatus.CANCELLED && remainingAmount.signum() == 0)
                 .status(invoice.getStatus())
                 .statusLabel(invoice.getStatus() != null ? invoice.getStatus().getDisplayName() : null)
                 .dealerId(invoice.getDealer() != null ? invoice.getDealer().getId() : null)
@@ -877,6 +882,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .discountAmount(invoice.getDiscountAmount())
                 .totalAmount(invoice.getTotalAmount())
                 .adjustedTotalAmount(invoice.getAdjustedTotalAmount())
+                .effectiveAmount(effectiveAmount)
                 .paidAmount(paidAmount)
                 .remainingAmount(remainingAmount)
                 .paymentStatus(paymentStatus)

@@ -192,7 +192,7 @@ có vai trò đại lý trả 400. Thông tin tài khoản trả lại có `deal
 | GET | `/portal/dealers` | Chỉ ADMIN; danh sách lựa chọn `{id, code, name}` từ DB, gồm cả đại lý ngừng hoạt động để tra đơn cũ |
 | GET | `/portal/profile` | DEALER + ORDER_VIEW, hoặc ADMIN chọn đại lý |
 | GET | `/portal/catalog` (alias `/portal/products`) | DEALER + PRODUCT_VIEW, hoặc ADMIN chọn đại lý |
-| GET | `/portal/debt` | DEALER + ORDER_VIEW, hoặc ADMIN chọn đại lý |
+| GET | `/portal/debt` | DEALER + FINANCE_VIEW_DEBT, hoặc ADMIN chọn đại lý |
 | GET | `/portal/delivery-points` | DEALER + ORDER_VIEW, hoặc ADMIN chọn đại lý |
 | GET | `/portal/orders` | DEALER + ORDER_VIEW, hoặc ADMIN; danh sách giới hạn theo đại lý trong ngữ cảnh |
 | GET | `/portal/orders/{id}` | DEALER + ORDER_VIEW, hoặc ADMIN; đơn ngoài đại lý trong ngữ cảnh trả 403 |
@@ -4135,6 +4135,17 @@ Kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfig
 
 ## S7-07 — Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn (23/10/2026)
 
+### Cập nhật backend và kết nối frontend — 25/10/2026
+
+- Màn hình `Kinh doanh → Công nợ của tôi` (`/dealer-invoices`) dùng `/portal/debt/summary` với `FINANCE_VIEW_DEBT` và `/portal/invoices/**` với `INVOICE_VIEW`, độc lập nhau; Admin luôn được phép. API lấy đại lý từ liên kết tài khoản DB; tài khoản nội bộ không có vai trò đại lý không được dùng portal. Admin chọn `dealerId` để hỗ trợ, đại lý không thể đổi sang hồ sơ khác.
+- Khi thiếu `INVOICE_VIEW`, cả `/portal/debt` và `/portal/debt/summary` trả `invoices: []`. `/portal/profile` không trả giá trị công nợ/hạn mức nếu thiếu `FINANCE_VIEW_DEBT` (các trường tiền là `null`). Cả endpoint cũ `/portal/debt` và endpoint summary đều yêu cầu `FINANCE_VIEW_DEBT`; `ORDER_VIEW` đơn lẻ không đọc được tổng nợ. Cổng tự đặt hàng S4-10 bỏ gọi API tổng nợ khi thiếu quyền, hiển thị thiếu quyền trên thẻ công nợ; giỏ hàng vẫn được kiểm tra bằng API preview đơn hàng hiện có. Trang S7-07 không tự chuyển sang endpoint khác khi bị từ chối quyền.
+- Phân trang danh sách: `page >= 0`, `1 <= size <= 100`; trang rất lớn trả nội dung rỗng, không tràn số. Khoảng ngày đảo ngược hoặc `paymentStatus` không hợp lệ trả `400`; trạng thái hợp lệ: `UNPAID`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`, `CANCELLED` (không phân biệt hoa/thường).
+- `InvoiceResponse.effectiveAmount` là giá trị phải thu sau điều chỉnh và các khoản trả hàng **đã xác nhận**. Trả hàng nháp không giảm nợ. Giữ nguyên `totalAmount` và `adjustedTotalAmount` trên hóa đơn gốc; `paidAmount`, `remainingAmount`, `paymentStatus`, `isPaid` cùng dựa vào phân bổ FIFO hiện có. Hóa đơn hủy vẫn được xem/tải như chứng từ lịch sử, có trạng thái `CANCELLED`, số còn nợ bằng `0`, `isPaid = false`.
+- Bổ sung `exactAmounts` song song với các trường số cũ trên `DealerDebtResponse`, `InvoiceResponse`, `InvoiceItemResponse`, `InvoiceAdjustmentResponse`. Giá trị là chuỗi thập phân từ `BigDecimal.toPlainString()` (hoặc `null`), ví dụ `"remainingAmount": "3499999.75"`; frontend ưu tiên chuỗi này để giữ phần lẻ và số lớn. Trường số cũ được giữ để tương thích client khác. Dòng hóa đơn dùng `invoicedQuantity`, `totalAmount`; điều chỉnh dùng `adjustmentTypeLabel`, `adjustmentReason`.
+- Frontend hiển thị `availableOrderLimit` do server tính, không tự chặn khi chính sách quá hạn vẫn cho lấy hàng. Tổng nợ không âm; tiền nộp thừa không làm hạn mức khả dụng vượt hạn mức cấp. Bảng/xuất Excel ghi rõ chỉ tổng/xuất trang hiện tại; giá trị phải thu hiện tại tách khỏi tổng hóa đơn gốc trong chi tiết.
+- PDF và HTML bản in trả `Cache-Control: no-store`. PDF giữ phần lẻ tiền, ưu tiên font tiếng Việt đóng gói; định dạng số an toàn khi nhiều yêu cầu đồng thời. HTML escape dữ liệu tên/địa chỉ/sản phẩm/ghi chú; iframe xem trước không cho chạy script. GET chỉ đọc và dựng tài liệu, không phát hành lại hoặc sửa chứng từ.
+- Thu hồi quyền trên JWT hiện tại có hiệu lực ở request kế tiếp; frontend hủy yêu cầu và xóa dữ liệu/modal/bản in cũ, bỏ kết quả trả muộn. Kiểm thử bằng H2 cách ly và Chrome với HTTP fixture; không ghi dữ liệu vào DB nghiệp vụ thật.
+
 Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứu công nợ của chính mình qua Cổng Đại lý (`/api/portal/**`), để biết còn nợ bao nhiêu, còn được lấy hàng bao nhiêu, xem danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái, và xem/tải lại hóa đơn đã phát hành.
 
 ### 1. Nguyên tắc nghiệp vụ cốt lõi
@@ -4169,7 +4180,7 @@ Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứ
 
 | Method | Endpoint | Quyền yêu cầu | Mô tả |
 |---|---|---|---|
-| `GET` | `/api/portal/debt` | `ORDER_VIEW` hoặc `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Tra cứu thông tin công nợ, hạn mức còn lại, hạn mức còn được lấy hàng và danh sách hóa đơn của đại lý |
+| `GET` | `/api/portal/debt` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Tra cứu công nợ/hạn mức; danh sách hóa đơn chỉ kèm khi có INVOICE_VIEW |
 | `GET` | `/api/portal/debt/summary` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem tổng quan công nợ, tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, thống kê hóa đơn và lịch sử thanh toán |
 | `GET` | `/api/portal/debt/payments` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem lịch sử các đợt thanh toán công nợ của chính đại lý |
 | `GET` | `/api/portal/invoices` (alias `/api/portal/debt/invoices`) | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách hóa đơn phân trang kèm số tiền, hạn thanh toán, trạng thái (`status`, `paymentStatus`, `startDate`, `endDate`, `keyword`, `page`, `size`) |

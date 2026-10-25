@@ -16,13 +16,23 @@
   // ── Helper functions ─────────────────────────────────────────
   const $ = (id) => document.getElementById(id);
 
+  const cents = value => {
+    if (typeof value === "bigint") return value;
+    const text = String(value ?? "");
+    if (!/^-?\d{1,24}(\.\d{1,2})?$/.test(text)) return null;
+    const [whole, fraction = ""] = text.replace(/^-/, "").split(".");
+    const result = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+    return text.startsWith("-") ? -result : result;
+  };
+  const amount = (row, key) => row?.exactAmounts?.[key] ?? row?.[key];
+  const invoiceTotal = inv => amount(inv, "effectiveAmount") ?? amount(inv, "adjustedTotalAmount") ?? amount(inv, "totalAmount");
+
   const formatVND = (value) => {
-    if (value == null) return "—";
-    return new Intl.NumberFormat("vi-VN", {
-      style: "currency",
-      currency: "VND",
-      maximumFractionDigits: 0,
-    }).format(Number(value));
+    const valueInCents = cents(value);
+    if (valueInCents === null) return "—";
+    const abs = valueInCents < 0n ? -valueInCents : valueInCents;
+    const fraction = String(abs % 100n).padStart(2, "0").replace(/0+$/, "");
+    return (valueInCents < 0n ? "-" : "") + (abs / 100n).toLocaleString("vi-VN") + (fraction ? "," + fraction : "") + " ₫";
   };
 
   const formatDate = (value) => {
@@ -68,6 +78,8 @@
     // Kiểm tra ma trận quyền DB: bắt buộc có INVOICE_VIEW hoặc FINANCE_VIEW_DEBT
     const hasInvoiceView = isAdmin || Auth.hasPermission("INVOICE_VIEW");
     const hasDebtView = isAdmin || Auth.hasPermission("FINANCE_VIEW_DEBT");
+    $("di-invoices-panel").hidden = !hasInvoiceView;
+    $("btn-export").disabled = !hasInvoiceView;
 
     const workspace = $("di-workspace");
     const accessNotice = $("di-access-denied");
@@ -87,14 +99,6 @@
     return true;
   }
 
-  if (!checkPermissions()) return;
-
-  // Lắng nghe sự kiện thay đổi ma trận quyền từ server
-  window.addEventListener("auth:permissions-changed", () => {
-    if (!checkPermissions()) return;
-    loadAllData();
-  });
-
   // ── State Management ────────────────────────────────────────
   const state = {
     invoices: [],
@@ -106,6 +110,48 @@
     debtSummary: null,
     loading: false,
   };
+  let generation = 0, listSequence = 0, detailSequence = 0, printSequence = 0;
+  let hasValidDealer = !DealerPortalContext.isAdmin;
+  const requests = new Set();
+  const has = permission => Auth.hasRole("ROLE_ADMIN") || Auth.hasPermission(permission);
+  function clearSensitiveData() {
+    generation++; listSequence++;
+    requests.forEach(controller => controller.abort()); requests.clear();
+    state.invoices = []; state.selectedInvoice = null; state.debtSummary = null;
+    state.totalElements = state.totalPages = 0; state.loading = false;
+    state.currentPage = 0;
+    $("di-invoices-count").textContent = "";
+    renderPagination();
+    closeModals();
+    $("di-invoice-rows").innerHTML = "";
+    for (const id of ["val-current-debt", "val-debt-limit", "val-remaining-limit", "val-available-order-limit",
+      "di-t-total", "di-t-paid", "di-t-remain", "val-unpaid-invoices", "val-overdue-invoices", "val-max-debt-days",
+      "val-limit-used-percent", "val-order-status-badge", "di-blocked-title", "di-blocked-message"]) $(id).textContent = "—";
+    $("di-totals").hidden = true; $("di-blocked-banner").hidden = true;
+    $("btn-export").disabled = true;
+  }
+  async function read(path, permission, type = "json") {
+    if (!has(permission)) throw Object.assign(new Error("Bạn không có quyền truy cập."), {name: "AbortError"});
+    const epoch = generation, controller = new AbortController(); requests.add(controller);
+    try {
+      const response = await Auth.apiFetch(DealerPortalContext.url(path), {signal: controller.signal});
+      if (!response.ok) throw new Error("Không tải được dữ liệu (HTTP " + response.status + ").");
+      const body = await response[type]();
+      if (epoch !== generation || !has(permission)) throw Object.assign(new Error("Dữ liệu cũ"), {name: "AbortError"});
+      if (type === "json") {
+        if (body?.success === false || body?.data == null) throw new Error(body?.message || "Dữ liệu máy chủ không hợp lệ.");
+        return body.data;
+      }
+      if (type === "blob" && response.headers?.get && !response.headers.get("content-type")?.includes("application/pdf"))
+        throw new Error("Máy chủ không trả về PDF hợp lệ.");
+      return body;
+    } finally {requests.delete(controller);}
+  }
+  window.addEventListener("auth:permissions-changed", () => {
+    clearSensitiveData();
+    if (checkPermissions() && hasValidDealer) loadAllData();
+  });
+  if (!checkPermissions()) return;
 
   // ── Alert Helper ─────────────────────────────────────────────
   function showAlert(message, type = "error") {
@@ -128,7 +174,6 @@
   }
 
   // ── Admin Dealer Switcher ────────────────────────────────────
-  let hasValidDealer = true;
   if (DealerPortalContext.isAdmin) {
     try {
       hasValidDealer = await DealerPortalContext.init("dp-dealer-switcher-wrap", "dp-dealer-select");
@@ -164,24 +209,14 @@
     if (summaryCards) summaryCards.hidden = false;
 
     try {
-      let url = "/portal/debt/summary";
-      let response = await Auth.apiFetch(DealerPortalContext.url(url));
-
-      // Fallback sang /portal/debt nếu endpoint summary không có sẵn
-      if (!response.ok) {
-        url = "/portal/debt";
-        response = await Auth.apiFetch(DealerPortalContext.url(url));
-      }
-
-      if (!response.ok) {
-        throw new Error("Không thể tải thông tin công nợ");
-      }
-
-      const res = await response.json();
-      const debt = res.data || res;
+      const debt = await read("/portal/debt/summary", "FINANCE_VIEW_DEBT");
       state.debtSummary = debt;
       renderDebtSummary(debt);
     } catch (err) {
+      if (err.name === "AbortError") return;
+      state.debtSummary = null;
+      $("di-blocked-banner").hidden = true;
+      showAlert(err.message || "Không tải được tổng quan công nợ.");
       console.warn("Lỗi khi tải thông tin công nợ:", err);
       // Hiển thị trạng thái lỗi nhẹ trên thẻ
       $("val-current-debt").textContent = "—";
@@ -195,7 +230,7 @@
     if (!debt) return;
 
     // 1. Tổng còn nợ
-    const currentDebt = debt.currentDebt != null ? Number(debt.currentDebt) : 0;
+    const currentDebt = amount(debt, "currentDebt");
     $("val-current-debt").textContent = formatVND(currentDebt);
 
     const unpaidCount = debt.unpaidInvoiceCount ?? 0;
@@ -211,29 +246,33 @@
     }
 
     // 2. Hạn mức công nợ
-    const debtLimit = debt.debtLimit != null ? Number(debt.debtLimit) : 0;
+    const debtLimit = amount(debt, "debtLimit");
     $("val-debt-limit").textContent = formatVND(debtLimit);
-    $("val-max-debt-days").textContent = String(debt.maxDebtDays ?? 30);
+    $("val-max-debt-days").textContent = String(debt.maxDebtDays ?? "—");
 
     // 3. Hạn mức còn lại
-    const remainingLimit = debt.remainingLimit != null ? Number(debt.remainingLimit) : Math.max(0, debtLimit - currentDebt);
+    const remainingLimit = amount(debt, "remainingLimit");
     $("val-remaining-limit").textContent = formatVND(remainingLimit);
 
     let usedPercent = 0;
-    if (debtLimit > 0) {
-      usedPercent = Math.min(100, Math.round((currentDebt / debtLimit) * 100));
+    if (cents(debtLimit) > 0n && cents(currentDebt) !== null) {
+      const percent = cents(currentDebt) * 100n / cents(debtLimit);
+      usedPercent = Number(percent > 100n ? 100n : percent < 0n ? 0n : percent);
     }
     $("val-limit-used-percent").textContent = `${usedPercent}%`;
 
     // 4. Còn được lấy hàng (availableOrderLimit)
-    const availableOrder = debt.availableOrderLimit != null ? Number(debt.availableOrderLimit) : (debt.isBlocked ? 0 : Math.max(0, remainingLimit));
+    const availableOrder = amount(debt, "availableOrderLimit");
     const availElem = $("val-available-order-limit");
     availElem.textContent = formatVND(availableOrder);
 
     const orderBadge = $("val-order-status-badge");
     const blockedBanner = $("di-blocked-banner");
 
-    if (debt.isBlocked || debt.hasOverdueDebt || availableOrder <= 0) {
+    if (cents(availableOrder) === null) {
+      orderBadge.textContent = "Chưa có số liệu hạn mức";
+      blockedBanner.hidden = true;
+    } else if (debt.isBlocked || cents(availableOrder) <= 0n) {
       availElem.style.color = "var(--danger)";
       orderBadge.className = "di-card__badge di-card__badge--danger";
       orderBadge.textContent = debt.isBlocked ? "Bị chặn đặt hàng" : "Hết hạn mức lấy hàng";
@@ -242,8 +281,14 @@
       $("di-blocked-title").textContent = debt.isBlocked ? "Tài khoản bị tạm chặn giao dịch" : "Cảnh báo nợ quá hạn";
       $("di-blocked-message").textContent = debt.blockReason ||
         (debt.hasOverdueDebt
-          ? `Đại lý có khoản nợ quá hạn ${formatVND(debt.overdueAmount || 0)} (${debt.maxOverdueDays || 0} ngày). Vui lòng thanh toán để tiếp tục đặt hàng.`
+          ? `Đại lý có khoản nợ quá hạn ${formatVND(amount(debt, "overdueAmount"))} (${debt.maxOverdueDays || 0} ngày). Vui lòng kiểm tra chính sách giao dịch.`
           : "Hạn mức khả dụng đã hết. Vui lòng thanh toán bớt công nợ để tiếp tục lên đơn.");
+    } else if (debt.hasOverdueDebt) {
+      orderBadge.className = "di-card__badge di-card__badge--warning";
+      orderBadge.textContent = "Có nợ quá hạn";
+      blockedBanner.hidden = false;
+      $("di-blocked-title").textContent = "Cảnh báo công nợ quá hạn";
+      $("di-blocked-message").textContent = "Hạn mức khả dụng do hệ thống xác định theo chính sách hiện hành: " + formatVND(availableOrder);
     } else {
       availElem.style.color = "var(--teal-deep)";
       orderBadge.className = "di-card__badge di-card__badge--success";
@@ -254,6 +299,7 @@
 
   // ── Load Invoices List (S7-07) ──────────────────────────────
   async function loadInvoices(page = 0) {
+    const sequence = ++listSequence;
     const isAdmin = Auth.hasRole("ROLE_ADMIN");
     if (!isAdmin && !Auth.hasPermission("INVOICE_VIEW")) {
       const tbody = $("di-invoice-rows");
@@ -290,17 +336,8 @@
 
     try {
       const endpoint = `/portal/invoices?${params.toString()}`;
-      const response = await Auth.apiFetch(DealerPortalContext.url(endpoint));
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error("Bạn không có quyền truy cập hóa đơn (403 Forbidden).");
-        }
-        throw new Error(`Máy chủ phản hồi lỗi ${response.status}`);
-      }
-
-      const res = await response.json();
-      const pageData = res.data || res;
+      const pageData = await read(endpoint, "INVOICE_VIEW");
+      if (sequence !== listSequence) return;
 
       state.invoices = pageData.content || pageData.invoices || (Array.isArray(pageData) ? pageData : []);
       state.totalElements = pageData.totalElements ?? state.invoices.length;
@@ -310,6 +347,11 @@
       renderPagination();
       updateExportButton();
     } catch (err) {
+      if (err.name === "AbortError" || sequence !== listSequence) return;
+      state.invoices = []; state.totalElements = state.totalPages = 0;
+      state.currentPage = 0;
+      $("di-invoices-count").textContent = "";
+      renderPagination();
       showAlert(err.message || "Lỗi tải danh sách hóa đơn.", "error");
       tbody.innerHTML = `<tr><td colspan="9" class="di-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -319,7 +361,7 @@
       $("di-totals").hidden = true;
       updateExportButton();
     } finally {
-      state.loading = false;
+      if (sequence === listSequence) state.loading = false;
     }
   }
 
@@ -340,23 +382,25 @@
       return;
     }
 
-    let pageTotal = 0;
-    let pagePaid = 0;
-    let pageRemain = 0;
+    let pageTotal = 0n;
+    let pagePaid = 0n;
+    let pageRemain = 0n;
 
     const rowsHtml = invoices.map((inv) => {
-      const total = Number(inv.adjustedTotalAmount ?? inv.totalAmount ?? 0);
-      const paid = Number(inv.paidAmount ?? (inv.isPaid ? total : 0));
-      const remain = Number(inv.remainingAmount ?? Math.max(0, total - paid));
+      const total = invoiceTotal(inv);
+      const paid = amount(inv, "paidAmount");
+      const remain = amount(inv, "remainingAmount");
 
-      pageTotal += total;
-      pagePaid += paid;
-      pageRemain += remain;
+      pageTotal += cents(total) ?? 0n;
+      pagePaid += cents(paid) ?? 0n;
+      pageRemain += cents(remain) ?? 0n;
 
       // Trạng thái thanh toán
       let paymentPill = "";
       const pStatus = inv.paymentStatus || (inv.isPaid ? "PAID" : "UNPAID");
-      if (pStatus === "PAID") {
+      if (pStatus === "CANCELLED") {
+        paymentPill = `<span class="di-pill di-pill--cancelled">Đã hủy</span>`;
+      } else if (pStatus === "PAID") {
         paymentPill = `<span class="di-pill di-pill--paid">Đã thanh toán</span>`;
       } else if (pStatus === "PARTIALLY_PAID") {
         paymentPill = `<span class="di-pill di-pill--partial">Đã trả 1 phần</span>`;
@@ -467,7 +511,9 @@
 
   // ── Invoice Detail Modal (S7-07) ─────────────────────────────
   async function openInvoiceDetail(invoiceId) {
-    if (!invoiceId) return;
+    if (!invoiceId || !has("INVOICE_VIEW")) return;
+    const sequence = ++detailSequence;
+    state.selectedInvoice = null;
     showAlert("");
 
     const modal = $("di-detail-modal");
@@ -477,18 +523,13 @@
 
     try {
       const endpoint = `/portal/invoices/${invoiceId}`;
-      const response = await Auth.apiFetch(DealerPortalContext.url(endpoint));
-
-      if (!response.ok) {
-        throw new Error(`Không thể xem hóa đơn #${invoiceId} (${response.status})`);
-      }
-
-      const res = await response.json();
-      const invoice = res.data || res;
+      const invoice = await read(endpoint, "INVOICE_VIEW");
+      if (sequence !== detailSequence) return;
       state.selectedInvoice = invoice;
 
       renderInvoiceDetail(invoice);
     } catch (err) {
+      if (err.name === "AbortError" || sequence !== detailSequence) return;
       body.innerHTML = `<div class="di-notice di-notice--danger">${escapeHtml(err.message)}</div>`;
     }
   }
@@ -497,9 +538,9 @@
     const body = $("di-detail-body");
     $("di-detail-title").textContent = `Hóa đơn ${inv.invoiceNumber || inv.invoiceCode || `#${inv.id}`}`;
 
-    const total = Number(inv.adjustedTotalAmount ?? inv.totalAmount ?? 0);
-    const paid = Number(inv.paidAmount ?? (inv.isPaid ? total : 0));
-    const remain = Number(inv.remainingAmount ?? Math.max(0, total - paid));
+    const total = invoiceTotal(inv);
+    const paid = amount(inv, "paidAmount");
+    const remain = amount(inv, "remainingAmount");
 
     let itemsHtml = "";
     if (Array.isArray(inv.items) && inv.items.length > 0) {
@@ -524,9 +565,9 @@
                     ${item.productCode ? `<br><small style="color:var(--ink-500);">${escapeHtml(item.productCode)}</small>` : ''}
                   </td>
                   <td>${escapeHtml(item.unitName || item.unit || '—')}</td>
-                  <td class="num">${formatQuantity(item.quantity)}</td>
-                  <td class="num">${formatVND(item.unitPrice)}</td>
-                  <td class="num" style="font-weight: 600;">${formatVND(item.lineTotal ?? (item.quantity * item.unitPrice))}</td>
+                  <td class="num">${formatQuantity(amount(item, "invoicedQuantity"))}</td>
+                  <td class="num">${formatVND(amount(item, "unitPrice"))}</td>
+                  <td class="num" style="font-weight: 600;">${formatVND(amount(item, "totalAmount"))}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -557,9 +598,9 @@
                 <tr>
                   <td><strong>${escapeHtml(adj.adjustmentCode || adj.code || `#${adj.id}`)}</strong></td>
                   <td>${formatDate(adj.adjustmentDate || adj.createdAt)}</td>
-                  <td>${escapeHtml(adj.typeLabel || adj.type || 'Điều chỉnh')}</td>
-                  <td class="num">${formatVND(adj.adjustmentAmount || adj.amount)}</td>
-                  <td>${escapeHtml(adj.reason || '—')}</td>
+                  <td>${escapeHtml(adj.adjustmentTypeLabel || adj.adjustmentType || 'Điều chỉnh')}</td>
+                  <td class="num">${formatVND(amount(adj, "adjustmentAmount"))}</td>
+                  <td>${escapeHtml(adj.adjustmentReason || '—')}</td>
                   <td>
                     <button type="button" class="di-btn-sm btn-download-adj" data-inv="${inv.id}" data-adj="${adj.id}" data-code="${escapeHtml(adj.adjustmentCode || adj.id)}">
                       PDF
@@ -592,7 +633,11 @@
           <dd>${escapeHtml(inv.paymentStatusLabel || (inv.isPaid ? 'Đã thanh toán' : 'Chưa thanh toán'))}</dd>
         </div>
         <div class="di-fact">
-          <dt>Tổng tiền hóa đơn</dt>
+          <dt>Tiền hóa đơn gốc</dt>
+          <dd>${formatVND(amount(inv, "totalAmount"))}</dd>
+        </div>
+        <div class="di-fact">
+          <dt>Giá trị phải thu sau điều chỉnh/trả hàng</dt>
           <dd>${formatVND(total)}</dd>
         </div>
         <div class="di-fact">
@@ -623,16 +668,11 @@
 
   // ── Download Invoice PDF (S7-07) ─────────────────────────────
   async function downloadInvoicePdf(invoiceId, invoiceNumber) {
+    if (!has("INVOICE_VIEW")) return;
     try {
       showAlert("");
       const endpoint = `/portal/invoices/${invoiceId}/pdf?download=true`;
-      const response = await Auth.apiFetch(DealerPortalContext.url(endpoint));
-
-      if (!response.ok) {
-        throw new Error(`Không thể tải PDF hóa đơn (${response.status})`);
-      }
-
-      const blob = await response.blob();
+      const blob = await read(endpoint, "INVOICE_VIEW", "blob");
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -642,22 +682,18 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
+      if (err.name === "AbortError") return;
       showAlert(err.message || "Lỗi khi tải tệp PDF.", "error");
     }
   }
 
   // ── Download Adjustment PDF ──────────────────────────────────
   async function downloadAdjustmentPdf(invoiceId, adjustmentId, adjustmentCode) {
+    if (!has("INVOICE_VIEW")) return;
     try {
       showAlert("");
       const endpoint = `/portal/invoices/${invoiceId}/adjustments/${adjustmentId}/pdf?download=true`;
-      const response = await Auth.apiFetch(DealerPortalContext.url(endpoint));
-
-      if (!response.ok) {
-        throw new Error(`Không thể tải PDF chứng từ điều chỉnh (${response.status})`);
-      }
-
-      const blob = await response.blob();
+      const blob = await read(endpoint, "INVOICE_VIEW", "blob");
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -667,12 +703,15 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
+      if (err.name === "AbortError") return;
       showAlert(err.message || "Lỗi khi tải tệp PDF chứng từ.", "error");
     }
   }
 
   // ── Print Preview Modal (S7-07) ──────────────────────────────
   async function openPrintModal(invoiceId) {
+    if (!has("INVOICE_VIEW")) return;
+    const sequence = ++printSequence;
     const printModal = $("di-print-modal");
     const frame = $("di-print-frame");
 
@@ -680,15 +719,12 @@
       showAlert("");
       printModal.hidden = false;
       const endpoint = `/portal/invoices/${invoiceId}/print-preview`;
-      const response = await Auth.apiFetch(DealerPortalContext.url(endpoint));
-
-      if (!response.ok) {
-        throw new Error(`Không thể tải bản in hóa đơn (${response.status})`);
-      }
-
-      const html = await response.text();
+      frame.srcdoc = "";
+      const html = await read(endpoint, "INVOICE_VIEW", "text");
+      if (sequence !== printSequence) return;
       frame.srcdoc = html;
     } catch (err) {
+      if (err.name === "AbortError" || sequence !== printSequence) return;
       showAlert(err.message || "Lỗi khi tải bản in hóa đơn.", "error");
       printModal.hidden = true;
     }
@@ -696,7 +732,7 @@
 
   $("btn-print-frame-now")?.addEventListener("click", () => {
     const frame = $("di-print-frame");
-    if (frame && frame.contentWindow) {
+    if (has("INVOICE_VIEW") && frame && frame.contentWindow && frame.srcdoc) {
       frame.contentWindow.focus();
       frame.contentWindow.print();
     }
@@ -706,29 +742,29 @@
   function updateExportButton() {
     const exportBtn = $("btn-export");
     if (exportBtn) {
-      exportBtn.disabled = !state.invoices || state.invoices.length === 0;
+      exportBtn.disabled = !has("INVOICE_VIEW") || !state.invoices || state.invoices.length === 0;
     }
   }
 
   function exportToExcel() {
-    if (!state.invoices || state.invoices.length === 0) return;
+    if (!has("INVOICE_VIEW") || !state.invoices || state.invoices.length === 0) return;
     if (typeof XLSX === "undefined") {
       showAlert("Thư viện xuất Excel chưa sẵn sàng.", "error");
       return;
     }
 
     const exportRows = state.invoices.map((inv) => {
-      const total = Number(inv.adjustedTotalAmount ?? inv.totalAmount ?? 0);
-      const paid = Number(inv.paidAmount ?? (inv.isPaid ? total : 0));
-      const remain = Number(inv.remainingAmount ?? Math.max(0, total - paid));
+      const total = invoiceTotal(inv);
+      const paid = amount(inv, "paidAmount");
+      const remain = amount(inv, "remainingAmount");
 
       return {
         "Số hóa đơn": inv.invoiceNumber || inv.invoiceCode || `HĐ-${inv.id}`,
         "Ngày phát hành": formatDate(inv.invoiceDate),
         "Hạn thanh toán": formatDate(inv.dueDate),
-        "Tổng tiền (VND)": total,
-        "Đã thanh toán (VND)": paid,
-        "Còn nợ (VND)": remain,
+        "Tổng tiền (VND)": String(total ?? ""),
+        "Đã thanh toán (VND)": String(paid ?? ""),
+        "Còn nợ (VND)": String(remain ?? ""),
         "Trạng thái thanh toán": inv.paymentStatusLabel || (inv.isPaid ? "Đã thanh toán" : "Chưa thanh toán"),
         "Trạng thái hóa đơn": inv.statusLabel || inv.status || "Đã phát hành",
         "Quá hạn": inv.isOverdue ? `Quá ${inv.overdueDays || 0} ngày` : "Không",
@@ -745,6 +781,10 @@
 
   // ── Modal Controls ───────────────────────────────────────────
   function closeModals() {
+    detailSequence++; printSequence++;
+    state.selectedInvoice = null;
+    if ($("di-detail-body")) $("di-detail-body").innerHTML = "";
+    if ($("di-print-frame")) $("di-print-frame").srcdoc = "";
     if ($("di-detail-modal")) $("di-detail-modal").hidden = true;
     if ($("di-print-modal")) $("di-print-modal").hidden = true;
   }

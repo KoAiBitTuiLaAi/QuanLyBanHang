@@ -1,5 +1,18 @@
 # Trạng thái sprint 1–8
 
+## S7-07 — Hoàn thiện backend công nợ của đại lý và sửa frontend kết nối — 25/10/2026
+
+Nhánh `feature/S7-07-backend-xem_cong_no_cua_chinh_minh`, từ `develop`; hoàn thiện API đã có và sửa màn hình hiện hữu tại **Kinh doanh → Công nợ của tôi** (`/dealer-invoices`).
+
+| Yêu cầu | Backend | Frontend | Kết nối / phân quyền |
+|---|---|---|---|
+| Hóa đơn của chính đại lý, số tiền, hạn thanh toán, trạng thái | Có; cách ly hồ sơ DB, lọc hợp lệ, phân trang chống tràn số | Có; sửa trường số lượng/thành tiền, trạng thái và phân trang | INVOICE_VIEW; dealer không được đổi hồ sơ, Admin chọn dealerId |
+| Xem/tải hóa đơn đã phát hành | Có; PDF/HTML/chứng từ điều chỉnh, font tiếng Việt, giữ phần lẻ tiền, escape HTML, no-store | Có; chi tiết, PDF, in qua iframe chặn script | Thu hồi INVOICE_VIEW trả 403; xóa modal/bản in và bỏ phản hồi muộn |
+| Tổng nợ và hạn mức còn được lấy hàng | Có; giữ FIFO và khấu trừ trả hàng đã xác nhận; exactAmounts chuỗi thập phân | Có; BigInt giữ số tiền chính xác, dùng availableOrderLimit của server, không tự chặn sai chính sách ALLOW | FINANCE_VIEW_DEBT độc lập với INVOICE_VIEW; menu mở với một trong hai quyền |
+| Quyền và dữ liệu trả về | Có; ẩn invoices trong summary nếu thiếu INVOICE_VIEW, ẩn tiền trên profile nếu thiếu FINANCE_VIEW_DEBT; khóa cả /portal/debt cũ, không dùng role fallback | Có; bỏ dữ liệu cũ sau lỗi API/đổi quyền/đổi bộ lọc; khóa xuất khi không có dữ liệu; cổng đặt hàng bỏ gọi tổng nợ khi thiếu quyền | Cùng JWT có hiệu lực cấp/thu hồi; ROLE_ADMIN toàn quyền; ORDER_VIEW không đọc được tổng nợ, giỏ hàng dùng preview nghiệp vụ hiện có |
+
+Kiểm thử đạt: **80 backend** (9 tích hợp S7-07, 20 controller portal, 12 hóa đơn, 26 công nợ, 13 trả hàng), **280 Node**, **13 route Python**; Chrome kiểm tra tiền lớn/phần lẻ, dữ liệu chi tiết, PDF, sandbox bản in, lỗi API, phản hồi sai thứ tự, thu hồi quyền đang tải, quyền độc lập và Admin; giao diện tại 1440/1024/768/390/320 px không tràn ngang toàn trang. Backend tích hợp dùng H2 cách ly; Chrome chặn toàn bộ API bằng HTTP fixture. Không kiểm thử ghi trên MySQL thật, không tạo/sửa đơn hay reset DB nghiệp vụ. Antigravity Opus hỗ trợ rà thiết kế và ca kiểm thử; Codex chốt code/kết quả. Excel hiện xuất trang đang xem; PDF được dựng từ hóa đơn đã lưu, không bổ sung kho lưu trữ PDF gốc.
+
 ## S7-06 — Backend biên bản đối chiếu định kỳ và nối frontend — 25/10/2026
 
 Nhánh `feature/S7-06-backend-lap_bien_ban_doi_chieu_cong_no_dinh_ky`, từ `develop`. Phát hiện frontend cũ chỉ giả lập xác nhận/phản hồi trong bộ nhớ và xuất PDF sổ hiện thời; thay bằng biên bản lưu DB.
@@ -1160,7 +1173,7 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 |---|---|---|---|---|---|---|
 | S7-01 | Phát hành hoá đơn bán hàng từ phiếu đã giao | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | Đầy đủ ma trận: INVOICE_VIEW, INVOICE_CREATE, INVOICE_ADJUST từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend theo 5 tiêu chí user story. Sinh theo thực giao, số nhảy liên tục, gộp phiếu giao cùng đại lý, hóa đơn bất biến chỉ lập điều chỉnh, xuất PDF và HTML print preview. Đã kiểm thử 30 test mới (unit, controller, security, integration). Chưa làm FE theo yêu cầu. |
 | S7-04 | Hệ thống tự cảnh báo và khoá bán công nợ | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | FINANCE_VIEW_DEBT, FINANCE_MANAGE từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend: tự gắn cờ đại lý quá hạn/vượt hạn mức, chặn/cần duyệt khi tạo đơn, scheduler đánh giá hàng ngày và sau thu tiền. 24 test mới. Chưa làm FE theo yêu cầu. |
-| S7-07 | Đại lý tự xem công nợ, hạn mức còn lại và tải lại hoá đơn | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | FINANCE_VIEW_DEBT, INVOICE_VIEW, ORDER_VIEW từ ma trận DB; cách ly RLS theo đại lý liên kết; ADMIN toàn quyền, không role fallback | Đã hoàn thành 100% backend: hiển thị tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, danh sách hóa đơn kèm số tiền/hạn thanh toán/trạng thái FIFO, xem và tải lại PDF/bản in hóa đơn & điều chỉnh. Thu hồi quyền trên JWT hiện tại trả 403. Chưa làm FE theo yêu cầu. |
+| S7-07 | Đại lý tự xem công nợ, hạn mức còn lại và tải lại hoá đơn | Có | Có | Đã kết nối, rà lại 25/10/2026 | FINANCE_VIEW_DEBT / INVOICE_VIEW độc lập; hồ sơ đại lý từ DB; ADMIN toàn quyền; ORDER_VIEW không đọc được tổng nợ | Xem mục S7-07 đầu file: sửa dữ liệu sau trả hàng, số tiền chính xác, PDF/HTML, phân trang, cấp/thu hồi quyền và phản hồi muộn. |
 
 ## Việc cần làm tiếp
 

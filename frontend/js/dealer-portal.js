@@ -183,12 +183,18 @@
 
   /* ── Load Debt Info ─────────────────────────────────────── */
   async function loadDebtInfo() {
+    if (!Auth.hasAnyRole('ROLE_ADMIN') && !Auth.hasPermission('FINANCE_VIEW_DEBT')) {
+      state.debtInfo = { unavailable: true, isBlocked: false };
+      renderDebtMetrics();
+      return;
+    }
     try {
       const res = await Auth.apiFetch(DealerPortalContext.url('/portal/debt'));
       const result = await res.json();
       if (!res.ok || !result.success || !result.data) {
         throw new Error(result.message || 'Không tải được công nợ, vui lòng thử lại');
       }
+      if (!Auth.hasAnyRole('ROLE_ADMIN') && !Auth.hasPermission('FINANCE_VIEW_DEBT')) return;
       state.debtInfo = result.data;
     } catch (err) {
       state.debtInfo = { isBlocked: true, blockReason: err.message, unavailable: true };
@@ -198,23 +204,24 @@
   }
 
   function renderDebtMetrics() {
+    const canViewDebt = Auth.hasAnyRole('ROLE_ADMIN') || Auth.hasPermission('FINANCE_VIEW_DEBT');
     const info = state.debtInfo || {};
     const limit = Number(info.debtLimit) || 0;
     const current = Number(info.currentDebt) || 0;
     const avail = info.remainingLimit != null ? Number(info.remainingLimit) : Math.max(0, limit - current);
 
     const valLimit = $('val-debt-limit');
-    if (valLimit) valLimit.textContent = info.unavailable ? 'Chưa tải được' : formatVND(limit);
+    if (valLimit) valLimit.textContent = !canViewDebt ? 'Không có quyền xem' : info.unavailable ? 'Chưa tải được' : formatVND(limit);
 
     const valCurrent = $('val-current-debt');
-    if (valCurrent) valCurrent.textContent = info.unavailable ? 'Chưa tải được' : formatVND(current);
+    if (valCurrent) valCurrent.textContent = !canViewDebt ? 'Không có quyền xem' : info.unavailable ? 'Chưa tải được' : formatVND(current);
 
     const valAvail = $('val-avail-debt');
-    if (valAvail) valAvail.textContent = info.unavailable ? 'Chưa tải được' : formatVND(avail);
+    if (valAvail) valAvail.textContent = !canViewDebt ? 'Không có quyền xem' : info.unavailable ? 'Chưa tải được' : formatVND(avail);
 
     const alertEl = $('dp-debt-overdue-alert');
     if (alertEl) {
-      if (info.hasOverdueDebt || info.isBlocked) {
+      if (canViewDebt && (info.hasOverdueDebt || info.isBlocked)) {
         alertEl.hidden = false;
         const msgEl = $('dp-debt-overdue-msg');
         if (msgEl) {
@@ -876,6 +883,7 @@
     }
   }
   globalThis.addEventListener?.('auth:permissions-changed', () => {
+    renderDebtMetrics();
     state.preview = null;
     state.previewVersion++;
     state.previewRequest = null;

@@ -431,6 +431,8 @@ public class DealerDebtServiceImpl implements DealerDebtService {
                     .discountAmount(inv.getDiscountAmount())
                     .totalAmount(inv.getTotalAmount())
                     .adjustedTotalAmount(inv.getAdjustedTotalAmount())
+                    .effectiveAmount(effectiveAmount)
+                    .isPaid(inv.getStatus() != InvoiceStatus.CANCELLED && remainingAmount.signum() == 0)
                     .paidAmount(paidAmount)
                     .remainingAmount(remainingAmount)
                     .paymentStatus(paymentStatus)
