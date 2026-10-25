@@ -1,5 +1,43 @@
 # Trạng thái sprint 1–8
 
+## Sprint 6 — Kiểm tra trực tiếp web/MySQL và sửa cột nhật ký — 25/10/2026
+
+Sau khi người dùng chạy frontend/backend và cho phép thay đổi dữ liệu local, đã kiểm tra các màn hình và nghiệp vụ bằng Chrome với API/MySQL thật. Chi tiết: [SPRINT6_WEB_CHECK.md](docs/SPRINT6_WEB_CHECK.md). Mục này cập nhật giới hạn “chưa nghiệm thu MySQL” của đợt H2 bên dưới.
+
+| Hạng mục | Backend / MySQL thật | Frontend thật | Kết quả |
+|---|---|---|---|
+| S6-01/04 lô và FEFO | Lưu ngưỡng, chặn quá hạn, kiểm quyền ghi đè, trừ đúng lô khác có lý do | Cấu hình SKU, gợi ý/chọn lô và xác nhận xuất | Qua |
+| S6-02/03 thẻ kho và soạn hàng | 7 phát sinh đúng thời gian, nhập trả 4 thùng = 96 lon; gom 2 đơn/hoàn tất lượt | Mở chứng từ gốc, vị trí A01, lưu thực soạn | Qua |
+| S6-05/06/07 xuất thiếu, phân tuyến, hàng trên đường | Xuất 4 rồi 6; tạo chuyến từ phiếu; PDF thật; cảnh báo quá hạn; không tự hoàn tồn; không còn tiền hàng treo sau xử lý | Xuất bù, phân tuyến, in, bộ lọc quá hạn | Qua |
+| S6-08/09 giao nhận và đại lý | Lưu ảnh; cộng thực giao; nhập trả đúng lô/cơ sở; chặn lặp; chỉ mở xem trước hóa đơn sau giao đủ | Giao/nhập trả trên web, đại lý thấy SHIPPING/4 rồi DELIVERED/10 | Qua |
+| Quyền và phạm vi | Thủ kho ngoài kho: 403 với chuyến/ảnh/thẻ kho; VIEW-only ghi 403 | Thủ kho không có nút ghi đè quá hạn, viewer ẩn nút ghi | Qua các quyền hiện tại |
+| Audit vị trí kệ | Sửa action VARCHAR(20) → VARCHAR(100), giữ charset/collation/dữ liệu cũ; test persistence mới qua | Gán vị trí và tiếp tục soạn thành công sau sửa | Đã xử lý lỗi MySQL phát hiện trong lần kiểm tra |
+
+36 kiểm tra bố cục (9 màn hình × 1440/768/390/320px) qua. Dữ liệu kiểm thử tiền tố `S6LIVE-25287137`, có kho/đại lý riêng; giữ lại chứng từ để đối chiếu. Nhánh vẫn `fix/Sprint6`, chưa commit/push/merge. Tổng bộ hồi quy đã có thêm 1 AuditLogPersistenceTest bên cạnh 185 test backend đã qua ở đợt trước.
+
+## Sprint 6 — Sửa lỗi liên thông và ma trận quyền — 25/10/2026
+
+Nhánh `fix/Sprint6`. Đối chiếu Sprint 6 trong Product Backlog, sửa các phát hiện F1–F7 của đợt rà soát và chọn giao theo từng phiếu xuất để xử lý xuất thiếu/giao bù (G1). Nội dung này cập nhật trạng thái S6-08 cũ bên dưới vốn mới có giao diện xem trước.
+
+| Story / yêu cầu | Backend | Frontend | Kết nối / quyền |
+|---|---|---|---|
+| S6-01: Lô và hạn dùng | Giữ quản lý lô/ngưỡng/cấm xuất quá hạn và ghi đè có quyền | Giữ màn hình đã nối API | Kiểm tra hồi quy lô, xuất và thu hồi quyền |
+| S6-02: Thẻ kho | Nhập trả chuyến mới ghi đúng số cơ sở; dữ liệu lịch sử thiếu snapshot giữ cách ghi cũ | Giữ bộ lọc/kho/thời gian/chứng từ | Không còn lấy số thùng làm số lon; VIEW theo ma trận |
+| S6-03/04: Soạn hàng và FEFO | Giữ nhóm đơn, thực soạn, lý do thiếu, xuất đúng lô | Giữ UI đã nối | Kiểm tra hồi quy cả dịch vụ, HTTP và trình duyệt |
+| S6-05: Xuất thiếu và xuất bù | Cho xuất bù khi SHIPPING, giữ đúng lượng giữ chỗ; lịch sử phiếu bất biến | Dùng danh sách Còn nợ hàng đã có | Giao phần đã xuất trước, phần còn thiếu xử lý lượt sau; EXPORT để xác nhận |
+| S6-06: Phân tuyến | Điểm giao lấy hàng/lô/quy đổi từ phiếu CONFIRMED; khóa đơn/phiếu, chặn dùng lặp, DRAFT và kho khác | Chọn nhiều phiếu cùng đơn, gửi shipmentVoucherId, giữ thứ tự; bỏ phản hồi sai kho/quyền, chặn gửi lặp | VIEW hoặc EXPORT để xem; EXPORT để tạo; giữ địa chỉ/điện thoại và in bảng kê |
+| S6-07: Tiền hàng trên đường | FAILED/đóng/hủy chuyến không tự cộng tồn; nhập trả là thao tác thực nhận riêng | Giữ thống kê/chuyến còn hàng; đồng bộ từ server | Chỉ rời trách nhiệm chuyến khi giao hoặc nhận trả thực tế |
+| S6-08: Xác nhận giao/nhập trả | Lưu người nhận/giờ/ảnh, thực giao tích lũy; nhập trả đúng cơ sở+lô, giữ chỗ để giao lại; cùng giao dịch và audit | Đã nối chuyến/điểm, multipart ảnh, lý do thất bại, xác nhận thực nhận, xem/tải chứng từ | Menu/trang VIEW hoặc EXPORT; nút ghi EXPORT + cờ server. Thu hồi quyền cùng JWT có hiệu lực request sau |
+| S6-09: Theo dõi cho đại lý | Giao một phiếu chưa hoàn tất cả đơn; không tự tạo giờ 00:00 từ ngày giao cũ | Đọc các mốc/thời gian server, thực giao từng dòng; không suy đoán thời gian thiếu | Chỉ API portal theo đại lý của phiên, ORDER_VIEW; không gọi kho nội bộ |
+
+**Nguyên tắc giao từng phần:** một phiếu xuất thuộc một điểm giao; mỗi lượt cộng thực giao theo dòng gốc. Chỉ khi giao đủ mọi dòng mới chuyển đơn sang DELIVERED và cho S7-01 xem trước/phát hành hóa đơn. Hàng nhập trả của đơn còn hiệu lực được giữ chỗ để xuất lại; đơn đã hủy/từ chối không được tự mở lại. Điểm PENDING ở chuyến đã đóng/hủy có thể xác nhận nhận trả vật lý kèm lý do để tránh hàng bị treo.
+
+**Kiểm thử và giới hạn:** kiểm thử nghiệp vụ/database bằng H2 tách biệt, HTTP/JWT thật trong test; Chrome dùng HTTP fixtures, gồm lưu ảnh/nhập trả và cấp-thu hồi quyền, không ghi database đang sử dụng. Có kiểm thử dùng lặp phiếu, giao hai chuyến đồng thời, nhập trả đồng thời với giao, lặp nhận trả và hoàn tác khi audit lỗi. Antigravity Opus tham gia rà thiết kế/đoạn mã; các kết luận được đối chiếu lại với mã và kiểm thử. Chưa nghiệm thu trên MySQL thực tế. Các snapshot/nguồn mới là cột nullable; chứng từ cũ thiếu lô/dòng nguồn phải đối soát, không sửa dữ liệu đoán lô, không reset DB.
+
+Đã cập nhật API_DOCUMENTATION và FUNCTION_MAP cùng nhánh; chưa commit/push/merge trong đợt sửa này.
+
+Kết quả kiểm chứng cuối đợt: **185 test backend / 17 lớp**, **285 test Node**, **13 test định tuyến Python** và **9 bộ Chrome** đều qua. Backend gồm InvoiceIntegrationTest và 10 ca Sprint6DeliveryFlowIntegrationTest; Chrome bổ sung Phân tuyến giao hàng, thay kiểm thử S6-08 “chỉ xem trước” bằng hợp đồng lưu thật trên fixture. FUNCTION_MAP có 75 story không trùng, đúng thứ tự; diff không có lỗi whitespace. Chưa khởi động lại backend/MySQL đang dùng, nên cần chạy lại backend để nhận các DTO/cột snapshot mới trước khi kiểm tra giao diện thực tế.
+
 ## S7-07 — Hoàn thiện backend công nợ của đại lý và sửa frontend kết nối — 25/10/2026
 
 Nhánh `feature/S7-07-backend-xem_cong_no_cua_chinh_minh`, từ `develop`; hoàn thiện API đã có và sửa màn hình hiện hữu tại **Kinh doanh → Công nợ của tôi** (`/dealer-invoices`).

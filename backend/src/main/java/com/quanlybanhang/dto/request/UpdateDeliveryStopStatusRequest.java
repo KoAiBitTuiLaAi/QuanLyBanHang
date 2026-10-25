@@ -17,6 +17,7 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class UpdateDeliveryStopStatusRequest {
+    private com.quanlybanhang.model.DeliveryFailureReason failureReasonCode;
 
     @NotNull(message = "Trạng thái giao hàng không được để trống")
     private DeliveryStopStatus status;

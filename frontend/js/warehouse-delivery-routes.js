@@ -38,6 +38,9 @@
     isSubmitting: false
   };
 
+  let generation=0, eligibleRequest=0, recentRequest=0, optionsRequest=0, printRequest=0;
+  const shipmentKey = row => row.shipmentVoucherId != null ? `voucher-${row.shipmentVoucherId}` : `order-${row.orderId}`;
+
   function canRead() {
     return Auth.hasPermission('WAREHOUSE_VIEW') || Auth.hasPermission('WAREHOUSE_EXPORT');
   }
@@ -65,6 +68,8 @@
     $('routes-access-denied').hidden = hasRead;
     $('routes-workspace').hidden = !hasRead;
 
+    $('routes-warehouse-select').disabled=state.isSubmitting;
+    $('routes-dispatch-form').querySelectorAll('input,textarea,select').forEach(el=>el.disabled=state.isSubmitting||!hasWrite);
     const submitBtn = $('routes-submit-btn');
     if (submitBtn) {
       submitBtn.disabled = !hasWrite || state.isSubmitting || state.stagedStops.length === 0;
@@ -78,7 +83,10 @@
 
   // ── TẢI TÙY CHỌN & KHO HÀNG ──
   async function loadOptions() {
-    if (!canRead()) return;
+    if (!canRead() || state.isSubmitting) return;
+    const epoch=++generation, request=++optionsRequest;
+    state.stagedStops=[];state.eligibleOrders=[];state.filteredOrders=[];state.recentTrips=[];
+    renderStagedStops();renderEligibleOrders();renderRecentTrips();closePrintModal();
     try {
       const res = await Auth.apiFetch('/warehouse/delivery-trips/options');
       const body = await res.json().catch(() => null);
@@ -86,6 +94,7 @@
         throw new Error(body?.message || 'Không tải được tùy chọn kho hàng.');
       }
 
+      if(epoch!==generation || request!==optionsRequest || !canRead())return;
       state.warehouses = Array.isArray(body.data?.warehouses) ? body.data.warehouses : [];
       const select = $('routes-warehouse-select');
       select.replaceChildren();
@@ -122,7 +131,7 @@
   // ── TẢI DANH SÁCH ĐƠN HÀNG ĐỦ ĐIỀU KIỆN (PHIẾU XUẤT CHỜ GIAO) ──
   async function loadEligibleOrders() {
     if (!state.currentWarehouseId || !canRead()) return;
-
+    const epoch=generation, request=++eligibleRequest;
     state.isLoadingEligible = true;
     $('routes-eligible-loading').hidden = false;
     $('routes-eligible-empty').hidden = true;
@@ -137,16 +146,19 @@
         throw new Error(body?.message || 'Không tải được danh sách phiếu xuất chờ giao.');
       }
 
+      if(epoch!==generation || request!==eligibleRequest || !canRead())return;
       state.eligibleOrders = Array.isArray(body.data) ? body.data : [];
       updateAreaFilters();
       applyOrderFilters();
     } catch (err) {
+      if(epoch!==generation || request!==eligibleRequest || !canRead())return;
       showMessage('error', err.message);
       $('routes-eligible-empty').textContent = 'Lỗi tải danh sách phiếu xuất: ' + err.message;
       $('routes-eligible-empty').hidden = false;
     } finally {
-      state.isLoadingEligible = false;
-      $('routes-eligible-loading').hidden = true;
+      if(epoch===generation && request===eligibleRequest){
+        state.isLoadingEligible = false;$('routes-eligible-loading').hidden = true;
+      }
     }
   }
 
@@ -234,10 +246,10 @@
     $('routes-eligible-count').textContent = `${count} phiếu`;
     $('routes-eligible-empty').hidden = count > 0;
 
-    const stagedOrderIds = new Set(state.stagedStops.map(s => s.orderId).filter(Boolean));
+    const stagedOrderIds = new Set(state.stagedStops.map(shipmentKey));
 
     for (const order of state.filteredOrders) {
-      const isStaged = stagedOrderIds.has(order.orderId);
+      const isStaged = stagedOrderIds.has(shipmentKey(order));
       const card = document.createElement('article');
       card.className = `routes-order-card ${isStaged ? 'routes-order-card--selected' : ''}`;
 
@@ -247,7 +259,7 @@
         <div class="routes-card-top">
           <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700;">
             <input type="checkbox" class="order-check" data-order-id="${order.orderId}" ${isStaged ? 'checked' : ''}>
-            <span class="routes-card-title">${Utils.escapeHtml(order.orderCode || 'DH-' + order.orderId)}</span>
+            <span class="routes-card-title">${Utils.escapeHtml(order.shipmentVoucherCode || order.orderCode || 'DH-' + order.orderId)}</span>
           </label>
           <span class="routes-card-area">${Utils.escapeHtml(area)}</span>
         </div>
@@ -271,7 +283,7 @@
 
       const toggleAction = () => {
         if (isStaged) {
-          removeStopByOrderId(order.orderId);
+          removeStopByOrderId(shipmentKey(order));
         } else {
           addOrderToStaged(order);
         }
@@ -286,10 +298,12 @@
 
   // ── QUẢN LÝ LỘ TRÌNH ĐIỂM DỪNG (STAGED STOPS) ──
   function addOrderToStaged(order) {
-    if (state.stagedStops.some(s => s.orderId === order.orderId)) return;
+    if (state.stagedStops.some(s => shipmentKey(s) === shipmentKey(order))) return;
 
     state.stagedStops.push({
       orderId: order.orderId,
+      shipmentVoucherId: order.shipmentVoucherId,
+      shipmentVoucherCode: order.shipmentVoucherCode,
       orderCode: order.orderCode,
       dealerId: order.dealerId,
       dealerName: order.dealerName,
@@ -307,7 +321,7 @@
   }
 
   function removeStopByOrderId(orderId) {
-    state.stagedStops = state.stagedStops.filter(s => s.orderId !== orderId);
+    state.stagedStops = state.stagedStops.filter(s => shipmentKey(s) !== orderId);
     renderStagedStops();
     renderEligibleOrders();
   }
@@ -329,9 +343,11 @@
 
   function selectAllCurrentArea() {
     for (const order of state.filteredOrders) {
-      if (!state.stagedStops.some(s => s.orderId === order.orderId)) {
+      if (!state.stagedStops.some(s => shipmentKey(s) === shipmentKey(order))) {
         state.stagedStops.push({
           orderId: order.orderId,
+      shipmentVoucherId: order.shipmentVoucherId,
+      shipmentVoucherCode: order.shipmentVoucherCode,
           orderCode: order.orderCode,
           dealerId: order.dealerId,
           dealerName: order.dealerName,
@@ -378,7 +394,7 @@
         <div class="routes-stop-index">${index + 1}</div>
         <div class="routes-stop-content">
           <div class="routes-stop-title">
-            ${Utils.escapeHtml(stop.orderCode || 'Điểm giao')} · ${Utils.escapeHtml(stop.receiverName || 'Khách hàng')}
+            ${Utils.escapeHtml(stop.shipmentVoucherCode || stop.orderCode || 'Điểm giao')} · ${Utils.escapeHtml(stop.receiverName || 'Khách hàng')}
           </div>
           <div class="routes-stop-details">
             <div><strong>Điện thoại:</strong> ${Utils.escapeHtml(stop.receiverPhone || '—')}</div>
@@ -413,6 +429,8 @@
   // ── SUBMIT CHUYẾN GIAO HÀNG ──
   async function submitDispatch(e) {
     e.preventDefault();
+    if(state.isSubmitting)return;
+    const epoch=generation;
     if (!canWrite()) {
       showMessage('error', 'Bạn không có quyền WAREHOUSE_EXPORT để phân tuyến tạo chuyến.');
       return;
@@ -467,6 +485,7 @@
         throw new Error(body?.message || 'Không tạo được chuyến giao hàng. Vui lòng thử lại.');
       }
 
+      if(epoch!==generation || !canWrite())return;
       const createdTrip = body.data;
       showMessage('success', `Phân tuyến thành công chuyến ${createdTrip.tripCode} gồm ${createdTrip.totalPoints || state.stagedStops.length} điểm giao!`);
 
@@ -492,7 +511,7 @@
   // ── DANH SÁCH CHUYẾN PHÂN TUYẾN GẦN ĐÂY ──
   async function loadRecentTrips() {
     if (!state.currentWarehouseId || !canRead()) return;
-
+    const epoch=generation, request=++recentRequest;
     state.isLoadingRecent = true;
     const tbody = $('routes-recent-trips-tbody');
     tbody.innerHTML = '<tr><td colspan="8" class="routes-muted" style="text-align: center; padding: 24px;">Đang tải danh sách chuyến…</td></tr>';
@@ -505,12 +524,14 @@
         throw new Error(body?.message || 'Không tải được danh sách chuyến gần đây.');
       }
 
+      if(epoch!==generation || request!==recentRequest || !canRead())return;
       state.recentTrips = Array.isArray(body.data?.content) ? body.data.content : [];
       renderRecentTrips();
     } catch (err) {
+      if(epoch!==generation || request!==recentRequest || !canRead())return;
       tbody.innerHTML = `<tr><td colspan="8" class="routes-error" style="text-align: center;">${Utils.escapeHtml(err.message)}</td></tr>`;
     } finally {
-      state.isLoadingRecent = false;
+      if(epoch===generation && request===recentRequest)state.isLoadingRecent = false;
     }
   }
 
@@ -560,6 +581,8 @@
 
   // ── IN DANH SÁCH ĐIỂM GIAO CỦA CHUYẾN ──
   async function fetchAndPrintTrip(tripId) {
+    if(!canRead())return;
+    const epoch=generation, request=++printRequest;
     showMessage('error');
     try {
       const res = await Auth.apiFetch(`/warehouse/delivery-trips/${encodeURIComponent(tripId)}`);
@@ -567,7 +590,7 @@
       if (!res.ok || !body?.success || !body.data) {
         throw new Error(body?.message || 'Không tải được chi tiết chuyến để in.');
       }
-      openPrintModal(body.data);
+      if(epoch===generation && request===printRequest && canRead())openPrintModal(body.data);
     } catch (err) {
       showMessage('error', err.message);
     }
@@ -600,6 +623,8 @@
   // ── SETUP EVENT LISTENERS ──
   function setupEvents() {
     $('routes-warehouse-select').addEventListener('change', e => {
+      if(state.isSubmitting)return;
+      generation++;state.eligibleOrders=[];state.filteredOrders=[];state.recentTrips=[];closePrintModal();
       state.currentWarehouseId = e.target.value ? Number(e.target.value) : null;
       state.selectedArea = '';
       state.stagedStops = [];
@@ -661,6 +686,9 @@
 
     // Synchronize permission matrix
     window.addEventListener('auth:permissions-changed', () => {
+      generation++;state.stagedStops=[];state.eligibleOrders=[];state.filteredOrders=[];state.recentTrips=[];
+      state.warehouses=[];state.currentWarehouseId=null;closePrintModal();
+      renderStagedStops();renderEligibleOrders();renderRecentTrips();
       updatePermissionUI();
       if (!canRead()) {
         state.stagedStops = [];

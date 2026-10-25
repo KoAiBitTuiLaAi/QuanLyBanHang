@@ -89,7 +89,8 @@ test('S6-08 delivery and stocktaking remain separate and follow their own matrix
   assert.ok(menu.menuItems.some(i=>i.id==='delivery-confirmation'&&i.href==='/warehouse/delivery'));
   const has=permissions=>ids({roles:['ROLE_VIEWER'],permissions}).includes('delivery-confirmation');
   assert.equal(has(['ORDER_VIEW','WAREHOUSE_EXPORT']),true);
-  assert.equal(has(['ORDER_VIEW']),false);assert.equal(has(['WAREHOUSE_EXPORT']),false);
+  assert.equal(has(['ORDER_VIEW']),false);assert.equal(has(['WAREHOUSE_EXPORT']),true);
+  assert.equal(has(['WAREHOUSE_VIEW']),true);assert.equal(has([]),false);
   assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('delivery-confirmation'));
   const stocktake=menu.menuItems.find(i=>i.id==='warehouse-stocktake');assert.equal(stocktake.permission,undefined);
 });
