@@ -83,6 +83,7 @@
 
 - S7-01: Tài chính → Hóa đơn bán hàng → Gộp phiếu đã giao, xem trước/phát hành theo thực giao, xem hóa đơn, lập chứng từ điều chỉnh, in/PDF.
 - S7-02: Tài chính → Ghi nhận thanh toán → Ghi số tiền, hình thức thu, đối trừ tự động FIFO hoặc chọn hoá đơn cụ thể, thu một phần, tra cứu nợ và lập bút toán điều chỉnh.
+- S7-03: Chỉ backend → Xem sổ công nợ theo đại lý với phân tích tuổi nợ (0–30, 31–60, 61–90, trên 90 ngày), lọc riêng nhóm quá hạn, tổng cộng chân bảng và xuất Excel.
 - S7-04: Tự đánh giá rủi ro nợ định kỳ và sau thu tiền; chỉ backend → `/api/finance/debt/config` (cấu hình), `/api/finance/debt/flagged-dealers` (cảnh báo).
 - S7-05: Tài chính → Thu tiền theo tuyến → Ghi khoản thu kèm biên lai, xem chi tiết, xác nhận nhận tiền, đối chiếu theo nhân viên/ngày thu.
 - S7-06: Tài chính → Đối chiếu công nợ → Lập/lưu biên bản theo kỳ, xem lịch sử và PDF; đại lý vào cùng mục → Mở biên bản → Xác nhận khớp hoặc phản hồi lệch, lưu DB.
