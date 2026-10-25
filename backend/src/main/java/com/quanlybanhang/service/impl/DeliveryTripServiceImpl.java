@@ -6,6 +6,9 @@ import com.quanlybanhang.model.*;
 import com.quanlybanhang.repository.*;
 import com.quanlybanhang.service.AuditLogService;
 import com.quanlybanhang.service.DeliveryTripService;
+import com.quanlybanhang.repository.TerritoryRepository;
+import com.quanlybanhang.repository.WarehouseVoucherRepository;
+import com.quanlybanhang.service.DeliveryTripPdfService;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +57,9 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final TerritoryRepository territoryRepository;
+    private final WarehouseVoucherRepository warehouseVoucherRepository;
+    private final DeliveryTripPdfService deliveryTripPdfService;
 
     // ── SCOPE & SECURITY HELPER ──
     private record Scope(boolean global, boolean write, Set<Long> allowedWarehouseIds) {
@@ -140,8 +146,15 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                         .build())
                 .toList();
 
+        List<NamedResourceResponse> territoryResponses = territoryRepository != null
+                ? territoryRepository.findAllByActiveTrueOrderByNameAsc().stream()
+                .map(t -> new NamedResourceResponse(t.getId(), t.getCode(), t.getName()))
+                .toList()
+                : List.of();
+
         return DeliveryTripOptionsResponse.builder()
                 .warehouses(warehouseResponses)
+                .territories(territoryResponses)
                 .tripStatuses(tripStatuses)
                 .stopStatuses(stopStatuses)
                 .canManage(scope.write())
@@ -371,12 +384,20 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
             throw new IllegalArgumentException("Mã chuyến giao hàng " + tripCode + " đã tồn tại");
         }
 
+        Territory assignedTerritory = null;
+        if (request.getTerritoryId() != null) {
+            assignedTerritory = territoryRepository.findById(request.getTerritoryId())
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy khu vực với ID: " + request.getTerritoryId()));
+        }
+
         DeliveryTrip trip = DeliveryTrip.builder()
                 .tripCode(tripCode)
                 .warehouse(warehouse)
                 .driverName(request.getDriverName().trim())
                 .driverPhone(request.getDriverPhone() != null ? request.getDriverPhone().trim() : null)
                 .vehiclePlate(request.getVehiclePlate().trim())
+                .routeName(request.getRouteName() != null ? request.getRouteName().trim() : null)
+                .territory(assignedTerritory)
                 .status(DeliveryTripStatus.IN_PROGRESS)
                 .departureTime(departureTime)
                 .expectedCompletionTime(request.getExpectedCompletionTime())
@@ -388,9 +409,31 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
 
         int stopOrderCounter = 1;
 
-        // 1. Tạo điểm giao từ orderIds nếu có
-        if (request.getOrderIds() != null && !request.getOrderIds().isEmpty()) {
-            for (Long orderId : request.getOrderIds()) {
+        // Gom danh sách đơn hàng và phiếu xuất kho (S6-06)
+        Map<Long, String> orderIdToVoucherCode = new LinkedHashMap<>();
+        if (request.getShipmentVoucherIds() != null && !request.getShipmentVoucherIds().isEmpty()) {
+            for (Long vId : request.getShipmentVoucherIds()) {
+                WarehouseVoucher voucher = warehouseVoucherRepository.findById(vId)
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu xuất kho với ID: " + vId));
+                if (voucher.getType() != WarehouseVoucherType.EXPORT) {
+                    throw new IllegalArgumentException("Phiếu kho " + voucher.getVoucherCode() + " không phải là phiếu xuất kho");
+                }
+                if (voucher.getShipmentOrderId() == null) {
+                    throw new IllegalArgumentException("Phiếu xuất kho " + voucher.getVoucherCode() + " không gắn với đơn hàng");
+                }
+                orderIdToVoucherCode.put(voucher.getShipmentOrderId(), voucher.getVoucherCode());
+            }
+        }
+
+        Set<Long> allOrderIds = new LinkedHashSet<>();
+        if (request.getOrderIds() != null) {
+            allOrderIds.addAll(request.getOrderIds());
+        }
+        allOrderIds.addAll(orderIdToVoucherCode.keySet());
+
+        // 1. Tạo điểm giao từ allOrderIds nếu có
+        if (!allOrderIds.isEmpty()) {
+            for (Long orderId : allOrderIds) {
                 Order order = orderRepository.findById(orderId)
                         .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng ID: " + orderId));
 
@@ -407,10 +450,19 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 String phone = dp != null ? dp.getPhone() : (order.getDealer() != null ? order.getDealer().getPhone() : null);
                 String address = dp != null ? dp.getAddress() : (order.getDealer() != null ? order.getDealer().getAddress() : "Tại kho");
 
+                String voucherCode = orderIdToVoucherCode.get(orderId);
+                if (voucherCode == null) {
+                    List<WarehouseVoucher> vList = warehouseVoucherRepository.findByShipmentOrderIdOrderByIdAsc(order.getId());
+                    if (vList != null && !vList.isEmpty()) {
+                        voucherCode = vList.get(vList.size() - 1).getVoucherCode();
+                    }
+                }
+
                 DeliveryTripStop stop = DeliveryTripStop.builder()
                         .trip(trip)
                         .order(order)
                         .orderCode(order.getOrderCode())
+                        .voucherCode(voucherCode)
                         .dealer(order.getDealer())
                         .dealerName(order.getDealer() != null ? order.getDealer().getName() : order.getCustomerName())
                         .deliveryPoint(dp)
@@ -583,6 +635,63 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                         ("image/png".equals(stop.getProofContentType()) ? "png" : "jpg"))
                 .contentType(org.springframework.http.MediaType.parseMediaType(stop.getProofContentType()))
                 .body(stop.getSignedProof());
+    }
+
+    @Override
+    public DeliveryTripResponse updateTrip(Long id, UpdateDeliveryTripRequest request, String username) {
+        Scope scope = checkScope(true);
+
+        DeliveryTrip trip = tripRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến giao hàng với ID: " + id));
+
+        scope.require(trip.getWarehouse().getId());
+
+        if (trip.getStatus() != DeliveryTripStatus.IN_PROGRESS) {
+            throw new IllegalStateException("Chỉ có thể cập nhật thông tin chuyến giao khi chuyến đang chạy (IN_PROGRESS)");
+        }
+
+        if (!StringUtils.hasText(request.getDriverName())) {
+            throw new IllegalArgumentException("Tên tài xế không được để trống");
+        }
+        if (!StringUtils.hasText(request.getVehiclePlate())) {
+            throw new IllegalArgumentException("Biển số xe không được để trống");
+        }
+
+        trip.setDriverName(request.getDriverName().trim());
+        trip.setDriverPhone(request.getDriverPhone() != null ? request.getDriverPhone().trim() : null);
+        trip.setVehiclePlate(request.getVehiclePlate().trim());
+
+        if (request.getRouteName() != null) {
+            trip.setRouteName(request.getRouteName().trim());
+        }
+
+        if (request.getTerritoryId() != null) {
+            Territory territory = territoryRepository.findById(request.getTerritoryId())
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy khu vực với ID: " + request.getTerritoryId()));
+            trip.setTerritory(territory);
+        }
+
+        if (request.getExpectedCompletionTime() != null) {
+            if (trip.getDepartureTime() != null && request.getExpectedCompletionTime().isBefore(trip.getDepartureTime())) {
+                throw new IllegalArgumentException("Thời gian dự kiến hoàn thành phải sau thời điểm xuất phát");
+            }
+            trip.setExpectedCompletionTime(request.getExpectedCompletionTime());
+        }
+
+        if (request.getNote() != null) {
+            trip.setNote(request.getNote().trim());
+        }
+
+        trip.setUpdatedAt(LocalDateTime.now());
+        DeliveryTrip saved = tripRepository.save(trip);
+
+        auditLogService.logAction("DELIVERY_TRIP", saved.getTripCode(), "UPDATE_TRIP",
+                null, saved.getStatus().name(),
+                "Cập nhật tài xế (" + saved.getDriverName() + "), phương tiện (" + saved.getVehiclePlate()
+                        + ") và tuyến giao " + (saved.getRouteName() != null ? saved.getRouteName() : ""),
+                username);
+
+        return mapToTripResponse(saved);
     }
 
     @Override
@@ -834,6 +943,12 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     @Override
     @Transactional(readOnly = true)
     public List<DeliveryEligibleOrderResponse> getEligibleOrders(Long warehouseId) {
+        return getEligibleOrders(warehouseId, null, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DeliveryEligibleOrderResponse> getEligibleOrders(Long warehouseId, Long territoryId, String keyword) {
         Scope scope = checkScope(false);
 
         if (warehouseId == null) {
@@ -841,30 +956,55 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
         }
         scope.require(warehouseId);
 
-        // Lấy các đơn hàng ở trạng thái EXPORTED thuộc kho này
-        Specification<Order> spec = (root, query, cb) -> cb.and(
-                cb.equal(root.get("warehouse").get("id"), warehouseId),
-                cb.or(
-                        cb.equal(root.get("status"), "EXPORTED"),
-                        cb.equal(root.get("status"), "SHIPPED")
-                )
-        );
+        // Lấy các đơn hàng ở trạng thái EXPORTED hoặc SHIPPED thuộc kho này
+        Specification<Order> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("warehouse").get("id"), warehouseId));
+            predicates.add(cb.or(
+                    cb.equal(root.get("status"), "EXPORTED"),
+                    cb.equal(root.get("status"), "SHIPPED")
+            ));
+
+            if (territoryId != null) {
+                predicates.add(cb.equal(root.get("dealer").get("territory").get("id"), territoryId));
+            }
+
+            if (StringUtils.hasText(keyword)) {
+                String term = "%" + keyword.trim().toLowerCase(Locale.ROOT)
+                        .replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+                Predicate codeLike = cb.like(cb.lower(root.get("orderCode")), term, '!');
+                Predicate dealerLike = cb.like(cb.lower(root.get("dealer").get("name")), term, '!');
+                Predicate custLike = cb.like(cb.lower(root.get("customerName")), term, '!');
+                predicates.add(cb.or(codeLike, dealerLike, custLike));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
 
         List<Order> orders = orderRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"));
 
         return orders.stream()
                 .filter(order -> !Boolean.TRUE.equals(order.getBackordered()))
+                .filter(order -> !stopRepository.existsByOrderIdAndTrip_Status(order.getId(), DeliveryTripStatus.IN_PROGRESS))
                 .map(order -> {
                     DealerDeliveryPoint dp = order.getDeliveryPoint();
-                    String receiver = dp != null ? dp.getReceiverName() : (order.getDealer() != null ? order.getDealer().getName() : order.getCustomerName());
-                    String phone = dp != null ? dp.getPhone() : (order.getDealer() != null ? order.getDealer().getPhone() : null);
-                    String address = dp != null ? dp.getAddress() : (order.getDealer() != null ? order.getDealer().getAddress() : "Tại kho");
+                    Dealer dealer = order.getDealer();
+                    Territory territory = dealer != null ? dealer.getTerritory() : null;
+
+                    String receiver = dp != null ? dp.getReceiverName() : (dealer != null ? dealer.getName() : order.getCustomerName());
+                    String phone = dp != null ? dp.getPhone() : (dealer != null ? dealer.getPhone() : null);
+                    String address = dp != null ? dp.getAddress() : (dealer != null ? dealer.getAddress() : "Tại kho");
+
+                    List<WarehouseVoucher> vouchers = warehouseVoucherRepository.findByShipmentOrderIdOrderByIdAsc(order.getId());
+                    WarehouseVoucher latestVoucher = (vouchers != null && !vouchers.isEmpty())
+                            ? vouchers.get(vouchers.size() - 1)
+                            : null;
 
                     return DeliveryEligibleOrderResponse.builder()
                             .orderId(order.getId())
                             .orderCode(order.getOrderCode())
-                            .dealerId(order.getDealer() != null ? order.getDealer().getId() : null)
-                            .dealerName(order.getDealer() != null ? order.getDealer().getName() : order.getCustomerName())
+                            .dealerId(dealer != null ? dealer.getId() : null)
+                            .dealerName(dealer != null ? dealer.getName() : order.getCustomerName())
                             .deliveryPointId(dp != null ? dp.getId() : null)
                             .receiverName(receiver)
                             .receiverPhone(phone)
@@ -872,9 +1012,32 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                             .expectedDeliveryDate(order.getExpectedDeliveryDate())
                             .totalAmount(order.getTotalAmount())
                             .status(order.getStatus())
+                            .territoryId(territory != null ? territory.getId() : null)
+                            .territoryCode(territory != null ? territory.getCode() : null)
+                            .territoryName(territory != null ? territory.getName() : null)
+                            .shipmentVoucherId(latestVoucher != null ? latestVoucher.getId() : null)
+                            .shipmentVoucherCode(latestVoucher != null ? latestVoucher.getVoucherCode() : null)
                             .build();
                 })
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DeliveryTripManifestResponse getManifest(Long tripId, String username) {
+        return deliveryTripPdfService.getManifest(tripId, username);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] generateManifestPdf(Long tripId, String username) {
+        return deliveryTripPdfService.generateManifestPdf(tripId, username);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String generateManifestPrintHtml(Long tripId, String username) {
+        return deliveryTripPdfService.generateManifestPrintHtml(tripId, username);
     }
 
     // ── MAPPING HELPERS ──

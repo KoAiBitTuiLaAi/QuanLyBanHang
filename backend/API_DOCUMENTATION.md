@@ -3118,12 +3118,16 @@ Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến
 | `GET` | `` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tìm kiếm, lọc và phân trang danh sách chuyến giao hàng (`warehouseId`, `status`, `isOverdue`, `keyword`, `page`, `size`) |
 | `GET` | `/summary` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thống kê tổng hợp: số chuyến đang chạy, số chuyến quá hạn, tổng tiền hàng trên đường, tổng điểm đã giao/còn lại |
 | `GET` | `/{id}` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xem chi tiết chuyến giao hàng, danh sách điểm giao và các mặt hàng chi tiết |
-| `POST` | `` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tạo mới chuyến giao hàng (từ danh sách `orderIds` hoặc `stops` tùy chỉnh) |
+| `POST` | `` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tạo mới chuyến giao hàng (phân tuyến theo khu vực `territoryId`, `routeName`, gom theo `shipmentVoucherIds` hoặc `orderIds` hoặc `stops` tùy chỉnh) |
+| `PUT` | `/{id}` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Cập nhật thông tin chuyến đang giao (gán tài xế, SĐT, biển số xe, tên tuyến đường, khu vực `territoryId`, giờ dự kiến, ghi chú) |
 | `PUT` | `/{id}/stops/{stopId}/status` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Cập nhật trạng thái điểm giao (`DELIVERED` hoặc `FAILED` kèm lý do). Hàng FAILED không tự về kho |
 | `POST` | `/{id}/complete` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hoàn tất chuyến giao hàng. Cảnh báo nếu còn điểm chưa giao được |
 | `POST` | `/{id}/cancel` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hủy chuyến giao hàng (bắt buộc lý do; chặn hủy nếu đã có điểm giao thành công) |
 | `POST` | `/{id}/stops/{stopId}/return-to-warehouse` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thao tác tường minh: Nhập trả lại kho hàng chưa giao được của điểm giao thất bại |
-| `GET` | `/eligible-orders` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Danh sách đơn hàng đã xuất kho (`EXPORTED`) thuộc kho sẵn sàng gán chuyến |
+| `GET` | `/eligible-orders` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Danh sách đơn hàng/phiếu xuất đã xuất kho sẵn sàng gán chuyến, hỗ trợ lọc theo kho (`warehouseId`), khu vực (`territoryId`), và từ khóa (`keyword`) |
+| `GET` | `/{id}/manifest` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Bảng kê danh sách điểm giao của chuyến kèm tên, SĐT, địa chỉ người nhận, mã phiếu xuất, số tiền và hàng hóa chi tiết |
+| `GET` | `/{id}/manifest/pdf` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xuất file PDF bảng kê danh sách điểm giao chuyến (A4, OpenPDF) phục vụ tài xế giao hàng |
+| `GET` | `/{id}/manifest/print` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xuất HTML bảng kê điểm giao hỗ trợ xem trước và in trực tiếp (`window.print()`) |
 
 ### 3. Payload mẫu
 
@@ -3181,6 +3185,61 @@ Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến
   "note": "Biên bản hoàn trả số BB-0123"
 }
 ```
+
+#### Cập nhật chuyến giao hàng (`PUT /api/warehouse/delivery-trips/{id}`)
+
+```json
+{
+  "driverName": "Trần Văn Bình",
+  "driverPhone": "0912987654",
+  "vehiclePlate": "30A-999.88",
+  "routeName": "Tuyến Đông Anh - Mê Linh",
+  "territoryId": 2,
+  "expectedCompletionTime": "2026-10-25T17:30:00",
+  "note": "Ưu tiên giao điểm số 1 trước 10h sáng"
+}
+```
+
+#### Bảng kê điểm giao của chuyến (`GET /api/warehouse/delivery-trips/{id}/manifest`)
+
+```json
+{
+  "id": 1,
+  "tripCode": "CG-20261025-001",
+  "status": "IN_PROGRESS",
+  "driverName": "Trần Văn Bình",
+  "driverPhone": "0912987654",
+  "vehiclePlate": "30A-999.88",
+  "warehouseName": "Kho Tổng Hà Nội",
+  "routeName": "Tuyến Đông Anh - Mê Linh",
+  "territoryName": "Miền Bắc",
+  "totalStops": 2,
+  "totalAmount": 25000000.00,
+  "stops": [
+    {
+      "stopId": 10,
+      "stopOrder": 1,
+      "orderId": 101,
+      "orderCode": "DH-001",
+      "voucherCode": "PX-20261025-001",
+      "receiverName": "Đại lý Thành Đạt",
+      "receiverPhone": "0988776655",
+      "deliveryAddress": "Khu công nghiệp Thăng Long, Đông Anh, Hà Nội",
+      "deliveryAmount": 15000000.00,
+      "status": "PENDING",
+      "items": [
+        {
+          "productName": "Sữa chua Nếp Cẩm",
+          "unit": "thùng",
+          "quantity": 50,
+          "unitPrice": 300000.00
+        }
+      ]
+    }
+  ]
+}
+```
+
 
 ---
 
