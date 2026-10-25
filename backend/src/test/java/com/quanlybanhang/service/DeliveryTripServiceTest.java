@@ -74,6 +74,9 @@ class DeliveryTripServiceTest {
     private AuditLogService auditLogService;
 
     @Mock
+    private OrderStatusHistoryRepository orderStatusHistoryRepository;
+
+    @Mock
     private com.quanlybanhang.repository.TerritoryRepository territoryRepository;
 
     @Mock

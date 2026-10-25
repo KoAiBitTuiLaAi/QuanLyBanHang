@@ -494,6 +494,20 @@ public class DealerPortalController {
     }
 
     /**
+     * S6-09: Theo dõi trạng thái giao hàng của đơn hàng dành cho Đại lý.
+     * Hiển thị 5 mốc thời gian: đã duyệt, đang soạn, đã xuất, đang giao, đã giao.
+     * Xem được số lượng thực giao từng dòng hàng và thông tin xe/tài xế để chủ động bố trí người nhận.
+     */
+    @GetMapping({"/orders/{id}/tracking", "/orders/{id}/delivery-tracking"})
+    @PreAuthorize("hasAuthority('ORDER_VIEW')")
+    public ApiResponse getOrderDeliveryTracking(@PathVariable Long id, Principal principal,
+                                                @RequestParam(required = false) Long dealerId) {
+        Dealer dealer = resolveAuthenticatedDealer(principal, dealerId);
+        DealerDeliveryTrackingResponse tracking = orderService.getDealerOrderDeliveryTracking(id, dealer.getId());
+        return ApiResponse.success("Theo dõi giao hàng của đơn", tracking);
+    }
+
+    /**
      * S4-10: Lấy danh sách điểm giao hàng của đại lý đăng nhập.
      */
     @GetMapping("/delivery-points")
