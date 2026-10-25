@@ -1,4 +1,4 @@
-# Vị trí chức năng theo Product Backlog
+﻿# Vị trí chức năng theo Product Backlog
 
 Đối chiếu Product Backlog với code trên nhánh đang xem; cập nhật ngày 24/10/2026. Mỗi dòng là vị trí thao tác hiện có, không phải kết luận toàn bộ tiêu chí của story đã đạt. Menu/nút chỉ hiện khi tài khoản có quyền tương ứng.
 
@@ -98,7 +98,7 @@
 - S8-03: Kho hàng → Phiếu điều chỉnh → Lập phiếu điều chỉnh (chọn kho, lý do hàng hỏng/mất/hết hạn, ghi rõ giá trị tổn thất), xem chi tiết, liên kết Thẻ kho, Quản lý kho phê duyệt hoặc từ chối (ràng buộc người lập và người duyệt không được là một).
 - S8-04: Kinh doanh → Chỉ tiêu doanh số (`/sales-targets`) → Đặt/sửa chỉ tiêu theo nhân viên và khu vực, theo dõi tiến độ thực tế, khóa kỳ đã qua và ghi nhật ký khi sửa. (đặt/sửa/khóa chỉ tiêu tháng theo nhân viên và khu vực, sửa kỳ đã khóa kèm lý do và nhật ký), `/api/sales-targets/my-progress` (nhân viên xem tiến độ thực tế giữa tháng), `/api/sales-targets/summary` (tổng hợp tiến độ); tự động khóa chỉ tiêu đã qua kỳ.
 - S8-05: Báo cáo → Dashboard điều hành → Sáu chỉ số, doanh số theo ngày/khu vực, đại lý quá hạn và phân trang; lối tắt ở Tổng quan → Công việc.
-- S8-06: Một phần (frontend): Kinh doanh → Báo cáo doanh số → Chọn chiều nhóm, bộ lọc, so sánh cùng kỳ và xuất Excel; chờ API backend để tải/xuất dữ liệu thật.
+- S8-06: Kinh doanh → Báo cáo doanh số → Chọn chiều nhóm, bộ lọc thời gian/đại lý/khu vực/nhóm hàng/nhân viên, xem doanh số/sản lượng/biên lợi nhuận gộp, so sánh cùng kỳ và xuất Excel.
 - S8-07: Báo cáo → Tồn kho & Vòng quay → Xem giá trị tồn theo kho và theo nhóm hàng, số ngày tồn bình quân SKU, phát hiện hàng chậm luân chuyển đang chôn vốn và xuất Excel.
 - S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel; đã có API `/api/warehouse/stock-ledger/export` xuất XLSX theo bộ lọc, nút giao diện vẫn xuất tại trình duyệt và chưa nối API.
 - S8-09: Một phần: Báo cáo → Công nợ theo tuổi nợ → Tổng hợp nhóm tuổi nợ và theo nhân viên, chỉ ra đại lý rủi ro nhất, xuất Excel; Backend hoàn tất đầy đủ API và ma trận quyền REPORT_FINANCE, frontend chờ bật adapter kết nối.

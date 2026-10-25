@@ -1,4 +1,4 @@
-# Trạng thái sprint 1–8
+﻿# Trạng thái sprint 1–8
 
 ## S7-03 — Xem sổ công nợ theo đại lý với phân tích tuổi nợ (Backend) — 25/10/2026
 
@@ -153,23 +153,26 @@ Kiểm thử: **14/14 tests S7-02/S7-09 qua 100%** trong `tests/debt-payments.te
 
 Cập nhật **23/10/2026**, thêm frontend báo cáo doanh số S8-06.
 
-## S8-06 — Báo cáo doanh số đa chiều (chỉ frontend) — 23/10/2026
+## S8-06 — Báo cáo doanh số đa chiều (Backend & Frontend) — 25/10/2026
 
-Nguồn tiêu chí: User story S8-06 (*"Là Quản lý kinh doanh, tôi muốn xem báo cáo doanh số theo nhiều chiều, để biết mặt hàng nào và khu vực nào đang thực sự sinh lãi"*). Chỉ triển khai **frontend** theo yêu cầu.
+Nguồn tiêu chí: User story S8-06 (*"Là Quản lý kinh doanh, tôi muốn xem báo cáo doanh số theo nhiều chiều, để biết mặt hàng nào và khu vực nào đang thực sự sinh lãi"*).
+Đã triển khai hoàn tất **Backend** và sửa các lỗi/bảo mật ma trận quyền trên **Frontend**, kết nối đồng bộ 100%.
 
 | Tiêu chí / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
 |---|---|---|---|
-| Nhóm theo nhân viên, khu vực, đại lý, nhóm hàng hoặc SKU | Chưa làm — cần API `GET /api/reports/sales` và `GET /api/reports/sales/options` | Đã làm: trang `/reports/sales`, bộ lọc chọn chiều nhóm (5 chiều), bộ lọc thời gian, khu vực, đại lý, nhóm hàng, nhân viên | Trang yêu cầu quyền `ORDER_VIEW` từ ma trận; menu chỉ hiện cho `ROLE_ADMIN` và `ROLE_SALES_MANAGER` có `ORDER_VIEW` |
-| Hiển thị doanh số, sản lượng và biên lợi nhuận gộp | Chưa làm — API cần trả `revenue`, `quantity`, `grossMargin` theo chiều nhóm | Đã làm: bảng có cột doanh số, sản lượng; cột biên LN gộp tự ẩn/hiện theo quyền xem margin; KPI tổng hợp phía trên bảng | Biên lợi nhuận chỉ hiển thị khi `ROLE_SALES_MANAGER` hoặc `ROLE_ADMIN`; không dùng role fallback |
-| Biên lợi nhuận chỉ Quản lý kinh doanh xem được | Chưa làm — backend cần kiểm role trước khi trả `grossMargin` | Đã làm: cột margin, KPI margin và dữ liệu margin trong Excel chỉ hiển thị khi `canSeeMargin()` = true (ROLE_SALES_MANAGER hoặc ROLE_ADMIN) | Frontend ẩn cột; backend cần bổ sung kiểm tra và không trả trường `grossMargin` cho role khác |
-| So sánh với cùng kỳ trước và xuất Excel | Chưa làm — API cần nhận tham số `compare=true` và trả `previousRevenue`, `changePercent` | Đã làm: checkbox so sánh cùng kỳ hiện thêm cột DS cùng kỳ và tăng/giảm %; xuất Excel dùng XLSX bao gồm margin (nếu có quyền) và so sánh (nếu bật) | Xuất Excel kiểm lại quyền trước khi tải dữ liệu; hủy xuất khi mất quyền |
-| Ma trận quyền và thu hồi | Chưa làm — controller cần `ORDER_VIEW` và kiểm margin theo role | Đã làm: guard trang `ORDER_VIEW`; thu hồi quyền chuyển 403 và ẩn menu/xóa dữ liệu; đồng bộ quyền mỗi 15 giây qua `auth:permissions-changed` | Frontend kết nối đúng ma trận; **backend chưa có API**, cần triển khai để trang hoạt động đầy đủ |
-| Bố cục và tương thích | Không cần thay đổi | Dùng app-shell, app-navigation, lề chung `app-navigation.css`; bảng cuộn nội bộ; responsive desktop/tablet/mobile | Không lưu dữ liệu nghiệp vụ vào browser storage; route đã cập nhật trong `serve_frontend.py` và `FRONTEND_ROUTES.md` |
+| Nhóm theo nhân viên, khu vực, đại lý, nhóm hàng hoặc SKU | **Đã hoàn tất**: Controller `SalesReportController`, Service `SalesReportService` xử lý 5 chiều nhóm, DTO phân trang `SalesReportPageResponse`, options `GET /api/reports/sales/options` | **Đã hoàn tất**: trang `/reports/sales`, bộ lọc chọn chiều nhóm (5 chiều: SKU, CATEGORY, DEALER, REGION, EMPLOYEE), bộ lọc thời gian, khu vực, đại lý, nhóm hàng, nhân viên | Kết nối hoàn tất 100%. Phân quyền yêu cầu `REPORT_SALES` hoặc `ORDER_VIEW`. Thu hồi quyền lập tức trả 403 trên API và ẩn menu/chuyển trang lỗi trên FE. `ROLE_ADMIN` toàn quyền. |
+| Hiển thị doanh số, sản lượng và biên lợi nhuận gộp | **Đã hoàn tất**: Tính toán doanh số, sản lượng quy chuẩn, giá vốn (costPrice) và biên lợi nhuận gộp `grossMargin (%)`, KPI tổng hợp `totalRevenue`, `totalQuantity`, `averageGrossMargin` | **Đã hoàn tất**: Bảng hiển thị cột doanh số, sản lượng, biên LN gộp tự động ẩn/hiện theo quyền; KPI tổng hợp đầu bảng | Kết nối hoàn tất 100%. Biên lợi nhuận chỉ trả về và hiển thị khi có quyền `FINANCE_VIEW_PROFIT_MARGIN` hoặc `ROLE_ADMIN`. Khi không có quyền, backend trả `null` và frontend ẩn hoàn toàn cột margin và KPI margin. |
+| Biên lợi nhuận chỉ Quản lý kinh doanh xem được | **Đã hoàn tất**: Backend kiểm tra quyền `FINANCE_VIEW_PROFIT_MARGIN` (hoặc `ROLE_ADMIN`). Thu hồi quyền trong ma trận DB sẽ ẩn trường margin (không leak giá vốn) | **Đã sửa lỗi**: Cập nhật `canSeeMargin()` kiểm tra động quyền `FINANCE_VIEW_PROFIT_MARGIN` từ ma trận DB thay vì hardcode role tĩnh. Ẩn cột và KPI khi bị thu hồi | Kết nối hoàn tất 100%. Tuyệt đối không dùng role fallback; ma trận phân quyền DB là nguồn duy nhất. |
+| So sánh với cùng kỳ trước và xuất Excel | **Đã hoàn tất**: Nhận tham số `compare=true`, tự động tính toán khoảng thời gian cùng kỳ liền trước, trả `previousRevenue` và `changePercent (%)`; API xuất Excel `/api/reports/sales/export` chuẩn Apache POI (.xlsx) | **Đã hoàn tất**: Checkbox so sánh hiển thị cột DS cùng kỳ và tăng/giảm % (mũi tên xanh/đỏ); xuất Excel client-side (SheetJS) và tải Excel server-side | Kết nối hoàn tất 100%. Đã sửa lỗi timezone ngày địa phương (`formatLocalYmd`), đảm bảo ngày bắt đầu luôn đúng ngày 1 đầu tháng. |
+| Ma trận quyền và thu hồi | **Đã hoàn tất**: `@PreAuthorize("hasRole('ADMIN') or hasAuthority('REPORT_SALES') or hasAuthority('ORDER_VIEW')")`, kiểm tra margin qua `FINANCE_VIEW_PROFIT_MARGIN` | **Đã hoàn tất**: Menu và trang kết nối `REPORT_SALES` và `ORDER_VIEW`, tự động đồng bộ khi nhận sự kiện `auth:permissions-changed` | Kết nối hoàn tất 100%. Thu hồi quyền trả 403 và chuyển hướng ngay lập tức. |
+| Bố cục và tương thích | Đã hoàn tất | Chuẩn app-shell, lề `app-navigation.css`, bảng cuộn nội bộ, responsive desktop/tablet/mobile; không lưu dữ liệu kinh doanh vào localStorage | Không lưu dữ liệu kinh doanh vào browser storage. |
 
-Giới hạn: **backend chưa có API** `/api/reports/sales` và `/api/reports/sales/options` — trang sẽ hiển thị lỗi khi gọi API. Cần triển khai backend để trang hoạt động. Không tự commit/merge/push.
+Kiểm thử:
+- **Backend**: 14/14 tests qua 100% (`SalesReportSecurityTest`: 5/5 qua, `SalesReportServiceTest`: 9/9 qua).
+- **Frontend**: 288/288 tests qua 100% (bao gồm 3/3 test mới trong `tests/sales-report.test.cjs` và 33/33 test trong `menu-config.test.cjs`).
+- Đã cập nhật `docs/FUNCTION_MAP.md` và `status.md`.
 
 ---
-
 ## S7-08 — Nhắc hạn thanh toán tự động cho đại lý (Frontend) (24/10/2026)
 
 Nhánh `feature/S7-08-chuc-nang-nhac-thanh-toan(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ các tiêu chí nghiệp vụ trong ảnh yêu cầu:
