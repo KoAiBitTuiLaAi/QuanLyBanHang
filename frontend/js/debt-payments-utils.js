@@ -272,13 +272,13 @@
 
   /**
    * Kiểm tra quyền in và tải PDF phiếu thu (S7-09).
-   * Yêu cầu FINANCE_VIEW_DEBT hoặc FINANCE_MANAGE hoặc ROLE_ADMIN (không role fallback).
+   * Yêu cầu FINANCE_VIEW_DEBT hoặc ROLE_ADMIN (không role fallback).
    */
   function canPrintReceipt(user) {
     if (!user || typeof user !== 'object') return false;
     if (Array.isArray(user.roles) && user.roles.includes('ROLE_ADMIN')) return true;
     if (!Array.isArray(user.permissions)) return false;
-    return user.permissions.includes('FINANCE_VIEW_DEBT') || user.permissions.includes('FINANCE_MANAGE');
+    return user.permissions.includes('FINANCE_VIEW_DEBT');
   }
 
   /**
@@ -472,6 +472,13 @@
    */
   function renderReceiptHtml(payment) {
     if (!payment) return '';
+    // Legacy template remains safe for consumers; the application prints server documents.
+    const safe = value => typeof value === 'string'
+      ? value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') : value;
+    payment = Object.fromEntries(Object.entries(payment).map(([key, value]) => [key, safe(value)]));
+    payment.allocations = (Array.isArray(payment.allocations) ? payment.allocations : [])
+      .map(a => Object.fromEntries(Object.entries(a).map(([key, value]) => [key, safe(value)])));
+
 
     const pCode = payment.paymentCode || `PT-${payment.id || 'NEW'}`;
     const pDate = formatDate(payment.paymentDate || payment.createdAt);
