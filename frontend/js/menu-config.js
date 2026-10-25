@@ -395,6 +395,15 @@ const MenuConfig = (() => {
       permission: "INVOICE_VIEW",
     },
     {
+      id: "sales-targets",
+      section: "Kinh doanh",
+      label: "Chỉ tiêu doanh số",
+      icon: '<path d="M12 20V10M18 20V4M6 20v-4"/><path d="M2 20h20"/>',
+      href: "/sales-targets",
+      permissions: ["SALES_TARGET_VIEW", "SALES_TARGET_MANAGE", "SALES_TARGET_VIEW_OWN"],
+      roles: ALL_ROLES,
+    },
+    {
       id: "operations-dashboard",
       section: "Báo cáo",
       label: "Dashboard điều hành",

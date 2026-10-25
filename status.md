@@ -1,5 +1,18 @@
 # Trạng thái sprint 1–8
 
+## S8-04 — Quản lý chỉ tiêu doanh số (Frontend) — 24/10/2026
+
+Nánh `feature/S8-04-chi-tieu-doanh-so(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ 3 tiêu chí nghiệp vụ theo yêu cầu: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Đặt chỉ tiêu theo tháng cho từng nhân viên và từng khu vực** | Có (API đã có từ trước) | Có | Có | Màn hình `Kinh doanh → Chỉ tiêu doanh số` (`/sales-targets`): Quản lý chọn kỳ tháng (`YYYY-MM`), lọ khu vực và nhân viên, xem được cả bảng theo nhân viên lẫn theo khu vực. Modal đặt/sửa chỉ tiêu với trường số tiền + bảo vệ nhập liệu đầy đủ. Gọi API `POST /api/sales-targets`. Yêu cầu quyền `SALES_TARGET_MANAGE` (hoặc `ROLE_ADMIN`). |
+| **Nhân viên xem được tiến độ của chính mình theo thời gian thực** | Có | Có | Có | Tab “Tiến độ của tôi” gọi API `GET /api/sales-targets/my-progress?period=YYYY-MM`: Hiển thị 4 thẻ KPI (Chỉ tiêu, Doanh số thực tế, Tiến độ %, Còn lại cần đạt), thanh tiến độ trực quan đổi màu (thấp/trung bình/tốt/hoàn thành), bảng chi tiết đơn hàng trong kỳ. Yêu cầu quyền `SALES_TARGET_VIEW_OWN` (hoặc `ROLE_ADMIN`). |
+| **Chỉ tiêu đã qua kỳ thì khoá lại, sửa phải có lý do và được ghi nhật ký** | Có | Có | Có | Kỳ đã qua bị khóa tự động (badge “Khóa” đỏ trên bảng và cảnh báo nổi bật). Khi sửa, modal bắt buộc hiển thị khu vực nhập Lý do sửa (bắt buộc, tối đa 500 ký tự) và kiểm tra validate nghiêm ngặt. Mọi thay đổi truyền kèm `reason` lên API; gương nhật ký thông qua `GET /api/sales-targets/summary` trả về `auditLog[]`. Bảng Nhật ký thay đổi hiển thị rõ người sửa, giá trị cũ/mới và lý do. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Ba quyền rõ ràng: `SALES_TARGET_VIEW` (xem toàn bộ), `SALES_TARGET_MANAGE` (đặt/sửa), `SALES_TARGET_VIEW_OWN` (xem tiến độ của mình). Thu hồi quyền trên phiên hiện tại lập tức ẩn menu, khóa giao diện và hủy toàn bộ request. Lắng nghe `auth:permissions-changed`. Không dùng role-based fallback. `ROLE_ADMIN` luôn có toàn quyền. Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: **7/7 tests S8-04 qua 100%** trong `tests/sales-targets.test.cjs`; toàn bộ **266/266 tests Node** trong dự án qua; **13/13 tests server/route Python** qua. Đã cập nhật `serve_frontend.py`, `frontend/js/menu-config.js` và `docs/FUNCTION_MAP.md`.
+
 ## S7-09 — In phiếu thu cho mỗi khoản đã ghi nhận (Frontend) — 24/10/2026
 
 Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ các yêu cầu nghiệp vụ theo ảnh mô tả: **chỉ làm frontend**, không sửa backend.
