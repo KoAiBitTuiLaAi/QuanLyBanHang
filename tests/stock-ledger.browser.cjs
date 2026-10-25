@@ -1,4 +1,4 @@
-// S5-05 in Chrome. All HTTP is mocked; production DB and matrix remain untouched.
+// S5-05 & S8-08 in Chrome. All HTTP is mocked; production DB and matrix remain untouched.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -24,7 +24,7 @@ const rows = warehouses.flatMap(w => Array.from({ length: 24 }, (_, i) => {
   const calls = [], errors = [];
   let fail = false, noWarehouses = false, slowRelease, slowStarted = false;
   try {
-    const context = await browser.newContext({ reducedMotion: 'reduce' });
+    const context = await browser.newContext({ reducedMotion: 'reduce', acceptDownloads: true });
     await context.addInitScript(({user,token}) => { sessionStorage.setItem('accessToken', token); sessionStorage.setItem('user', JSON.stringify(user)); }, {user,token});
     await context.route('http://localhost:8080/api/**', async route => {
       const req = route.request(), url = new URL(req.url()), endpoint = url.pathname.replace('/api','');
@@ -35,6 +35,22 @@ const rows = warehouses.flatMap(w => Array.from({ length: 24 }, (_, i) => {
       if (endpoint === '/auth/permissions') data = { roles: user.roles, permissions: user.permissions };
       else if (!user.roles.includes('ROLE_ADMIN') && !user.permissions.includes('WAREHOUSE_VIEW')) { status = 403; }
       else if (endpoint === '/warehouse/stock-ledger/options') data = { warehouses: noWarehouses ? [] : warehouses, categories, stockStatuses };
+      else if (endpoint === '/warehouse/stock-ledger/export') {
+        const warehouseId = url.searchParams.get('warehouseId');
+        const code = warehouseId === '2' ? 'KHO-HCM' : warehouseId === '1' ? 'KHO-HN' : 'KHO-HN-KHO-HCM';
+        const date = '2026-10-23';
+        const filename = `So-ton-kho_${code}_${date}.xlsx`;
+        return route.fulfill({
+          status: 200,
+          headers: {
+            ...headers,
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+          },
+          body: Buffer.from('mock-excel-binary-data')
+        });
+      }
       else if (endpoint === '/warehouse/stock-ledger') {
         if (fail) status = 500;
         let selected = rows.filter(row => (!url.searchParams.get('warehouseId') || row.warehouseId === Number(url.searchParams.get('warehouseId')))
@@ -69,10 +85,11 @@ const rows = warehouses.flatMap(w => Array.from({ length: 24 }, (_, i) => {
     assert.match(await page.locator('#stock-rows').innerText(), /Kho TP. Hồ Chí Minh/);
     assert.equal(await page.locator('#stock-rows tr').first().locator('td').nth(6).innerText(), '0');
     await page.locator('#stock-reset').click(); await page.locator('#stock-next:not([disabled])').waitFor();
-    await page.evaluate(() => { window.exported = null; XLSX.writeFile = (book,name) => { window.exported = { name, rows: XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]]) }; }; });
+    await page.evaluate(() => { window.exported = null; });
     await page.locator('#stock-export').click(); await page.waitForFunction(() => window.exported !== null);
     const exported = await page.evaluate(() => window.exported);
-    assert.equal(exported.rows.length, 48); assert.equal(exported.rows[0]['Tồn khả dụng'],80.25);
+    assert.match(exported.name, /^So-ton-kho_.*\.xlsx$/);
+    assert.ok(calls.some(c => c.endpoint === '/warehouse/stock-ledger/export'));
     await page.locator('#stock-keyword').fill('không có SKU này'); await page.locator('#stock-apply').click();
     await page.locator('#stock-rows').getByText('Không có sản phẩm phù hợp với bộ lọc.').waitFor();
     assert.equal(await page.locator('#stock-export').isDisabled(), true);

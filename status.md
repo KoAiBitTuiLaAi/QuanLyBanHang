@@ -1,4 +1,4 @@
-﻿# Trạng thái sprint 1–8
+# Trạng thái sprint 1–8
 
 ## S7-03 — Xem sổ công nợ theo đại lý với phân tích tuổi nợ (Backend) — 25/10/2026
 
@@ -1441,3 +1441,101 @@ Nhánh `feature/S8-03-backend-lap_phieu_dieu_chinh_ton_kho_co_phe_duyet`, tạo 
 | Thẻ kho | Có: phiếu `APPROVED` tạo phát sinh âm; phiếu chờ/từ chối không xuất hiện | Có: liên kết Thẻ kho từ chi tiết phiếu | Dữ liệu kho vẫn theo phạm vi được giao và `WAREHOUSE_VIEW` |
 
 Đã cập nhật `backend/API_DOCUMENTATION.md`; vị trí giao diện S8-03 đã có trong `docs/FUNCTION_MAP.md`. Không chạy test theo chỉ thị vận hành; `mvn -q -DskipTests compile` thành công, `git diff --check` sạch.
+
+## S8-08 — Xuất báo cáo tồn kho ra tệp Excel (Frontend) — 25/10/2026
+
+
+
+Nhánh `feature/S8-8-chuc-nang-nhap-xuat-bao-cao-ton-kho(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ các tiêu chí nghiệp vụ theo yêu cầu: **chỉ làm frontend**, kết nối trực tiếp vào API máy chủ đã có sẵn.
+
+
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+
+|---|:---:|:---:|:---:|---|
+
+| **Xuất theo bộ lọc đang áp dụng** | Hoàn thành | Hoàn thành | Có | Nút "Xuất Excel" trên trang `Kho hàng → Tồn kho` (`/warehouse/inventory`) gọi endpoint `GET /api/warehouse/stock-ledger/export`, truyền đầy đủ các tham số lọc `warehouseId`, `categoryId`, `keyword`, `stockStatus`, `belowMinimum` theo đúng bộ lọc đang áp dụng trên giao diện. Xuất toàn bộ kết quả phù hợp, không giới hạn trong trang phân trang hiện tại. |
+
+| **Giữ nguyên ba cột tồn** | Hoàn thành | Hoàn thành | Có | Cả trên giao diện bảng và trong tệp Excel (.xlsx) xuất về đều giữ nguyên 3 cột tồn số riêng biệt: "Tồn thực tế", "Đang giữ chỗ", "Tồn khả dụng", định dạng số chuẩn xác, độc lập không gộp dòng. |
+
+| **Tên tệp chứa mã kho và ngày xuất** | Hoàn thành | Hoàn thành | Có | Tên tệp tải về nhận trực tiếp từ header `Content-Disposition` do backend sinh (e.g. `So-ton-kho_KHO-HN_2026-10-25.xlsx`), hỗ trợ giải mã chuẩn RFC 5987 UTF-8 (`filename*=UTF-8''...`). Khi không có header, frontend fallback theo cấu trúc `So-ton-kho_<Mã kho>_<YYYY-MM-DD>.xlsx` đảm bảo luôn có mã kho và ngày xuất. |
+
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Hoàn thành | Hoàn thành | Có | Bắt buộc quyền `WAREHOUSE_VIEW` từ Database-backed Permission Matrix (hoặc vai trò `ROLE_ADMIN`). Tuyệt đối không role-based fallback (các vai trò `ROLE_WAREHOUSE_MANAGER`, `ROLE_WAREHOUSE_STAFF`, `ROLE_ACCOUNTANT` nếu bị thu hồi quyền trong ma trận DB đều bị cấm). Lắng nghe sự kiện `auth:permissions-changed`, thu hồi quyền lập tức hủy request xuất, khóa/vô hiệu hóa nút xuất và chuyển hướng 403. Không lưu dữ liệu tồn kho vào localStorage/sessionStorage. |
+
+
+
+Kiểm thử: **8/8 tests S8-08 qua 100%** trong `tests/stock-ledger.test.cjs`; toàn bộ **279/279 tests Node** trong dự án qua 100%. Đã cập nhật `frontend/js/stock-ledger-utils.js`, `frontend/js/stock-ledger.js`, `frontend/warehouse/inventory.html`, `tests/stock-ledger.browser.cjs` và `docs/FUNCTION_MAP.md`.
+
+
+
+
+## S8-06 — Báo cáo doanh số đa chiều (chỉ frontend) — 23/10/2026
+
+
+
+Nguồn tiêu chí: User story S8-06 (*"Là Quản lý kinh doanh, tôi muốn xem báo cáo doanh số theo nhiều chiều, để biết mặt hàng nào và khu vực nào đang thực sự sinh lãi"*). Chỉ triển khai **frontend** theo yêu cầu.
+
+
+
+| Tiêu chí / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+
+|---|---|---|---|
+
+| Nhóm theo nhân viên, khu vực, đại lý, nhóm hàng hoặc SKU | Chưa làm — cần API `GET /api/reports/sales` và `GET /api/reports/sales/options` | Đã làm: trang `/reports/sales`, bộ lọc chọn chiều nhóm (5 chiều), bộ lọc thời gian, khu vực, đại lý, nhóm hàng, nhân viên | Trang yêu cầu quyền `ORDER_VIEW` từ ma trận; menu chỉ hiện cho `ROLE_ADMIN` và `ROLE_SALES_MANAGER` có `ORDER_VIEW` |
+
+| Hiển thị doanh số, sản lượng và biên lợi nhuận gộp | Chưa làm — API cần trả `revenue`, `quantity`, `grossMargin` theo chiều nhóm | Đã làm: bảng có cột doanh số, sản lượng; cột biên LN gộp tự ẩn/hiện theo quyền xem margin; KPI tổng hợp phía trên bảng | Biên lợi nhuận chỉ hiển thị khi `ROLE_SALES_MANAGER` hoặc `ROLE_ADMIN`; không dùng role fallback |
+
+| Biên lợi nhuận chỉ Quản lý kinh doanh xem được | Chưa làm — backend cần kiểm role trước khi trả `grossMargin` | Đã làm: cột margin, KPI margin và dữ liệu margin trong Excel chỉ hiển thị khi `canSeeMargin()` = true (ROLE_SALES_MANAGER hoặc ROLE_ADMIN) | Frontend ẩn cột; backend cần bổ sung kiểm tra và không trả trường `grossMargin` cho role khác |
+
+| So sánh với cùng kỳ trước và xuất Excel | Chưa làm — API cần nhận tham số `compare=true` và trả `previousRevenue`, `changePercent` | Đã làm: checkbox so sánh cùng kỳ hiện thêm cột DS cùng kỳ và tăng/giảm %; xuất Excel dùng XLSX bao gồm margin (nếu có quyền) và so sánh (nếu bật) | Xuất Excel kiểm lại quyền trước khi tải dữ liệu; hủy xuất khi mất quyền |
+
+| Ma trận quyền và thu hồi | Chưa làm — controller cần `ORDER_VIEW` và kiểm margin theo role | Đã làm: guard trang `ORDER_VIEW`; thu hồi quyền chuyển 403 và ẩn menu/xóa dữ liệu; đồng bộ quyền mỗi 15 giây qua `auth:permissions-changed` | Frontend kết nối đúng ma trận; **backend chưa có API**, cần triển khai để trang hoạt động đầy đủ |
+
+| Bố cục và tương thích | Không cần thay đổi | Dùng app-shell, app-navigation, lề chung `app-navigation.css`; bảng cuộn nội bộ; responsive desktop/tablet/mobile | Không lưu dữ liệu nghiệp vụ vào browser storage; route đã cập nhật trong `serve_frontend.py` và `FRONTEND_ROUTES.md` |
+
+
+
+Giới hạn: **backend chưa có API** `/api/reports/sales` và `/api/reports/sales/options` — trang sẽ hiển thị lỗi khi gọi API. Cần triển khai backend để trang hoạt động. Không tự commit/merge/push.
+
+
+
+---
+
+
+
+
+## S8-09 — Công nợ quá hạn theo tuổi nợ (24/10/2026, chỉ frontend)
+
+
+
+Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Nhánh `feature/S8-09-frontend-xem_bao_cao_cong_no_qua_han_theo_tuoi_no`. Đã đọc AGENTS.md và hai SKILLS; giữ shell/content frame SaleStock. Không sửa bất kỳ file backend/schema/quyền mặc định; chưa commit/push/merge.
+
+
+
+| Yêu cầu | Backend | Frontend | Kết nối/kiểm chứng |
+
+|---|---|---|---|
+
+| Tổng hợp nhóm tuổi nợ và nhân viên | Chưa có API/DTO/service S8-09 | Đã dựng bộ lọc ngày chốt/nhân viên/chưa phân công, ba chỉ số, bảng nhóm và nhân viên; ngưỡng từ adapter, không tự tính nghiệp vụ | **Chưa nối thật**. Adapter sản phẩm available=false, thông báo chờ backend, số liệu “—”, không có request phỏng đoán/dữ liệu demo |
+
+| Đại lý rủi ro cao nhất | Chưa có tiêu chí/xếp hạng S8-09 | Sẵn sàng hiển thị riskBasis/riskRank/riskLabel từ server, giữ đồng hạng, mở dòng ưu tiên và phân trang 20/50/100 | Logic kiểm thử bằng fixture riêng; không lấy nợ cao nhất hoặc cờ vi phạm làm xếp hạng thay backend |
+
+| Xuất Excel | Chưa có snapshot báo cáo thật | Sẵn logic bốn sheet theo toàn bộ snapshot, giữ chính xác tiền dạng text, không formula/hyperlink, tên file theo ngày/bộ lọc | **Khóa trên bản chạy thật đến khi nối API**; kiểm thử file tải xuống đủ dòng, vượt giới hạn an toàn Number, chống công thức |
+
+| Ma trận quyền DB | REPORT_FINANCE đã có catalog; API 403 riêng S8-09 chưa tồn tại để nghiệm thu | Menu/guard/nút theo REPORT_FINANCE, ADMIN luôn có quyền; không fallback ACCOUNTANT, scope nội bộ loại đại lý-only | Test non-admin một vai trò VIEWER, cấp/thu hồi cùng JWT, hủy dữ liệu trễ; quyền API backend thật **chờ triển khai** |
+
+| Lỗi/đổi bộ lọc/xuất bất đồng bộ | Không thay đổi backend | Xóa số cũ và khóa xuất khi thay bộ lọc, mất quyền, dữ liệu lỗi/không đầy đủ; hủy đọc cũ, bỏ phản hồi trễ, chống bấm xuất liên tiếp | Kiểm thử Chrome cách ly; báo cáo rỗng hợp lệ khác với thiếu API, không hiện 0 giả |
+
+| Tài liệu/đối chiếu | Chỉ đọc source để xác nhận thiếu S8-09 | FUNCTION_MAP và FRONTEND_ROUTES đã bổ sung vị trí; tài liệu hợp đồng **đề xuất**, không giả thành API có sẵn | `docs/S8-09_FRONTEND_CONTRACT.md`; phải thống nhất với thành viên backend trước khi bật adapter |
+
+
+
+Phối hợp Antigravity CLI bằng model **Claude Opus 4.6 (Thinking)** rà luồng xuất Excel/quyền/race/formula. Nhận xét được đối chiếu với code và kiểm thử, bổ sung các ca đổi bộ lọc giữa lúc xuất, thu hồi giữa hai lần kiểm tra, bấm kép và corpus `=`, `+`, `-`, `@`, tab/CR. Không thay bảo vệ frontend bằng backend mới ngoài phạm vi.
+
+
+
+Kết quả cuối: **209/209 unit tests JS**, **13/13 tests server/route**, **18/18 kịch bản Chrome S8-09** và **216/216 kiểm tra bố cục trên 36 trang × 6 kích thước** qua. Đã xem ảnh pending-backend/desktop/mobile và đọc lại file Excel tải xuống bằng bộ đọc XLSX. Kiểm tra FUNCTION_MAP có 69 story, không trùng ID, đúng thứ tự. `git diff --check` sạch; không có diff trong backend. Khi chạy đồng thời hai bộ Chrome trên server Python thử nghiệm, từng gặp timeout khởi tạo/trạng thái sidebar; chạy lại từng bộ riêng đều qua, không đổi code shell để che lỗi test.
+
+
+
+Kiểm thử frontend dùng script/trang thật + adapter HTTP mock **chỉ trong tests**, không tạo/sửa/xóa dữ liệu DB nghiệp vụ. Không coi các fixture là bằng chứng API đã hoạt động hoặc backend đã thực thi REPORT_FINANCE. Lệnh: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/debt-aging.browser.cjs`; `node tests/content-layout.browser.cjs` (`NAV_TEST_URL` trỏ frontend cổng 5538).
