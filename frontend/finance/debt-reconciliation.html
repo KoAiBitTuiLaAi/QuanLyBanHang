@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Biên bản đối chiếu công nợ | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/debt-reconciliation.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content>
+    <main class="content reconcile-page">
+      <!-- Header -->
+      <header class="reconcile-header">
+        <div class="reconcile-title">
+          <h1>Biên bản đối chiếu công nợ</h1>
+          <p>Lập biên bản chốt số liệu công nợ định kỳ giữa SaleStock và Đại lý, xuất PDF và tiếp nhận phản hồi.</p>
+        </div>
+      </header>
+
+      <!-- Access / Error notices -->
+      <div id="reconcile-access" class="reconcile-notice reconcile-notice--warning" hidden>
+        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem và lập biên bản đối chiếu công nợ. Quản trị viên luôn có toàn quyền.
+      </div>
+      <div id="reconcile-error" class="reconcile-notice reconcile-notice--error" role="alert" hidden></div>
+
+      <!-- Filter Card -->
+      <section class="reconcile-filter-card">
+        <form id="reconcile-filter-form" class="reconcile-filter-form">
+          <div class="filter-group">
+            <label for="filter-dealer">Đại lý đối chiếu <span style="color:#dc2626">*</span></label>
+            <select id="filter-dealer" required>
+              <option value="">-- Đang tải danh sách đại lý... --</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="filter-from">Từ ngày <span style="color:#dc2626">*</span></label>
+            <input type="date" id="filter-from" required>
+          </div>
+
+          <div class="filter-group">
+            <label for="filter-to">Đến ngày <span style="color:#dc2626">*</span></label>
+            <input type="date" id="filter-to" required>
+            <div class="quick-ranges">
+              <button type="button" class="btn-chip" data-range="this-month">Tháng này</button>
+              <button type="button" class="btn-chip" data-range="last-month">Tháng trước</button>
+              <button type="button" class="btn-chip" data-range="last-30-days">30 ngày qua</button>
+              <button type="button" class="btn-chip" data-range="this-quarter">Quý này</button>
+              <button type="button" class="btn-chip" data-range="this-year">Năm nay</button>
+            </div>
+          </div>
+
+          <div class="filter-actions">
+            <button id="btn-create-reconcile" class="btn btn--primary" type="submit">
+              Lập biên bản đối chiếu
+            </button>
+            <button id="btn-export-pdf" class="btn btn-export-pdf" type="button" disabled>
+              Xuất PDF
+            </button>
+            <button id="btn-print" class="btn btn--secondary" type="button" disabled>
+              In biên bản
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Initial / Empty Guidance State -->
+      <div id="reconcile-initial-state" class="statement-empty" style="text-align: center; padding: 48px 20px; color: #64748b;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #94a3b8; margin-bottom: 8px;">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <path d="M9 15l2 2 4-4"/>
+        </svg>
+        <p>Vui lòng chọn đại lý và khoảng thời gian để lập biên bản đối chiếu công nợ định kỳ.</p>
+      </div>
+
+      <!-- Loading State -->
+      <div id="reconcile-loading-state" class="statement-empty" style="text-align: center; padding: 48px 20px;" hidden>
+        <p>Đang tổng hợp số liệu biên bản đối chiếu...</p>
+      </div>
+
+      <!-- Result Panel -->
+      <section id="reconcile-result-panel" class="reconcile-page" hidden>
+        <!-- Status & Interaction Action Bar -->
+        <div class="action-status-card">
+          <div class="status-indicator">
+            <span style="font-weight: 600; color: #334155;">Trạng thái biên bản:</span>
+            <span id="reconcile-status-badge" class="status-badge status-badge--pending">Chờ đại lý xác nhận</span>
+            <span id="reconcile-status-desc" style="font-size: 0.8125rem; color: #64748b; margin-left: 6px;"></span>
+          </div>
+
+          <div class="filter-actions" id="dealer-actions-wrap">
+            <button id="btn-dealer-confirm-match" class="btn btn-confirm-match" type="button">
+              Xác nhận khớp đúng
+            </button>
+            <button id="btn-dealer-report-diff" class="btn btn-report-diff" type="button">
+              Phản hồi lệch số liệu
+            </button>
+          </div>
+        </div>
+
+        <!-- Discrepancy Alert if reported -->
+        <div id="discrepancy-alert-box" class="reconcile-notice reconcile-notice--warning" hidden>
+          <div style="font-weight: 700; margin-bottom: 4px;">Thông tin đại lý phản hồi lệch:</div>
+          <div id="discrepancy-alert-content"></div>
+        </div>
+
+        <!-- Official Document Card -->
+        <article class="document-card" id="reconcile-document">
+          <!-- Header Grid -->
+          <div class="doc-header-grid">
+            <div class="doc-header-company">
+              <h3>CÔNG TY CỔ PHẦN SALESTOCK</h3>
+              <p>Địa chỉ: Tầng 6, Tòa nhà Công Nghệ, Hà Nội</p>
+              <p>Điện thoại: 024-3838-8888 | MST: 0108999999</p>
+            </div>
+
+            <div class="doc-header-national">
+              <h4>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h4>
+              <p>Độc lập - Tự do - Hạnh phúc</p>
+              <div class="national-rule"></div>
+            </div>
+          </div>
+
+          <!-- Document Title -->
+          <div class="doc-title-block">
+            <h2>BIÊN BẢN ĐỐI CHIẾU VÀ XÁC NHẬN CÔNG NỢ</h2>
+            <div class="doc-title-period" id="doc-period-text">
+              Kỳ đối chiếu: Từ ngày ... đến ngày ...
+            </div>
+          </div>
+
+          <!-- Parties -->
+          <div class="doc-parties">
+            <p>Hôm nay, hai bên gồm có:</p>
+
+            <!-- Bên A -->
+            <div class="party-block">
+              <div class="party-title">BÊN A (BÊN BÁN): CÔNG TY CỔ PHẦN SALESTOCK</div>
+              <div class="party-row">
+                <div><strong>Đại diện:</strong> Ông/Bà Nguyễn Văn An</div>
+                <div><strong>Chức vụ:</strong> Kế toán trưởng</div>
+                <div><strong>Điện thoại:</strong> 024-3838-8888</div>
+                <div><strong>Tài khoản:</strong> 19036888888888 tại Techcombank</div>
+              </div>
+            </div>
+
+            <!-- Bên B -->
+            <div class="party-block">
+              <div class="party-title" id="doc-party-b-title">BÊN B (ĐẠI LÝ): ĐẠI LÝ</div>
+              <div class="party-row">
+                <div><strong>Mã đại lý:</strong> <span id="doc-dealer-code">—</span></div>
+                <div><strong>Đại diện:</strong> <span id="doc-dealer-contact">Chủ đại lý</span></div>
+                <div><strong>Điện thoại:</strong> <span id="doc-dealer-phone">—</span></div>
+                <div><strong>Địa chỉ:</strong> <span id="doc-dealer-address">—</span></div>
+              </div>
+            </div>
+
+            <p>Hai bên cùng nhau tiến hành đối chiếu và xác nhận số liệu công nợ phát sinh trong kỳ như sau:</p>
+          </div>
+
+          <!-- KPI Summary Cards -->
+          <div class="reconcile-kpi-grid">
+            <div class="reconcile-kpi-item">
+              <span class="reconcile-kpi-item__label">1. Dư nợ đầu kỳ</span>
+              <span class="reconcile-kpi-item__value" id="kpi-opening">0 ₫</span>
+            </div>
+            <div class="reconcile-kpi-item">
+              <span class="reconcile-kpi-item__label">2. Phát sinh tăng (Mua hàng)</span>
+              <span class="reconcile-kpi-item__value value--increase" id="kpi-increase">0 ₫</span>
+            </div>
+            <div class="reconcile-kpi-item">
+              <span class="reconcile-kpi-item__label">3. Phát sinh giảm (Thanh toán)</span>
+              <span class="reconcile-kpi-item__value value--decrease" id="kpi-decrease">0 ₫</span>
+            </div>
+            <div class="reconcile-kpi-item">
+              <span class="reconcile-kpi-item__label">4. Dư nợ cuối kỳ (Bên B nợ Bên A)</span>
+              <span class="reconcile-kpi-item__value value--closing" id="kpi-closing">0 ₫</span>
+            </div>
+          </div>
+
+          <!-- Detailed Ledger Table -->
+          <div>
+            <h4 style="margin: 0 0 10px 0; font-size: 0.9375rem; color: #1e293b;">Bảng kê chi tiết các chứng từ giao dịch đối chiếu:</h4>
+            <div class="doc-table-container">
+              <table class="doc-table">
+                <thead>
+                  <tr>
+                    <th style="width: 5%;" class="text-center">STT</th>
+                    <th style="width: 17%;">Thời gian</th>
+                    <th style="width: 18%;">Số chứng từ</th>
+                    <th style="width: 24%;">Diễn giải nội dung</th>
+                    <th style="width: 12%;" class="text-right">Phát sinh tăng</th>
+                    <th style="width: 12%;" class="text-right">Phát sinh giảm</th>
+                    <th style="width: 12%;" class="text-right">Dư nợ lũy kế</th>
+                  </tr>
+                </thead>
+                <tbody id="reconcile-tbody">
+                  <!-- Injected dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Conclusion -->
+          <div style="font-size: 0.9375rem; margin-top: 10px;">
+            <p><strong>Kết luận:</strong> Tính đến hết ngày <span id="doc-end-date-text">...</span>, số dư nợ Bên B phải thanh toán cho Bên A là: <strong id="doc-closing-words" style="color: #1e3a8a;">0 ₫</strong>.</p>
+            <p style="font-style: italic; color: #475569;">Biên bản này được lập thành 02 (hai) bản có giá trị pháp lý như nhau, mỗi bên giữ 01 bản để làm căn cứ hạch toán kế toán và theo dõi thanh toán.</p>
+          </div>
+
+          <!-- Signatures Block -->
+          <div class="doc-signatures">
+            <div class="sig-col">
+              <h4>ĐẠI DIỆN BÊN A</h4>
+              <p>(Ký, ghi rõ họ tên và đóng dấu)</p>
+              <div class="sig-space"></div>
+              <div class="sig-name">Nguyễn Văn An</div>
+            </div>
+
+            <div class="sig-col">
+              <h4>ĐẠI DIỆN BÊN B</h4>
+              <p>(Ký, ghi rõ họ tên và đóng dấu)</p>
+              <div class="sig-space"></div>
+              <div class="sig-name" id="doc-dealer-sig-name">Đại diện đại lý</div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Modal Phản hồi lệch số liệu -->
+      <div id="modal-discrepancy" class="modal-overlay" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-disc-title">
+          <div class="modal-header">
+            <h3 id="modal-disc-title">Phản hồi lệch số liệu công nợ</h3>
+            <button type="button" id="btn-close-modal" class="btn btn--secondary" style="padding: 4px 10px;">✕</button>
+          </div>
+
+          <form id="form-discrepancy">
+            <div class="modal-body">
+              <div class="filter-group">
+                <label>Số dư nợ theo hệ thống SaleStock:</label>
+                <input type="text" id="modal-system-balance" readonly style="background: #f1f5f9; font-weight: 600;">
+              </div>
+
+              <div class="filter-group">
+                <label for="modal-dealer-amount">Số dư nợ theo sổ sách của Quý đại lý (₫) <span style="color:#dc2626">*</span>:</label>
+                <input type="number" id="modal-dealer-amount" required placeholder="Nhập số tiền theo sổ sách đại lý">
+              </div>
+
+              <div class="filter-group">
+                <label>Chênh lệch dự kiến (Hệ thống - Đại lý):</label>
+                <input type="text" id="modal-diff-amount" readonly style="background: #f1f5f9; font-weight: 700; color: #dc2626;" value="0 ₫">
+              </div>
+
+              <div class="filter-group">
+                <label for="modal-diff-reason">Lý do chênh lệch &amp; chi tiết các chứng từ chưa khớp <span style="color:#dc2626">*</span>:</label>
+                <textarea id="modal-diff-reason" rows="4" required maxlength="500" placeholder="Ví dụ: Đại lý đã chuyển khoản 5.000.000đ ngày 20/10 UNC-012 nhưng chưa thấy hạch toán..."></textarea>
+                <span style="font-size: 0.75rem; color: #64748b;">Tối đa 500 ký tự</span>
+              </div>
+
+              <div id="modal-disc-error" class="reconcile-notice reconcile-notice--error" hidden></div>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" id="btn-cancel-modal" class="btn btn--secondary">Hủy bỏ</button>
+              <button type="submit" id="btn-submit-discrepancy" class="btn btn-report-diff">Gửi phản hồi lệch</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/debt-reconciliation-utils.js"></script>
+  <script src="/js/debt-reconciliation.js"></script>
+</body>
+</html>
+

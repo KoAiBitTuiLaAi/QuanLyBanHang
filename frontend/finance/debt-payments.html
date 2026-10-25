@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ghi nhận thanh toán và đối trừ công nợ | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/debt-payments.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content>
+    <main class="content debt-payments-page">
+      <!-- ── TIÊU ĐỀ & THAO TÁC TRÊN CÙNG ── -->
+      <header class="dp-header">
+        <div>
+          <h1>Ghi nhận thanh toán và đối trừ công nợ</h1>
+          <p>Ghi nhận tiền thanh toán từ đại lý, đối trừ vào công nợ theo FIFO hoặc hoá đơn cụ thể, cho phép thu một phần và lập bút toán điều chỉnh.</p>
+        </div>
+        <div class="dp-header-actions">
+          <button id="dp-btn-reload" class="btn btn--secondary" type="button">Tải lại</button>
+          <button id="dp-btn-create-payment" class="btn btn--primary" type="button" hidden>Lập phiếu thu tiền</button>
+        </div>
+      </header>
+
+      <!-- ── THÔNG BÁO QUYỀN TRUY CẬP ── -->
+      <div id="dp-access-denied" class="dp-notice dp-notice--error" role="alert" hidden>
+        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem danh sách phiếu thu và công nợ đại lý. Quản trị viên luôn có quyền.
+      </div>
+      <div id="dp-manage-notice" class="dp-notice dp-notice--info" hidden>
+        Bạn đang ở chế độ xem lịch sử và công nợ. Để lập phiếu thu tiền hoặc lập bút toán điều chỉnh, tài khoản cần quyền <strong>FINANCE_MANAGE</strong>.
+      </div>
+      <div id="dp-global-error" class="dp-notice dp-notice--error" role="alert" hidden></div>
+      <div id="dp-global-success" class="dp-notice dp-notice--info" role="status" hidden></div>
+
+      <!-- ── VÙNG NỘI DUNG CHÍNH (KHI CÓ QUYỀN XEM) ── -->
+      <div id="dp-content-area" hidden>
+        <!-- Thanh Tab -->
+        <nav class="dp-tabs" aria-label="Các chế độ xem công nợ">
+          <button id="tab-btn-payments" class="dp-tab-btn active" type="button">Lịch sử thu tiền &amp; Bút toán điều chỉnh</button>
+          <button id="tab-btn-invoices" class="dp-tab-btn" type="button">Hoá đơn nợ theo đại lý</button>
+        </nav>
+
+        <!-- ══ TAB 1: DANH SÁCH PHIẾU THU TIỀN & BÚT TOÁN ĐIỀU CHỈNH ══ -->
+        <section id="panel-payments" aria-labelledby="tab-btn-payments">
+          <!-- Bộ lọc phiếu thu -->
+          <div class="dp-filter-panel">
+            <form id="filter-payments-form" class="dp-filter-form">
+              <div class="dp-field-group">
+                <label for="filter-dealer-select">Đại lý</label>
+                <select id="filter-dealer-select">
+                  <option value="">Tất cả đại lý</option>
+                </select>
+              </div>
+
+              <div class="dp-filter-actions">
+                <button class="btn btn--secondary" type="submit">Lọc</button>
+                <button id="btn-reset-payment-filter" class="btn btn--secondary" type="button">Đặt lại</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Bảng danh sách phiếu thu -->
+          <div class="dp-table-container">
+            <div class="dp-table-scroll">
+              <table class="dp-table">
+                <thead>
+                  <tr>
+                    <th>Mã phiếu</th>
+                    <th>Ngày thu</th>
+                    <th>Đại lý</th>
+                    <th class="num">Số tiền thu</th>
+                    <th>Hình thức</th>
+                    <th>Người thu</th>
+                    <th>Loại phiếu</th>
+                    <th style="text-align: right;">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="payments-tbody">
+                  <tr>
+                    <td colspan="8" style="text-align: center; color: var(--ink-500); padding: 24px;">Đang tải danh sách phiếu thu tiền…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Phân trang -->
+            <footer class="dp-pagination">
+              <div id="payments-count-info">0 phiếu thu</div>
+              <div class="dp-pagination-buttons">
+                <button id="payments-btn-prev" class="btn btn--secondary btn--sm" type="button" disabled>Trước</button>
+                <span id="payments-page-info">Trang 1 / 1</span>
+                <button id="payments-btn-next" class="btn btn--secondary btn--sm" type="button" disabled>Sau</button>
+              </div>
+            </footer>
+          </div>
+        </section>
+
+        <!-- ══ TAB 2: HOÁ ĐƠN NỢ THEO ĐẠI LÝ ══ -->
+        <section id="panel-invoices" aria-labelledby="tab-btn-invoices" hidden>
+          <!-- Bộ chọn đại lý và trạng thái hoá đơn -->
+          <div class="dp-filter-panel">
+            <form id="filter-invoices-form" class="dp-filter-form">
+              <div class="dp-field-group" style="flex: 2 1 280px;">
+                <label for="invoices-dealer-select">Chọn đại lý để tra cứu công nợ <span style="color:#dc2626">*</span></label>
+                <select id="invoices-dealer-select" required>
+                  <option value="">-- Chọn đại lý --</option>
+                </select>
+              </div>
+
+              <div class="dp-field-group">
+                <label for="invoices-status-select">Trạng thái thanh toán</label>
+                <select id="invoices-status-select">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="UNPAID">Chưa thanh toán</option>
+                  <option value="PARTIALLY_PAID">Thanh toán một phần</option>
+                  <option value="PAID">Đã thanh toán</option>
+                </select>
+              </div>
+
+              <div class="dp-filter-actions">
+                <button class="btn btn--primary" type="submit">Tra cứu hoá đơn</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Thẻ tóm tắt công nợ đại lý -->
+          <div id="invoices-summary-cards" class="dp-overview-cards" hidden>
+            <div class="dp-stat-card">
+              <div class="dp-stat-card__label">Tổng công nợ còn lại</div>
+              <div id="stat-total-debt" class="dp-stat-card__val dp-stat-card__val--danger">0 ₫</div>
+            </div>
+            <div class="dp-stat-card">
+              <div class="dp-stat-card__label">Số hoá đơn chưa trả hết</div>
+              <div id="stat-unpaid-invoices" class="dp-stat-card__val">0</div>
+            </div>
+            <div class="dp-stat-card">
+              <div class="dp-stat-card__label">Hoá đơn quá hạn</div>
+              <div id="stat-overdue-invoices" class="dp-stat-card__val dp-stat-card__val--danger">0</div>
+            </div>
+          </div>
+
+          <!-- Bảng danh sách hoá đơn -->
+          <div class="dp-table-container">
+            <div class="dp-table-scroll">
+              <table class="dp-table">
+                <thead>
+                  <tr>
+                    <th>Mã đơn / HĐ</th>
+                    <th>Ngày ghi nhận</th>
+                    <th class="num">Tổng tiền</th>
+                    <th class="num">Đã thanh toán</th>
+                    <th class="num">Còn nợ lại</th>
+                    <th>Trạng thái thanh toán</th>
+                    <th>Quá hạn</th>
+                    <th style="text-align: right;">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="invoices-tbody">
+                  <tr>
+                    <td colspan="8" style="text-align: center; color: var(--ink-500); padding: 24px;">Vui lòng chọn đại lý để xem danh sách hoá đơn nợ.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           MODAL 1: LẬP PHIẾU THU TIỀN & ĐỐI TRỪ CÔNG NỢ (S7-02)
+           ══════════════════════════════════════════════════════ -->
+      <div id="modal-payment-create" class="dp-modal-overlay" hidden>
+        <div class="dp-modal dp-modal--large" role="dialog" aria-labelledby="modal-payment-create-title">
+          <header class="dp-modal-header">
+            <h2 id="modal-payment-create-title">Lập phiếu thu tiền &amp; Đối trừ công nợ</h2>
+            <button class="dp-modal-close" data-close-modal="payment-create" aria-label="Đóng">&times;</button>
+          </header>
+
+          <form id="form-payment-create" novalidate>
+            <div class="dp-modal-body">
+              <div id="payment-create-error" class="dp-notice dp-notice--error" role="alert" hidden></div>
+
+              <!-- Chọn đại lý & Banner công nợ -->
+              <div class="dp-form-row">
+                <div class="dp-field-group">
+                  <label for="create-dealer-select">Đại lý thanh toán <span style="color:#dc2626">*</span></label>
+                  <select id="create-dealer-select" required>
+                    <option value="">-- Chọn đại lý thanh toán --</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Banner tổng nợ hiện tại của đại lý -->
+              <div id="dealer-debt-info-banner" class="dp-notice dp-notice--warning" hidden>
+                Tổng công nợ còn lại của đại lý: <strong id="dealer-current-debt-text">0 ₫</strong>.
+                Không cho phép thu vượt quá số tiền này.
+              </div>
+
+              <!-- Lưới thông tin phiếu thu -->
+              <div class="dp-form-grid">
+                <div class="dp-field-group">
+                  <label for="create-amount">Số tiền thu (VND) <span style="color:#dc2626">*</span></label>
+                  <input type="number" id="create-amount" min="1" step="1000" placeholder="Ví dụ: 15000000" required>
+                  <span id="create-amount-formatted" style="font-size: 0.75rem; color: var(--teal-deep); margin-top: 4px; font-weight: 600;"></span>
+                </div>
+
+                <div class="dp-field-group">
+                  <label for="create-payment-method">Hình thức thu <span style="color:#dc2626">*</span></label>
+                  <select id="create-payment-method" required>
+                    <option value="CHUYEN_KHOAN">Chuyển khoản</option>
+                    <option value="TIEN_MAT">Tiền mặt</option>
+                    <option value="KHAC">Khác</option>
+                  </select>
+                </div>
+
+                <div class="dp-field-group">
+                  <label for="create-payment-date">Ngày thu tiền <span style="color:#dc2626">*</span></label>
+                  <input type="date" id="create-payment-date" required>
+                </div>
+
+                <div class="dp-field-group">
+                  <label for="create-recorded-by">Người thu tiền</label>
+                  <input type="text" id="create-recorded-by" maxlength="100" placeholder="Họ tên / Tài khoản người thu">
+                </div>
+              </div>
+
+              <div class="dp-form-grid">
+                <div class="dp-field-group">
+                  <label for="create-reference-code">Mã chứng từ / Mã giao dịch (UNC)</label>
+                  <input type="text" id="create-reference-code" maxlength="100" placeholder="Ví dụ: UNC-20261024-01">
+                </div>
+
+                <div class="dp-field-group">
+                  <label for="create-note">Ghi chú phiếu thu</label>
+                  <input type="text" id="create-note" maxlength="500" placeholder="Nội dung nộp tiền, đối trừ...">
+                </div>
+              </div>
+
+              <!-- Chế độ đối trừ: FIFO vs Chỉ định hoá đơn -->
+              <div class="dp-allocation-box">
+                <div class="dp-allocation-header">
+                  <div class="dp-allocation-title">Phương thức đối trừ vào hoá đơn</div>
+                </div>
+
+                <div class="dp-radio-group">
+                  <label class="dp-radio-label">
+                    <input type="radio" name="allocationMode" value="fifo" checked>
+                    Tự động đối trừ theo nguyên tắc hoá đơn cũ nhất trước (FIFO)
+                  </label>
+                  <label class="dp-radio-label">
+                    <input type="radio" name="allocationMode" value="manual">
+                    Chỉ định đối trừ vào hoá đơn cụ thể
+                  </label>
+                </div>
+
+                <!-- Khu vực FIFO: có nút xem trước -->
+                <div id="fifo-mode-section">
+                  <p style="font-size: 0.8125rem; color: var(--ink-600); margin-bottom: 12px;">
+                    Hệ thống sẽ tự động tìm các hoá đơn phát sinh cũ nhất còn nợ của đại lý để cấn trừ lần lượt cho đến hết số tiền thu.
+                  </p>
+                  <button id="btn-preview-fifo" class="btn btn--secondary btn--sm" type="button">Xem trước đối trừ FIFO</button>
+
+                  <div id="fifo-preview-container" style="margin-top: 14px;" hidden>
+                    <table class="dp-table" style="font-size: 0.8125rem;">
+                      <thead>
+                        <tr>
+                          <th>Hoá đơn</th>
+                          <th class="num">Tổng tiền HĐ</th>
+                          <th class="num">Cấn trừ</th>
+                          <th class="num">Nợ còn lại</th>
+                          <th>Trạng thái sau cấn trừ</th>
+                        </tr>
+                      </thead>
+                      <tbody id="fifo-preview-tbody"></tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Khu vực Thủ công: Danh sách hoá đơn còn nợ kèm ô nhập tiền -->
+                <div id="manual-mode-section" hidden>
+                  <div class="dp-allocation-header">
+                    <p style="font-size: 0.8125rem; color: var(--ink-600);">
+                      Nhập số tiền muốn cấn trừ cho từng hoá đơn. Tổng tiền cấn trừ phải bằng chính xác số tiền phiếu thu.
+                    </p>
+                    <div id="manual-allocation-summary" class="dp-allocation-summary">
+                      Đã phân bổ: 0 ₫ / Số tiền thu: 0 ₫
+                    </div>
+                  </div>
+
+                  <div class="dp-table-scroll" style="max-height: 260px; overflow-y: auto;">
+                    <table class="dp-table" style="font-size: 0.8125rem;">
+                      <thead>
+                        <tr>
+                          <th>Hoá đơn</th>
+                          <th>Ngày ghi nhận</th>
+                          <th class="num">Nợ còn lại</th>
+                          <th style="width: 170px;">Tiền cấn trừ (VND)</th>
+                          <th style="width: 80px;">Nhanh</th>
+                          <th>Ghi chú dòng</th>
+                        </tr>
+                      </thead>
+                      <tbody id="manual-invoices-tbody">
+                        <tr>
+                          <td colspan="6" style="text-align: center; color: var(--ink-500); padding: 16px;">Vui lòng chọn đại lý trước để tải danh sách hoá đơn còn nợ.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <footer class="dp-modal-footer">
+              <button class="btn btn--secondary" data-close-modal="payment-create" type="button">Hủy</button>
+              <button id="btn-submit-payment" class="btn btn--primary" type="submit">Xác nhận ghi thu tiền</button>
+            </footer>
+          </form>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           MODAL 2: CHI TIẾT PHIẾU THU & DANH SÁCH ĐỐI TRỪ (S7-02)
+           ══════════════════════════════════════════════════════ -->
+      <div id="modal-payment-detail" class="dp-modal-overlay" hidden>
+        <div class="dp-modal dp-modal--large" role="dialog" aria-labelledby="modal-payment-detail-title">
+          <header class="dp-modal-header">
+            <h2 id="modal-payment-detail-title">Chi tiết phiếu thu tiền</h2>
+            <button class="dp-modal-close" data-close-modal="payment-detail" aria-label="Đóng">&times;</button>
+          </header>
+
+          <div class="dp-modal-body">
+            <!-- Thông tin phiếu thu -->
+            <div id="payment-detail-info" class="dp-overview-cards" style="margin-bottom: 20px;">
+              <!-- Điền động bằng JS -->
+            </div>
+
+            <!-- Bút toán điều chỉnh liên kết (nếu có) -->
+            <div id="payment-adjustment-banner" class="dp-notice dp-notice--warning" hidden></div>
+
+            <!-- Bảng đối trừ hoá đơn -->
+            <div class="dp-allocation-title" style="margin-bottom: 10px;">Danh sách hoá đơn được đối trừ</div>
+            <div class="dp-table-container">
+              <div class="dp-table-scroll">
+                <table class="dp-table">
+                  <thead>
+                    <tr>
+                      <th>Mã đơn / HĐ</th>
+                      <th class="num">Số tiền đối trừ</th>
+                      <th class="num">Tổng tiền HĐ</th>
+                      <th class="num">Đã trả sau trừ</th>
+                      <th class="num">Còn nợ lại</th>
+                      <th>Trạng thái thanh toán</th>
+                      <th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payment-allocations-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="dp-notice dp-notice--info" style="margin-top: 14px; margin-bottom: 0;">
+              Quy tắc bất biến: Đã ghi nhận thanh toán thì không xoá, chỉ lập bút toán điều chỉnh (REVERSAL hoặc PARTIAL_REVERSAL).
+            </div>
+          </div>
+
+          <footer class="dp-modal-footer">
+            <button class="btn btn--secondary" data-close-modal="payment-detail" type="button">Đóng</button>
+            <button id="btn-print-from-detail" class="btn btn--secondary" type="button" style="color: var(--teal-deep, #0f766e);">In phiếu thu</button>
+            <button id="btn-download-pdf-from-detail" class="btn btn--secondary" type="button">Tải PDF</button>
+            <button id="btn-open-adjust-from-detail" class="btn btn--danger" type="button" hidden>Lập bút toán điều chỉnh</button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           MODAL 3: LẬP BÚT TOÁN ĐIỀU CHỈNH (S7-02)
+           ══════════════════════════════════════════════════════ -->
+      <div id="modal-adjustment-create" class="dp-modal-overlay" hidden>
+        <div class="dp-modal" role="dialog" aria-labelledby="modal-adjustment-title">
+          <header class="dp-modal-header">
+            <h2 id="modal-adjustment-title">Lập bút toán điều chỉnh phiếu thu</h2>
+            <button class="dp-modal-close" data-close-modal="adjustment-create" aria-label="Đóng">&times;</button>
+          </header>
+
+          <form id="form-adjustment-create" novalidate>
+            <div class="dp-modal-body">
+              <div id="adjustment-error" class="dp-notice dp-notice--error" role="alert" hidden></div>
+
+              <!-- Banner thông tin phiếu thu gốc -->
+              <div id="adjustment-orig-banner" class="dp-notice dp-notice--info">
+                Điều chỉnh cho phiếu thu: <strong id="adj-orig-code">PT-...</strong> — Số tiền gốc: <strong id="adj-orig-amount">0 ₫</strong>
+              </div>
+
+              <!-- Chọn loại điều chỉnh -->
+              <div class="dp-field-group" style="margin-bottom: 16px;">
+                <label for="adj-type-select">Loại điều chỉnh <span style="color:#dc2626">*</span></label>
+                <select id="adj-type-select" required>
+                  <option value="REVERSAL">Huỷ bỏ toàn bộ khoản thu (REVERSAL - hoàn trả nợ hoá đơn)</option>
+                  <option value="PARTIAL_REVERSAL">Điều chỉnh giảm một phần số tiền thu (PARTIAL_REVERSAL)</option>
+                </select>
+              </div>
+
+              <!-- Số tiền giảm (nếu là PARTIAL_REVERSAL) -->
+              <div id="adj-amount-group" class="dp-field-group" style="margin-bottom: 16px;" hidden>
+                <label for="adj-amount-input">Số tiền điều chỉnh giảm (VND) <span style="color:#dc2626">*</span></label>
+                <input type="number" id="adj-amount-input" min="1" step="1000" placeholder="Nhập số tiền giảm">
+                <span id="adj-amount-formatted" style="font-size: 0.75rem; color: var(--teal-deep); margin-top: 4px; font-weight: 600;"></span>
+              </div>
+
+              <!-- Lý do điều chỉnh - bắt buộc -->
+              <div class="dp-field-group" style="margin-bottom: 16px;">
+                <label for="adj-reason-input">Lý do điều chỉnh <span style="color:#dc2626">*</span></label>
+                <textarea id="adj-reason-input" maxlength="500" required placeholder="Ghi rõ lý do điều chỉnh: khách chuyển nhầm đại lý, sai số tiền, huỷ phiếu..." rows="3"></textarea>
+                <span style="font-size: 0.75rem; color: var(--ink-500); text-align: right;">Tối đa 500 ký tự</span>
+              </div>
+
+              <div class="dp-form-grid">
+                <div class="dp-field-group">
+                  <label for="adj-date-input">Ngày điều chỉnh</label>
+                  <input type="date" id="adj-date-input">
+                </div>
+
+                <div class="dp-field-group">
+                  <label for="adj-recorded-by-input">Người lập điều chỉnh</label>
+                  <input type="text" id="adj-recorded-by-input" maxlength="100" placeholder="Họ tên người lập">
+                </div>
+              </div>
+
+              <div class="dp-field-group">
+                <label for="adj-note-input">Ghi chú bổ sung</label>
+                <input type="text" id="adj-note-input" maxlength="500" placeholder="Ghi chú thêm nếu có">
+              </div>
+            </div>
+
+            <footer class="dp-modal-footer">
+              <button class="btn btn--secondary" data-close-modal="adjustment-create" type="button">Hủy</button>
+              <button id="btn-submit-adjust" class="btn btn--danger" type="submit">Xác nhận lập bút toán</button>
+            </footer>
+          </form>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           MODAL 4: LỊCH SỬ ĐỐI TRỪ CỦA HOÁ ĐƠN (S7-02)
+           ══════════════════════════════════════════════════════ -->
+      <div id="modal-order-settlements" class="dp-modal-overlay" hidden>
+        <div class="dp-modal" role="dialog" aria-labelledby="modal-order-settlements-title">
+          <header class="dp-modal-header">
+            <h2 id="modal-order-settlements-title">Lịch sử đối trừ hoá đơn</h2>
+            <button class="dp-modal-close" data-close-modal="order-settlements" aria-label="Đóng">&times;</button>
+          </header>
+
+          <div class="dp-modal-body">
+            <div id="order-settlements-summary" class="dp-notice dp-notice--info" style="margin-bottom: 16px;"></div>
+
+            <div class="dp-table-container">
+              <div class="dp-table-scroll">
+                <table class="dp-table">
+                  <thead>
+                    <tr>
+                      <th>Mã phiếu thu</th>
+                      <th class="num">Số tiền đối trừ</th>
+                      <th>Thời gian đối trừ</th>
+                      <th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody id="order-settlements-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <footer class="dp-modal-footer">
+            <button class="btn btn--secondary" data-close-modal="order-settlements" type="button">Đóng</button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           MODAL 5: XEM TRƯỚC VÀ IN PHIẾU THU / TẢI PDF (S7-09)
+           ══════════════════════════════════════════════════════ -->
+      <div id="modal-receipt-print" class="dp-modal-overlay" hidden>
+        <div class="dp-modal dp-modal--large dp-receipt-modal" role="dialog" aria-labelledby="modal-receipt-print-title">
+          <header class="dp-modal-header no-print">
+            <h2 id="modal-receipt-print-title">Chứng từ Phiếu thu tiền công nợ</h2>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button id="btn-print-receipt-action" class="btn btn--primary btn--sm" type="button">In phiếu thu</button>
+              <button id="btn-download-receipt-pdf" class="btn btn--secondary btn--sm" type="button">Tải file PDF</button>
+              <button class="dp-modal-close" data-close-modal="receipt-print" aria-label="Đóng">&times;</button>
+            </div>
+          </header>
+
+          <div class="dp-modal-body" style="background: #f1f5f9; padding: 20px;">
+            <div id="dp-receipt-print-area" class="dp-receipt-paper">
+              <!-- Điền động bằng JS (renderReceiptHtml) -->
+            </div>
+          </div>
+
+          <footer class="dp-modal-footer no-print">
+            <button class="btn btn--secondary" data-close-modal="receipt-print" type="button">Đóng</button>
+            <button id="btn-download-receipt-pdf-footer" class="btn btn--secondary" type="button">Tải file PDF</button>
+            <button id="btn-print-receipt-action-footer" class="btn btn--primary" type="button">In phiếu thu</button>
+          </footer>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/debt-payments-utils.js"></script>
+  <script src="/js/debt-payments.js"></script>
+</body>
+</html>
+

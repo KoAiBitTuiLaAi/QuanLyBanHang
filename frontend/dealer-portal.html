@@ -30,6 +30,13 @@
         </div>
 
         <div class="dp-topbar__actions">
+          <a class="dp-icon-btn dp-notif-btn" id="btn-open-notif" href="/dealer-notifications" aria-label="Thông báo của tôi" title="Thông báo nhắc nợ" style="position: relative; display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; background: rgba(255,255,255,0.1); text-decoration: none;">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span class="dp-cart-badge" id="notif-badge-count" hidden style="background: var(--danger); font-size: 0.6875rem;">0</span>
+          </a>
           <button class="dp-cart-btn" id="btn-open-cart" type="button" aria-label="Mở giỏ hàng">
             <svg viewBox="0 0 24 24" width="22" height="22">
               <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
@@ -79,6 +86,13 @@
             <span class="dp-metric__label">Hạn mức còn lại</span>
             <strong class="dp-metric__value dp-metric__value--avail" id="val-avail-debt">0 ₫</strong>
           </div>
+        </div>
+
+        <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+          <a href="/dealer-invoices" id="link-dealer-invoices" style="font-size: 0.8125rem; font-weight: 600; color: var(--teal-deep); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+            Xem chi tiết công nợ &amp; hóa đơn
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </a>
         </div>
 
         <!-- Overdue debt alert -->

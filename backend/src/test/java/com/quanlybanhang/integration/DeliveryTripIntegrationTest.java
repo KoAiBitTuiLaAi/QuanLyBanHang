@@ -76,6 +76,8 @@ class DeliveryTripIntegrationTest {
     private String adminToken;
     private String staffToken;
 
+    @Autowired private DeliveryTripRepository trips;
+
     @BeforeEach
     void setUp() {
         String key = UUID.randomUUID().toString().substring(0, 8);
@@ -219,6 +221,12 @@ class DeliveryTripIntegrationTest {
         // Bây giờ tồn kho mới được cộng thêm 50 thùng (100 + 50 = 150)
         WarehouseInventory restockedInv2 = inventories.findByWarehouseIdAndProductId(warehouse.getId(), prod2.getId()).orElseThrow();
         assertThat(restockedInv2.getBaseQuantity()).isEqualByComparingTo(new BigDecimal("150.0000"));
+        JsonNode afterReturn = call(HttpMethod.GET, API + "/" + tripId, staffToken, null, 200).get("data");
+        assertThat(afterReturn.get("remainingValue").decimalValue()).isZero();
+        assertThat(afterReturn.get("remainingPoints").asLong()).isZero();
+        JsonNode summaryAfterReturn = call(HttpMethod.GET, API + "/summary?warehouseId=" + warehouse.getId(), staffToken, null, 200).get("data");
+        assertThat(summaryAfterReturn.get("totalValueOnRoad").decimalValue()).isZero();
+        assertThat(summaryAfterReturn.get("totalOutstandingValue").decimalValue()).isZero();
     }
 
     @Test
@@ -329,6 +337,55 @@ class DeliveryTripIntegrationTest {
                 Map.of("username", username, "password", "DeliveryTripTest2026"), JsonNode.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         return Objects.requireNonNull(res.getBody()).get("accessToken").asText();
+    }
+
+    @Test void completedAndCancelledTripsDoNotHideOutstandingGoodsAndReadFilterIsServerSide() {
+        var open = monitoringTrip("OPEN", DeliveryTripStatus.IN_PROGRESS, false);
+        var closed = monitoringTrip("CLOSED", DeliveryTripStatus.COMPLETED, false);
+        var cancelled = monitoringTrip("CANCELLED", DeliveryTripStatus.CANCELLED, false);
+        monitoringTrip("RETURNED", DeliveryTripStatus.IN_PROGRESS, true);
+        var summary = call(HttpMethod.GET, API + "/summary?warehouseId=" + warehouse.getId(), staffToken, null, 200).get("data");
+        assertThat(summary.get("totalOutstandingValue").decimalValue()).isEqualByComparingTo("300");
+        assertThat(summary.get("totalOutstandingTrips").asLong()).isEqualTo(3);
+        assertThat(summary.get("closedOutstandingValue").decimalValue()).isEqualByComparingTo("200");
+        assertThat(summary.get("closedOutstandingTrips").asLong()).isEqualTo(2);
+        assertThat(summary.get("totalValueOnRoad").decimalValue()).isEqualByComparingTo("100");
+        var filtered = call(HttpMethod.GET, API + "?outstandingOnly=true&warehouseId=" + warehouse.getId(), staffToken, null, 200).get("data");
+        assertThat(filtered.get("totalElements").asLong()).isEqualTo(3);
+        var closedOnly = call(HttpMethod.GET, API + "?outstandingOnly=true&status=COMPLETED&warehouseId=" + warehouse.getId(), staffToken, null, 200).get("data");
+        assertThat(closedOnly.get("content").get(0).get("id").asLong()).isEqualTo(closed.getId());
+        call(HttpMethod.GET, API + "?outstandingOnly=true&warehouseId=" + outside.getId(), staffToken, null, 403);
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of());
+        call(HttpMethod.GET, API + "?outstandingOnly=true", staffToken, null, 403);
+        call(HttpMethod.GET, API + "/" + open.getId(), staffToken, null, 403);
+        matrix.updateRolePermissions(ERole.ROLE_ADMIN, Set.of());
+        call(HttpMethod.GET, API + "/" + cancelled.getId(), adminToken, null, 200);
+    }
+
+    @Test void monitoringReadsNeverChangeStockAndViewOnlyTokenWorksWithNextRequestRevocation() {
+        var trip = monitoringTrip("READONLY", DeliveryTripStatus.IN_PROGRESS, false);
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_VIEW));
+        call(HttpMethod.GET, API + "/options", staffToken, null, 200);
+        call(HttpMethod.GET, API + "?status=IN_PROGRESS&isOverdue=true&warehouseId=" + warehouse.getId(), staffToken, null, 200);
+        call(HttpMethod.GET, API + "/summary?warehouseId=" + warehouse.getId(), staffToken, null, 200);
+        call(HttpMethod.GET, API + "/" + trip.getId(), staffToken, null, 200);
+        assertThat(inventories.findByWarehouseIdAndProductId(warehouse.getId(), prod1.getId()).orElseThrow().getBaseQuantity()).isEqualByComparingTo("100");
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_EXPORT));
+        call(HttpMethod.GET, API + "/summary", staffToken, null, 200);
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of());
+        call(HttpMethod.GET, API + "/" + trip.getId(), staffToken, null, 403);
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_VIEW));
+        call(HttpMethod.GET, API + "/" + trip.getId(), staffToken, null, 200);
+    }
+
+    private DeliveryTrip monitoringTrip(String label, DeliveryTripStatus status, boolean returned) {
+        var trip = DeliveryTrip.builder().tripCode(label + "-" + UUID.randomUUID()).warehouse(warehouse)
+                .driverName("Tài xế kiểm thử").vehiclePlate("TEST-READ").status(status)
+                .departureTime(LocalDateTime.now().minusHours(3)).expectedCompletionTime(LocalDateTime.now().minusHours(1)).build();
+        trip.addStop(DeliveryTripStop.builder().stopOrder(1).deliveryAddress("Điểm kiểm thử")
+                .status(DeliveryStopStatus.FAILED).failedReason("Chờ giao lại").deliveryAmount(new BigDecimal("100"))
+                .returnedToWarehouse(returned).build());
+        return trips.save(trip);
     }
 
     private JsonNode call(HttpMethod method, String path, String jwt, Object body, int expectedStatus) {

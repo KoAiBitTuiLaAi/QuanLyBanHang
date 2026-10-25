@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Báo cáo doanh số | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/toast.css">
+  <link rel="stylesheet" href="/css/sales-report.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content><main class="content sales-report-page">
+    <header class="sr-heading"><div><h1>Báo cáo doanh số</h1><p>Phân tích doanh số theo nhiều chiều: nhân viên, khu vực, đại lý, nhóm hàng hoặc từng mặt hàng.</p></div>
+      <div class="sr-actions"><button id="sr-reload" class="btn btn--secondary" type="button">Tải lại</button><button id="sr-export" class="btn btn--primary" type="button" disabled>Xuất Excel</button></div>
+    </header>
+    <p id="sr-error" class="sr-error" role="alert" hidden></p>
+    <section class="sr-panel" aria-label="Bộ lọc và báo cáo doanh số">
+      <form id="sr-filter" class="sr-filters" role="search">
+        <label>Nhóm theo<select id="sr-group-by">
+          <option value="EMPLOYEE">Nhân viên</option>
+          <option value="REGION">Khu vực</option>
+          <option value="DEALER">Đại lý</option>
+          <option value="CATEGORY">Nhóm hàng</option>
+          <option value="SKU" selected>Mặt hàng (SKU)</option>
+        </select></label>
+        <label>Từ ngày<input id="sr-from-date" type="date" required></label>
+        <label>Đến ngày<input id="sr-to-date" type="date" required></label>
+        <label>Khu vực<select id="sr-region" disabled><option value="">Đang tải…</option></select></label>
+        <label>Đại lý<select id="sr-dealer" disabled><option value="">Đang tải…</option></select></label>
+        <label>Nhóm hàng<select id="sr-category" disabled><option value="">Đang tải…</option></select></label>
+        <label>Nhân viên<select id="sr-employee" disabled><option value="">Đang tải…</option></select></label>
+        <div class="sr-filter-actions"><button class="btn btn--primary" id="sr-apply" type="submit" disabled>Xem báo cáo</button><button class="btn btn--secondary" id="sr-reset" type="button" disabled>Đặt lại</button></div>
+      </form>
+      <div class="sr-summary" id="sr-summary" hidden>
+        <div class="sr-kpi" id="sr-kpi-revenue"><span class="sr-kpi-label">Tổng doanh số</span><strong class="sr-kpi-value" id="sr-total-revenue">—</strong></div>
+        <div class="sr-kpi" id="sr-kpi-quantity"><span class="sr-kpi-label">Tổng sản lượng</span><strong class="sr-kpi-value" id="sr-total-quantity">—</strong></div>
+        <div class="sr-kpi sr-kpi--margin" id="sr-kpi-margin" hidden><span class="sr-kpi-label">Biên lợi nhuận gộp TB</span><strong class="sr-kpi-value" id="sr-total-margin">—</strong></div>
+      </div>
+      <div class="sr-compare-toggle">
+        <label><input id="sr-compare" type="checkbox"> So sánh với cùng kỳ trước</label>
+      </div>
+      <div class="sr-result-heading"><h2 id="sr-table-title">Báo cáo doanh số</h2><span id="sr-count" role="status" aria-live="polite">Chọn bộ lọc và bấm Xem báo cáo.</span></div>
+      <div id="sr-table-region" class="sr-table-scroll" tabindex="0" role="region" aria-label="Bảng báo cáo doanh số, cuộn ngang để xem đủ các cột" aria-busy="false">
+        <table class="sr-table"><thead id="sr-thead"><tr>
+          <th scope="col">Mã / Tên</th>
+          <th scope="col" class="sr-number">Doanh số</th>
+          <th scope="col" class="sr-number">Sản lượng</th>
+          <th scope="col" class="sr-number sr-margin-col" hidden>Biên LN gộp (%)</th>
+          <th scope="col" class="sr-number sr-compare-col" hidden>DS cùng kỳ</th>
+          <th scope="col" class="sr-number sr-compare-col" hidden>Tăng/giảm (%)</th>
+        </tr></thead>
+          <tbody id="sr-rows"><tr><td colspan="6" class="sr-empty">Chọn bộ lọc và bấm Xem báo cáo.</td></tr></tbody></table>
+      </div>
+      <footer class="sr-pagination"><label>Số dòng<select id="sr-size"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+        <span id="sr-page-label" aria-live="polite"></span><div class="sr-actions"><button id="sr-prev" class="btn btn--secondary" type="button" disabled>Trước</button><button id="sr-next" class="btn btn--secondary" type="button" disabled>Sau</button></div></footer>
+    </section>
+  </main></div>
+  <script src="/js/auth.js"></script><script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script>
+  <script src="/js/toast.js"></script><script src="/js/vendor/xlsx.full.min.js"></script>
+  <script src="/js/sales-report.js"></script>
+</body>
+</html>

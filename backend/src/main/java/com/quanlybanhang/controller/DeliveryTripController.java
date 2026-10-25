@@ -47,9 +47,12 @@ public class DeliveryTripController {
             @RequestParam(required = false) DeliveryTripStatus status,
             @RequestParam(required = false) Boolean isOverdue,
             @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "false") boolean outstandingOnly,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<DeliveryTripResponse> result = deliveryTripService.searchTrips(warehouseId, status, isOverdue, keyword, page, size);
+        Page<DeliveryTripResponse> result = outstandingOnly
+                ? deliveryTripService.searchTrips(warehouseId, status, isOverdue, keyword, page, size, true)
+                : deliveryTripService.searchTrips(warehouseId, status, isOverdue, keyword, page, size);
         return ApiResponse.success("Danh sách chuyến giao hàng", result);
     }
 

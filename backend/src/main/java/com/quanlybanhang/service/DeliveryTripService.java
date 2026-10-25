@@ -31,6 +31,9 @@ public interface DeliveryTripService {
     Page<DeliveryTripResponse> searchTrips(Long warehouseId, DeliveryTripStatus status,
                                           Boolean isOverdue, String keyword, int page, int size);
 
+    Page<DeliveryTripResponse> searchTrips(Long warehouseId, DeliveryTripStatus status,
+            Boolean isOverdue, String keyword, int page, int size, boolean outstandingOnly);
+
     /**
      * Thống kê tổng quan: số chuyến đang chạy, số chuyến quá hạn, tổng tiền hàng đang nằm trên đường.
      */

@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chỉ tiêu doanh số | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/sales-targets.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+<div data-app-content>
+  <main class="content st-page">
+
+    <!-- ── TIÊU ĐỀ TRANG ─────────────────────────────────────────────── -->
+    <header class="st-heading">
+      <div>
+        <h1>Chỉ tiêu doanh số</h1>
+        <p>Đặt chỉ tiêu tháng theo nhân viên và khu vực; theo dõi tiến độ thực tế giữa kỳ.</p>
+      </div>
+      <div class="st-heading-actions">
+        <button id="st-reload" class="btn btn--secondary" type="button">Tải lại</button>
+        <button id="st-new-btn" class="btn btn--primary" type="button" hidden>Đặt chỉ tiêu mới</button>
+      </div>
+    </header>
+
+    <!-- ── THÔNG BÁO TRUY CẬP ────────────────────────────────────────── -->
+    <p id="st-access-denied" class="st-error" role="alert" hidden>
+      Bạn chưa có quyền truy cập chỉ tiêu doanh số. Quản trị viên luôn có toàn quyền.
+    </p>
+    <p id="st-global-error" class="st-error" role="alert" hidden></p>
+    <p id="st-global-success" class="st-success" role="status" hidden></p>
+
+    <!-- ── WORKSPACE ──────────────────────────────────────────────────── -->
+    <div id="st-workspace" hidden>
+
+      <!-- CHỌN KỲ THÁNG -->
+      <div class="st-period-bar">
+        <label for="st-period-input">Kỳ tháng
+          <input type="month" id="st-period-input" aria-label="Chọn kỳ tháng">
+        </label>
+        <label for="st-view-mode">Xem theo
+          <select id="st-view-mode" aria-label="Chế độ xem">
+            <option value="employee">Nhân viên</option>
+            <option value="region">Khu vực</option>
+          </select>
+        </label>
+        <label for="st-region-filter">Khu vực
+          <select id="st-region-filter" aria-label="Lọc khu vực">
+            <option value="">Tất cả khu vực</option>
+          </select>
+        </label>
+        <div class="st-period-status">
+          <span id="st-period-badge" class="badge"></span>
+          <span id="st-period-snapshot" class="st-muted" role="status"></span>
+        </div>
+      </div>
+
+      <!-- TAB ĐIỀU HƯỚNG (hiển thị tuỳ vai trò) -->
+      <div id="st-tabs" class="st-tabs" role="tablist" aria-label="Chế độ hiển thị chỉ tiêu">
+        <button class="st-tab" role="tab" id="tab-manager" aria-controls="panel-manager" aria-selected="true" type="button">
+          Quản lý &amp; đặt chỉ tiêu
+        </button>
+        <button class="st-tab" role="tab" id="tab-my" aria-controls="panel-my" aria-selected="false" type="button">
+          Tiến độ của tôi
+        </button>
+      </div>
+
+      <!-- ══ PANEL 1: QUẢN LÝ ĐẶT CHỈ TIÊU (ROLE_SALES_MANAGER / ADMIN) ══ -->
+      <div id="panel-manager" role="tabpanel" aria-labelledby="tab-manager">
+
+        <!-- Bảng chỉ tiêu theo nhân viên -->
+        <section id="st-employee-panel" class="st-panel" aria-labelledby="st-employee-title">
+          <div class="st-panel-header">
+            <h2 id="st-employee-title">Chỉ tiêu theo nhân viên</h2>
+            <div class="st-panel-header-actions">
+              <span id="st-employee-count" role="status" class="st-muted"></span>
+            </div>
+          </div>
+
+          <!-- Bộ lọc -->
+          <div class="st-filter" role="search" aria-label="Lọc danh sách chỉ tiêu nhân viên">
+            <label>Tìm nhân viên
+              <input type="search" id="st-filter-keyword" maxlength="100" placeholder="Tên hoặc tên đăng nhập" aria-label="Tìm nhân viên">
+            </label>
+            <label>Trạng thái chỉ tiêu
+              <select id="st-filter-status" aria-label="Lọc trạng thái">
+                <option value="">Tất cả</option>
+                <option value="SET">Đã đặt</option>
+                <option value="UNSET">Chưa đặt</option>
+              </select>
+            </label>
+            <button id="st-filter-apply" class="btn btn--secondary" type="button">Lọc</button>
+            <button id="st-filter-reset" class="btn btn--secondary" type="button">Đặt lại</button>
+          </div>
+
+          <p id="st-locked-notice" class="st-locked-notice" hidden>
+            <strong>Kỳ đã khoá.</strong> Chỉ tiêu của kỳ đã qua bị khoá tự động. Quản lý kinh doanh hoặc Quản trị viên vẫn có thể sửa nhưng phải nhập lý do và mọi thay đổi sẽ được ghi nhật ký.
+          </p>
+
+          <div class="st-scroll" role="region" aria-label="Danh sách chỉ tiêu theo nhân viên" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Nhân viên</th>
+                  <th scope="col">Khu vực</th>
+                  <th scope="col" class="st-num">Chỉ tiêu (đ)</th>
+                  <th scope="col" class="st-num">Doanh số thực</th>
+                  <th scope="col">Tiến độ</th>
+                  <th scope="col">Trạng thái</th>
+                  <th scope="col">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="st-employee-rows">
+                <tr><td colspan="7" class="st-muted" style="text-align:center;padding:24px;">Đang tải dữ liệu…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="st-pagination">
+            <span id="st-employee-page" role="status" class="st-muted"></span>
+            <div class="st-pagination-actions">
+              <button id="st-emp-prev" class="btn btn--secondary" type="button">Trước</button>
+              <button id="st-emp-next" class="btn btn--secondary" type="button">Sau</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Bảng chỉ tiêu theo khu vực (khi chọn view=region) -->
+        <section id="st-region-panel" class="st-panel" aria-labelledby="st-region-title" hidden>
+          <div class="st-panel-header">
+            <h2 id="st-region-title">Chỉ tiêu theo khu vực</h2>
+            <span id="st-region-count" role="status" class="st-muted"></span>
+          </div>
+          <div class="st-region-grid" id="st-region-cards" role="list" aria-label="Chỉ tiêu theo khu vực"></div>
+          <div class="st-scroll" role="region" aria-label="Bảng chi tiết khu vực" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Khu vực</th>
+                  <th scope="col" class="st-num">Tổng chỉ tiêu</th>
+                  <th scope="col" class="st-num">Doanh số thực</th>
+                  <th scope="col">Tiến độ</th>
+                  <th scope="col">Số nhân viên</th>
+                </tr>
+              </thead>
+              <tbody id="st-region-rows">
+                <tr><td colspan="5" class="st-muted" style="text-align:center;padding:24px;">Đang tải…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Nhật ký thay đổi chỉ tiêu (kỳ đã khoá) -->
+        <section id="st-audit-panel" class="st-panel" aria-labelledby="st-audit-title">
+          <div class="st-panel-header">
+            <h2 id="st-audit-title">Nhật ký thay đổi chỉ tiêu</h2>
+            <span class="st-muted">Chỉ ghi khi sửa chỉ tiêu kỳ đã khoá.</span>
+          </div>
+          <ul id="st-audit-list" class="st-audit-list" aria-label="Nhật ký thay đổi">
+            <li class="st-audit-item">
+              <div class="st-audit-dot"></div>
+              <div class="st-audit-body st-muted">Chưa có thay đổi nào được ghi nhận trong kỳ này.</div>
+            </li>
+          </ul>
+        </section>
+      </div>
+
+      <!-- ══ PANEL 2: TIẾN ĐỘ CỦA TÔI (ROLE_SALES / tất cả nhân viên) ══ -->
+      <div id="panel-my" role="tabpanel" aria-labelledby="tab-my" hidden>
+
+        <p id="st-my-pending" class="st-notice" hidden>
+          Kỳ này chưa có chỉ tiêu được đặt cho bạn. Hãy liên hệ Quản lý kinh doanh.
+        </p>
+
+        <!-- 4 KPI cards -->
+        <div class="st-kpi-grid" id="st-my-kpis" aria-label="Chỉ tiêu và tiến độ cá nhân">
+          <div class="st-kpi">
+            <p class="st-kpi__label">Chỉ tiêu tháng</p>
+            <p class="st-kpi__value" id="kpi-target">—</p>
+            <p class="st-kpi__sub" id="kpi-period-label"></p>
+          </div>
+          <div class="st-kpi">
+            <p class="st-kpi__label">Doanh số thực tế</p>
+            <p class="st-kpi__value" id="kpi-actual">—</p>
+            <p class="st-kpi__sub">Tính đến thời điểm hiện tại</p>
+          </div>
+          <div class="st-kpi">
+            <p class="st-kpi__label">Tiến độ (%)</p>
+            <p class="st-kpi__value" id="kpi-pct">—</p>
+            <p class="st-kpi__sub" id="kpi-pct-label"></p>
+          </div>
+          <div class="st-kpi">
+            <p class="st-kpi__label">Còn lại cần đạt</p>
+            <p class="st-kpi__value" id="kpi-remaining">—</p>
+            <p class="st-kpi__sub">Để hoàn thành chỉ tiêu</p>
+          </div>
+        </div>
+
+        <!-- Thanh tiến độ trực quan -->
+        <div class="st-progress-wrap" id="st-my-progress-section">
+          <h2>Tiến độ <span id="st-progress-month"></span></h2>
+          <div class="st-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="st-progress-track" aria-valuenow="0" aria-label="Tiến độ doanh số">
+            <div class="st-progress-bar" id="st-progress-bar" style="width:0%"></div>
+          </div>
+          <div class="st-progress-labels">
+            <span>0 đ</span>
+            <span id="st-progress-actual-label"></span>
+            <span id="st-progress-target-label"></span>
+          </div>
+        </div>
+
+        <!-- Bảng doanh số theo ngày/đơn hàng trong kỳ -->
+        <section class="st-panel" aria-labelledby="st-my-detail-title">
+          <div class="st-panel-header">
+            <h2 id="st-my-detail-title">Chi tiết doanh số trong kỳ</h2>
+            <span id="st-my-detail-count" class="st-muted" role="status"></span>
+          </div>
+          <div class="st-scroll" role="region" aria-label="Chi tiết đơn hàng trong kỳ" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Đơn hàng / Ngày</th>
+                  <th scope="col">Đại lý</th>
+                  <th scope="col" class="st-num">Doanh số đơn</th>
+                  <th scope="col">Trạng thái đơn</th>
+                </tr>
+              </thead>
+              <tbody id="st-my-detail-rows">
+                <tr><td colspan="4" class="st-muted" style="text-align:center;padding:24px;">Đang tải…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="st-pagination">
+            <span id="st-my-page" role="status" class="st-muted"></span>
+            <div class="st-pagination-actions">
+              <button id="st-my-prev" class="btn btn--secondary" type="button">Trước</button>
+              <button id="st-my-next" class="btn btn--secondary" type="button">Sau</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div><!-- /st-workspace -->
+
+    <!-- ══ MODAL ĐẶT / SỬA CHỈ TIÊU ══════════════════════════════════ -->
+    <div id="st-modal-backdrop" class="st-modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="st-modal-title">
+      <div class="st-modal">
+        <h2 id="st-modal-title">Đặt chỉ tiêu doanh số</h2>
+        <p id="st-modal-subtitle">Chỉ tiêu sẽ được áp dụng cho kỳ đã chọn.</p>
+
+        <p id="st-modal-locked-notice" class="st-locked-notice" hidden>
+          <strong>Kỳ đã khoá.</strong> Kỳ tháng này đã qua và bị khoá tự động. Bạn vẫn có thể sửa nhưng <strong>bắt buộc nhập lý do</strong> và mọi thay đổi sẽ được ghi vào nhật ký hệ thống.
+        </p>
+
+        <p id="st-modal-error" class="st-error" role="alert" hidden></p>
+
+        <form id="st-modal-form" class="st-form" novalidate>
+          <input type="hidden" id="st-modal-employee-id">
+          <input type="hidden" id="st-modal-is-locked">
+
+          <label>Nhân viên
+            <input type="text" id="st-modal-employee-name" readonly aria-label="Nhân viên">
+          </label>
+
+          <label>Kỳ tháng
+            <input type="text" id="st-modal-period-display" readonly aria-label="Kỳ tháng">
+          </label>
+
+          <label>Chỉ tiêu doanh số (VND) <span class="req">*</span>
+            <input type="number" id="st-modal-amount" min="0" max="999999999999" step="1000"
+              placeholder="Nhập số tiền chỉ tiêu" required aria-required="true">
+            <small>Nhập giá trị dương. Đặt 0 để xoá chỉ tiêu.</small>
+          </label>
+
+          <label id="st-modal-reason-label">Lý do sửa chỉ tiêu kỳ đã khoá <span class="req">*</span>
+            <textarea id="st-modal-reason" maxlength="500" rows="3"
+              placeholder="Ghi rõ lý do sửa chỉ tiêu kỳ đã qua (tối đa 500 ký tự)"
+              aria-required="true"></textarea>
+            <small id="st-modal-reason-count">0 / 500 ký tự</small>
+          </label>
+
+          <div class="st-modal-actions">
+            <button id="st-modal-cancel" class="btn btn--secondary" type="button">Huỷ</button>
+            <button id="st-modal-submit" class="btn btn--primary" type="submit">Lưu chỉ tiêu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="/js/auth.js"></script>
+<script src="/js/menu-config.js"></script>
+<script src="/js/app-shell.js"></script>
+<script src="/js/app-navigation.js"></script>
+<script src="/js/sales-targets-utils.js"></script>
+<script src="/js/sales-targets.js"></script>
+</body>
+</html>
+

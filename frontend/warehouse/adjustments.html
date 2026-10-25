@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phiếu điều chỉnh tồn kho | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/warehouse-adjustments.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content>
+    <main class="content adjustment-page">
+      <header class="adj-heading">
+        <div>
+          <h1>Phiếu điều chỉnh tồn kho</h1>
+          <p>Xử lý hàng hỏng, hàng mất, hàng hết hạn phải huỷ có phê duyệt minh bạch và người chịu trách nhiệm.</p>
+        </div>
+        <div class="adj-actions">
+          <button id="adj-reload" class="btn btn--secondary" type="button">Tải lại</button>
+          <button id="adj-new" class="btn btn--primary" type="button" hidden>Lập phiếu điều chỉnh</button>
+        </div>
+      </header>
+
+      <p id="adj-error" class="adj-error" role="alert" hidden></p>
+      <p id="adj-success" class="adj-success" role="status" hidden></p>
+      <p id="adj-access-denied" class="adj-error" role="alert" hidden>Bạn cần quyền WAREHOUSE_VIEW để truy cập danh sách phiếu điều chỉnh kho. Quản trị viên luôn có quyền.</p>
+
+      <section id="adj-workspace" hidden>
+        <!-- ── PANEL 1: LẬP PHIẾU ĐIỀU CHỈNH ── -->
+        <section id="adj-create" class="adj-panel" hidden aria-labelledby="adj-create-title">
+          <header class="adj-heading">
+            <div>
+              <h2 id="adj-create-title" tabindex="-1">Lập phiếu điều chỉnh tồn kho</h2>
+              <p>Dùng cho hàng hỏng, hàng mất, hàng hết hạn phải huỷ. Phiếu cần Quản lý kho phê duyệt trước khi cập nhật tồn kho.</p>
+            </div>
+            <button id="adj-create-close" class="btn btn--secondary" type="button">Đóng</button>
+          </header>
+          <p id="adj-create-error" class="adj-error" role="alert" hidden></p>
+
+          <form id="adj-create-form">
+            <div class="adj-form">
+              <label>Kho điều chỉnh <span class="req">*</span>
+                <select id="adj-create-warehouse" required>
+                  <option value="">Chọn kho hàng</option>
+                </select>
+              </label>
+
+              <label>Lý do điều chỉnh <span class="req">*</span>
+                <select id="adj-create-reason" required>
+                  <option value="">Chọn lý do</option>
+                  <option value="DAMAGED">Hàng hỏng</option>
+                  <option value="LOST">Hàng mất</option>
+                  <option value="EXPIRED">Hàng hết hạn phải huỷ</option>
+                  <option value="OTHER">Lý do khác</option>
+                </select>
+              </label>
+
+              <label class="adj-wide">Chi tiết lý do &amp; biên bản xử lý <span class="req">*</span>
+                <textarea id="adj-create-reason-detail" maxlength="500" rows="2" placeholder="Ghi rõ tình trạng, nguyên nhân hư hỏng / mất mát / hết hạn và căn cứ lập biên bản" required></textarea>
+                <small>Bắt buộc ghi rõ nguyên nhân để phục vụ đối soát, kiểm toán nội bộ.</small>
+              </label>
+            </div>
+
+            <h3>Chọn mặt hàng điều chỉnh giảm</h3>
+            <div class="adj-form">
+              <label>Sản phẩm
+                <select id="adj-item-product">
+                  <option value="">Chọn sản phẩm từ kho</option>
+                </select>
+              </label>
+
+              <label>Đơn vị tính
+                <input id="adj-item-unit" type="text" readonly placeholder="—">
+              </label>
+
+              <label>Tồn kho khả dụng
+                <input id="adj-item-available" type="text" readonly placeholder="—">
+              </label>
+
+              <label>Số lượng giảm <span class="req">*</span>
+                <input id="adj-item-qty" type="number" step="0.0001" min="0.0001" placeholder="Nhập số lượng">
+              </label>
+
+              <label>Đơn giá vốn ước tính (VND)
+                <input id="adj-item-price" type="number" step="1" min="0" placeholder="Giá quy chuẩn">
+              </label>
+
+              <div class="adj-actions" style="margin-bottom: 0;">
+                <button id="adj-item-add" class="btn btn--secondary" type="button">Thêm vào phiếu</button>
+              </div>
+            </div>
+
+            <div class="adj-scroll" role="region" aria-label="Danh sách mặt hàng điều chỉnh" tabindex="0">
+              <table id="adj-items-table">
+                <thead>
+                  <tr>
+                    <th>Mã SKU</th>
+                    <th>Tên sản phẩm</th>
+                    <th>ĐVT</th>
+                    <th class="adj-num">Số lượng giảm</th>
+                    <th class="adj-num">Đơn giá</th>
+                    <th class="adj-num">Giá trị tổn thất</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="adj-create-rows">
+                  <tr>
+                    <td colspan="7" class="adj-muted" style="text-align: center; padding: 18px;">Chưa có mặt hàng nào được chọn.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="adj-facts" style="margin-top: 12px; background: var(--surface); padding: 14px; border-radius: var(--radius-sm);">
+              <div>
+                <dt>Tổng giá trị tổn thất</dt>
+                <dd id="adj-create-total-loss" class="adj-loss-highlight">0 đ</dd>
+              </div>
+            </div>
+
+            <div class="adj-form">
+              <label class="adj-wide">Ghi chú bổ sung
+                <textarea id="adj-create-note" maxlength="500" rows="2" placeholder="Ghi chú người chịu trách nhiệm, tài liệu đính kèm nếu có"></textarea>
+              </label>
+            </div>
+
+            <label class="adj-check">
+              <input id="adj-create-check" type="checkbox" required>
+              Tôi xác nhận thông tin hàng hỏng / mất / hết hạn và giá trị tổn thất trên là trung thực và chính xác. Phiếu sẽ được chuyển Quản lý kho phê duyệt.
+            </label>
+
+            <div class="adj-actions">
+              <button id="adj-create-submit" class="btn btn--primary" type="submit" disabled>Lập phiếu — Chờ phê duyệt</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- ── PANEL 2: DANH SÁCH PHIẾU ĐIỀU CHỈNH ── -->
+        <section id="adj-list-panel" class="adj-panel" aria-labelledby="adj-list-title">
+          <form id="adj-filter" class="adj-form" role="search">
+            <label>Kho hàng
+              <select id="adj-filter-warehouse">
+                <option value="">Tất cả kho</option>
+              </select>
+            </label>
+
+            <label>Trạng thái
+              <select id="adj-filter-status">
+                <option value="">Tất cả trạng thái</option>
+                <option value="PENDING_APPROVAL">Chờ phê duyệt</option>
+                <option value="APPROVED">Đã phê duyệt / Ghi sổ</option>
+                <option value="REJECTED">Đã từ chối</option>
+              </select>
+            </label>
+
+            <label>Lý do điều chỉnh
+              <select id="adj-filter-reason">
+                <option value="">Tất cả lý do</option>
+                <option value="DAMAGED">Hàng hỏng</option>
+                <option value="LOST">Hàng mất</option>
+                <option value="EXPIRED">Hàng hết hạn phải huỷ</option>
+                <option value="OTHER">Lý do khác</option>
+              </select>
+            </label>
+
+            <label>Từ khóa
+              <input id="adj-filter-keyword" type="search" maxlength="150" placeholder="Mã phiếu, người lập, sản phẩm">
+            </label>
+
+            <div class="adj-actions" style="margin-bottom: 0;">
+              <button id="adj-filter-submit" class="btn btn--secondary" type="submit">Lọc phiếu</button>
+              <button id="adj-filter-reset" class="btn btn--secondary" type="button">Đặt lại</button>
+            </div>
+          </form>
+
+          <header class="adj-heading">
+            <h2 id="adj-list-title">Danh sách phiếu điều chỉnh</h2>
+            <span id="adj-count" role="status"></span>
+          </header>
+
+          <div class="adj-scroll" role="region" aria-label="Danh sách phiếu điều chỉnh tồn kho" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Mã phiếu / Ngày lập</th>
+                  <th>Kho hàng</th>
+                  <th>Lý do điều chỉnh</th>
+                  <th class="adj-num">Giá trị tổn thất</th>
+                  <th>Người lập</th>
+                  <th>Người duyệt</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="adj-list-rows">
+                <tr>
+                  <td colspan="8" class="adj-muted" style="text-align: center; padding: 24px;">Đang tải dữ liệu...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="adj-actions adj-pagination">
+            <button id="adj-prev" class="btn btn--secondary" type="button">Trước</button>
+            <span id="adj-page" role="status"></span>
+            <button id="adj-next" class="btn btn--secondary" type="button">Sau</button>
+          </div>
+        </section>
+
+        <!-- ── PANEL 3: CHI TIẾT & PHÊ DUYỆT PHIẾU ── -->
+        <section id="adj-detail" class="adj-panel" hidden aria-labelledby="adj-detail-title">
+          <header class="adj-heading">
+            <div>
+              <h2 id="adj-detail-title" tabindex="-1">Chi tiết phiếu điều chỉnh</h2>
+              <p id="adj-detail-code"></p>
+            </div>
+            <button id="adj-detail-close" class="btn btn--secondary" type="button">Đóng chi tiết</button>
+          </header>
+          <p id="adj-detail-error" class="adj-error" role="alert" hidden></p>
+
+          <dl id="adj-facts" class="adj-facts"></dl>
+
+          <h3>Danh sách mặt hàng điều chỉnh</h3>
+          <div class="adj-scroll" role="region" aria-label="Chi tiết mặt hàng điều chỉnh" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Mã SKU</th>
+                  <th>Tên sản phẩm</th>
+                  <th>ĐVT</th>
+                  <th class="adj-num">Số lượng giảm</th>
+                  <th class="adj-num">Đơn giá</th>
+                  <th class="adj-num">Giá trị tổn thất</th>
+                  <th>Thao tác thẻ kho</th>
+                </tr>
+              </thead>
+              <tbody id="adj-detail-rows"></tbody>
+            </table>
+          </div>
+
+          <!-- KHU VỰC PHÊ DUYỆT (CHỈ QUẢN LÝ KHO DUYỆT, NGƯỜI LẬP ≠ NGƯỜI DUYỆT) -->
+          <div id="adj-approval-section" class="adj-approval-box" hidden>
+            <h3>Phê duyệt phiếu điều chỉnh</h3>
+            <p class="adj-notice">Chỉ Quản lý kho có quyền WAREHOUSE_APPROVE được duyệt. Sau khi duyệt, tồn kho sẽ được cập nhật giảm trừ và phản ánh trực tiếp trên thẻ kho.</p>
+
+            <!-- Cảnh báo khi người lập cố tình tự duyệt phiếu của chính mình -->
+            <p id="adj-creator-warning" class="adj-warning" role="alert" hidden>
+              <strong>Kiểm soát nội bộ:</strong> Bạn là người lập phiếu này. Theo quy định, người lập và người duyệt không được là một người. Cần Quản lý kho độc lập khác phê duyệt.
+            </p>
+
+            <form id="adj-approval-form">
+              <div class="adj-form">
+                <label class="adj-wide">Lý do từ chối (bắt buộc nếu bấm Từ chối phiếu)
+                  <textarea id="adj-reject-reason" maxlength="500" rows="2" placeholder="Ghi rõ lý do không chấp thuận phiếu điều chỉnh"></textarea>
+                </label>
+              </div>
+
+              <label class="adj-check" id="adj-approve-check-label">
+                <input id="adj-approve-check" type="checkbox">
+                Tôi xác nhận đã kiểm tra thực tế, đối soát nguyên nhân tổn thất và đồng ý phê duyệt điều chỉnh giảm tồn kho.
+              </label>
+
+              <div class="adj-actions">
+                <button id="adj-btn-approve" class="btn btn--primary" type="button" disabled>Phê duyệt điều chỉnh</button>
+                <button id="adj-btn-reject" class="btn btn--danger" type="button" disabled>Từ chối phiếu</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/warehouse-adjustment-utils.js"></script>
+  <script src="/js/warehouse-adjustments.js"></script>
+</body>
+</html>
+

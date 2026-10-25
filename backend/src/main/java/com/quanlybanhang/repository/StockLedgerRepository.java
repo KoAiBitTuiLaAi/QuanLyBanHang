@@ -59,4 +59,12 @@ public interface StockLedgerRepository extends Repository<WarehouseInventory, Lo
     Page<StockLedgerRow> findBelowMinimum(@Param("warehouseIds") List<Long> warehouseIds,
             @Param("warehouseId") Long warehouseId, @Param("categoryId") Long categoryId,
             @Param("keyword") String keyword, @Param("stockStatus") String stockStatus, Pageable pageable);
+    /** Same predicates/order as the screen, without a COUNT query for each export batch. */
+    @Query(value = SELECT_ROWS + FROM_FILTERS +
+            " AND (:belowMinimum = FALSE OR (" + BELOW_MINIMUM + ")) ORDER BY w.code, p.code, p.id", nativeQuery = true)
+    org.springframework.data.domain.Slice<StockLedgerRow> findForExport(
+            @Param("warehouseIds") List<Long> warehouseIds,
+            @Param("warehouseId") Long warehouseId, @Param("categoryId") Long categoryId,
+            @Param("keyword") String keyword, @Param("stockStatus") String stockStatus,
+            @Param("belowMinimum") boolean belowMinimum, Pageable pageable);
 }

@@ -36,4 +36,7 @@ public class WarehouseRequest {
 
     /** Trạng thái: true = Hoạt động, false = Ngừng hoạt động */
     private Boolean active;
+
+    /** Đánh dấu kho hàng lỗi / hàng hỏng (S8-01) */
+    private Boolean defective;
 }

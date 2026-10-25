@@ -57,6 +57,47 @@ public class DebtPayment {
     @Column(name = "recorded_by", length = 100)
     private String recordedBy;
 
+    /** Loại phiếu: PAYMENT (phiếu thu) hoặc ADJUSTMENT (bút toán điều chỉnh) (S7-02) */
+    @Column(name = "payment_type", length = 30)
+    @Builder.Default
+    private String paymentType = "PAYMENT";
+
+    /** Phiếu thu gốc được điều chỉnh (nếu đây là bút toán điều chỉnh) (S7-02) */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "original_payment_id")
+    private DebtPayment originalPayment;
+
+    /** Lý do lập bút toán điều chỉnh (S7-02) */
+    @Column(name = "adjustment_reason", length = 500)
+    private String adjustmentReason;
+
+    /** Chi tiết đối trừ vào các hoá đơn / đơn hàng (S7-02) */
+    @OneToMany(mappedBy = "payment", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private java.util.List<DebtPaymentAllocation> allocations = new java.util.ArrayList<>();
+
+    public void addAllocation(DebtPaymentAllocation allocation) {
+        if (this.allocations == null) {
+            this.allocations = new java.util.ArrayList<>();
+        }
+        this.allocations.add(allocation);
+        allocation.setPayment(this);
+    }
+
+    public void setAllocations(java.util.List<DebtPaymentAllocation> newAllocations) {
+        if (this.allocations == null) {
+            this.allocations = new java.util.ArrayList<>();
+        } else {
+            this.allocations.clear();
+        }
+        if (newAllocations != null) {
+            for (DebtPaymentAllocation alloc : newAllocations) {
+                this.allocations.add(alloc);
+                alloc.setPayment(this);
+            }
+        }
+    }
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -67,6 +108,9 @@ public class DebtPayment {
         }
         if (paymentDate == null) {
             paymentDate = LocalDate.now();
+        }
+        if (paymentType == null) {
+            paymentType = "PAYMENT";
         }
     }
 }

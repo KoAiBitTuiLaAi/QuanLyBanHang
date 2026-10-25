@@ -152,6 +152,13 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     @Transactional(readOnly = true)
     public Page<DeliveryTripResponse> searchTrips(Long warehouseId, DeliveryTripStatus status,
                                                  Boolean isOverdue, String keyword, int page, int size) {
+        return searchTrips(warehouseId, status, isOverdue, keyword, page, size, false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DeliveryTripResponse> searchTrips(Long warehouseId, DeliveryTripStatus status,
+            Boolean isOverdue, String keyword, int page, int size, boolean outstandingOnly) {
         Scope scope = checkScope(false);
 
         if (warehouseId != null) {
@@ -161,6 +168,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
         if (page < 0 || size < 1 || size > 200) {
             throw new IllegalArgumentException("Trang phải không âm; số dòng mỗi trang từ 1 đến 200");
         }
+        if (keyword != null && keyword.length() > 150) throw new IllegalArgumentException("Từ khóa tối đa 150 ký tự");
 
         List<Long> allowedWarehouseIds = warehouseId != null
                 ? List.of(warehouseId)
@@ -176,6 +184,15 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
             // 1. Phân quyền phạm vi kho
             predicates.add(root.get("warehouse").get("id").in(allowedWarehouseIds));
 
+            if (outstandingOnly) {
+                var sub = query.subquery(Long.class);
+                var stop = sub.from(DeliveryTripStop.class);
+                sub.select(stop.get("id")).where(cb.equal(stop.get("trip"), root),
+                        cb.notEqual(stop.get("status"), DeliveryStopStatus.DELIVERED),
+                        cb.or(cb.isNull(stop.get("returnedToWarehouse")), cb.isFalse(stop.get("returnedToWarehouse"))));
+                predicates.add(cb.exists(sub));
+            }
+
             // 2. Lọc trạng thái chuyến
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
@@ -190,7 +207,8 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 } else {
                     predicates.add(cb.or(
                             cb.notEqual(root.get("status"), DeliveryTripStatus.IN_PROGRESS),
-                            cb.greaterThanOrEqualTo(root.get("expectedCompletionTime"), now)
+                            cb.greaterThanOrEqualTo(root.get("expectedCompletionTime"), now),
+                            cb.isNull(root.get("expectedCompletionTime"))
                     ));
                 }
             }
@@ -241,6 +259,8 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                     .totalRemainingPoints(0L)
                     .totalFailedPoints(0L)
                     .totalPendingPoints(0L)
+                    .totalOutstandingValue(BigDecimal.ZERO).totalOutstandingTrips(0L)
+                    .closedOutstandingValue(BigDecimal.ZERO).closedOutstandingTrips(0L)
                     .build();
         }
 
@@ -273,7 +293,17 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
             totalPendingPoints += trip.getPendingPoints();
         }
 
+        // Read-only liability reconciliation, including historical completed/cancelled trips.
+        List<DeliveryTrip> outstanding = tripRepository.findAllByWarehouseIdIn(allowedWarehouseIds).stream()
+                .filter(t -> t.getRemainingPoints() > 0).toList();
+        List<DeliveryTrip> closedOutstanding = outstanding.stream()
+                .filter(t -> t.getStatus() != DeliveryTripStatus.IN_PROGRESS).toList();
+
         return DeliveryTripSummaryResponse.builder()
+                .totalOutstandingValue(outstanding.stream().map(DeliveryTrip::getRemainingValue).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .totalOutstandingTrips((long) outstanding.size())
+                .closedOutstandingValue(closedOutstanding.stream().map(DeliveryTrip::getRemainingValue).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .closedOutstandingTrips((long) closedOutstanding.size())
                 .totalRunningTrips(totalRunningTrips)
                 .totalOverdueTrips(totalOverdueTrips)
                 .totalValueOnRoad(totalValueOnRoad)
@@ -364,6 +394,10 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 Order order = orderRepository.findById(orderId)
                         .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng ID: " + orderId));
 
+                if (Boolean.TRUE.equals(order.getBackordered())) {
+                    throw new IllegalArgumentException("Đơn còn nợ hàng; xuất bù đủ trước khi gán chuyến giao toàn đơn");
+                }
+
                 if (order.getWarehouse() != null && !order.getWarehouse().getId().equals(warehouse.getId())) {
                     throw new IllegalArgumentException("Đơn hàng " + order.getOrderCode() + " thuộc kho khác, không thể gán vào chuyến này");
                 }
@@ -432,7 +466,10 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                         .build();
 
                 if (sReq.getOrderId() != null) {
-                    orderRepository.findById(sReq.getOrderId()).ifPresent(stop::setOrder);
+                    orderRepository.findById(sReq.getOrderId()).ifPresent(order -> {
+                        if (Boolean.TRUE.equals(order.getBackordered())) throw new IllegalArgumentException("Đơn còn nợ hàng; xuất bù đủ trước khi gán chuyến");
+                        stop.setOrder(order);
+                    });
                 }
                 if (sReq.getDealerId() != null) {
                     dealerRepository.findById(sReq.getDealerId()).ifPresent(stop::setDealer);
@@ -632,6 +669,9 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 if (actual.size() != expected.size() || expected.entrySet().stream().anyMatch(e ->
                         !actual.containsKey(e.getKey()) || actual.get(e.getKey()).compareTo(e.getValue()) != 0))
                     throw new IllegalArgumentException("Xác nhận S6-08 yêu cầu giao đủ hàng của đơn; chi tiết chuyến không khớp");
+                if (Boolean.TRUE.equals(order.getBackordered())) {
+                    throw new IllegalArgumentException("Đơn còn nợ hàng; không xác nhận đã giao toàn đơn khi chưa xuất bù đủ");
+                }
                 if (!"DELIVERED".equalsIgnoreCase(order.getStatus()) && !"CLOSED".equalsIgnoreCase(order.getStatus())) {
                     order.setStatus("DELIVERED");
                     order.setActualDeliveryDate(stop.getDeliveredAt().toLocalDate());
@@ -813,6 +853,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
         List<Order> orders = orderRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"));
 
         return orders.stream()
+                .filter(order -> !Boolean.TRUE.equals(order.getBackordered()))
                 .map(order -> {
                     DealerDeliveryPoint dp = order.getDeliveryPoint();
                     String receiver = dp != null ? dp.getReceiverName() : (order.getDealer() != null ? order.getDealer().getName() : order.getCustomerName());
