@@ -24,7 +24,7 @@
 
       <!-- Access / Error notices -->
       <div id="statement-access" class="statement-notice statement-notice--warning" hidden>
-        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem và xuất sổ chi tiết công nợ. Quản trị viên luôn có quyền.
+        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem và xuất sổ công nợ. Quản trị viên luôn có quyền.
       </div>
       <div id="statement-error" class="statement-notice statement-notice--error" role="alert" hidden></div>
 
@@ -50,6 +50,7 @@
             <label for="ds-search">Tìm đại lý<input id="ds-search" type="search" placeholder="Mã hoặc tên đại lý" maxlength="100"></label>
             <label for="ds-as-of">Ngày chốt<input id="ds-as-of" type="date"></label>
             <label class="ds-check"><input id="ds-overdue" type="checkbox"> Chỉ đại lý quá hạn</label>
+            <button id="ds-apply" class="btn btn--primary" type="submit">Áp dụng bộ lọc</button>
           </form>
           <div id="ds-progress" class="ds-progress" role="status" hidden>Đang tải dữ liệu công nợ…</div>
           <div class="ds-panel">
@@ -67,6 +68,7 @@
               </table>
             </div>
           </div>
+          <p id="ds-summary" class="ds-help" role="status"></p>
           <p class="ds-help">Tuổi nợ tính theo ngày phát sinh chứng từ. Bảng ưu tiên các khoản nợ lâu ngày.</p>
         </section>
       </section>
@@ -204,7 +206,6 @@
   <script src="/js/app-shell.js"></script>
   <script src="/js/app-navigation.js"></script>
   <script src="/js/debt-statement-utils.js"></script>
-  <script src="/js/debt-aging-utils.js"></script>
   <script src="/js/debt-statement.js"></script>
 </body>
 </html>

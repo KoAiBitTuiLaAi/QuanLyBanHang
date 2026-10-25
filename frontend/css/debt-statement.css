@@ -412,3 +412,43 @@
   }
 }
 
+/* Combined S7-03 / S8-10 workspace. */
+.debt-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border-color, #dbe3ec); }
+.debt-tab { appearance: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted, #64748b); cursor: pointer; font: inherit; font-weight: 600; padding: 10px 14px; }
+.debt-tab:hover { color: var(--text-color, #0f172a); }
+.debt-tab[aria-selected="true"] { color: #059669; border-bottom-color: #10b981; }
+.debt-tab:focus-visible { outline: 3px solid rgba(16, 185, 129, .35); outline-offset: 2px; }
+.debt-tab-panel { min-width: 0; }
+.debt-tab-panel[hidden], .debt-tabs[hidden] { display: none !important; }
+.ds-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.ds-heading h2 { margin: 0; font-size: 1.25rem; color: var(--text-color, #0f172a); }
+.ds-heading p, .ds-help { margin: .35rem 0 0; color: var(--text-muted, #64748b); font-size: .875rem; }
+.ds-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ds-error { padding: .75rem 1rem; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #991b1b; }
+.ds-error[hidden] { display: none !important; }
+.ds-filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 1rem; padding: 1rem; margin: 1rem 0; background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 10px; }
+.ds-filters label { display: flex; flex-direction: column; gap: .35rem; min-width: 180px; color: var(--text-muted, #64748b); font-size: .8125rem; }
+.ds-filters input[type="search"], .ds-filters input[type="date"] { min-height: 40px; padding: 8px 10px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 6px; color: var(--text-color, #0f172a); background: #fff; }
+.ds-filters input:focus-visible { outline: 3px solid rgba(16, 185, 129, .25); border-color: #10b981; }
+.ds-filters .ds-check { min-width: auto; flex-direction: row; align-items: center; padding: 10px 0; cursor: pointer; }
+.ds-filters button { min-height: 40px; }
+.ds-panel { overflow: hidden; border: 1px solid var(--border-color, #e2e8f0); border-radius: 10px; background: var(--card-bg, #fff); }
+.ds-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ds-scroll table { width: 100%; border-collapse: collapse; font-size: .875rem; white-space: nowrap; }
+.ds-scroll th, .ds-scroll td { padding: 11px 12px; border-bottom: 1px solid var(--border-color, #e2e8f0); text-align: left; }
+.ds-scroll th { background: #f1f5f9; color: #475569; font-weight: 600; }
+.ds-scroll td:nth-child(n+3), .ds-scroll th:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
+.ds-scroll tbody tr:hover { background: #f8fafc; }
+.ds-scroll tfoot td { background: #f8fafc; font-weight: 700; }
+.ds-overdue-row td:nth-child(5), .ds-overdue-row td:nth-child(9) { color: #b91c1c; font-weight: 600; }
+.ds-overdue-badge { display: inline-block; margin-left: 7px; padding: 2px 6px; border-radius: 999px; background: #fef2f2; color: #b91c1c; font-size: .7rem; font-weight: 600; }
+.ds-empty { padding: 28px 16px !important; color: var(--text-muted, #64748b); text-align: center !important; }
+.ds-progress { padding: 14px; color: var(--text-muted, #64748b); }
+@media (max-width: 640px) {
+  .debt-tabs { gap: 0; }
+  .debt-tab { flex: 1; padding-inline: 8px; }
+  .ds-filters { align-items: stretch; flex-direction: column; }
+  .ds-filters label { min-width: 0; }
+  .ds-filters button { width: 100%; }
+}
+
