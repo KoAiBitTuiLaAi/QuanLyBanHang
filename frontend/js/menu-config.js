@@ -228,6 +228,15 @@ const MenuConfig = (() => {
       roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER", "ROLE_WAREHOUSE_MANAGER", "ROLE_WAREHOUSE_STAFF", "ROLE_VIEWER"],
     },
     {
+      id: "delivery-routes",
+      section: "Kho hàng",
+      label: "Phân tuyến giao hàng",
+      icon: '<circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/>',
+      href: "/warehouse/delivery-routes",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
       id: "delivery-trips",
       section: "Kho hàng",
       label: "Theo dõi chuyến giao",

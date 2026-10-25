@@ -1,5 +1,18 @@
 # Trạng thái sprint 1–8
 
+## S6-06 — Phân tuyến giao hàng và gán tài xế (Frontend) — 25/10/2026
+
+Nhánh `FE/S6-06-Là-Quản-lý-kho,-tôi-muốn-phân-tuyến-giao-hàng`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ 3 tiêu chí nghiệp vụ theo yêu cầu trong ảnh: **chỉ làm frontend**.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Gom nhiều phiếu xuất vào một chuyến giao theo khu vực** | Có (`GET /api/warehouse/delivery-trips/eligible-orders?warehouseId=...`) | Có | Có | Màn hình `Kho hàng → Phân tuyến giao hàng` (`/warehouse/delivery-routes`): Quản lý chọn kho xuất phát, hệ thống tự động tải các đơn hàng đã xuất kho (`EXPORTED`, `SHIPPED`). Tự động trích xuất khu vực (Quận/Huyện/Thị xã/Thành phố) từ địa chỉ giao hàng, hiển thị chip lọc nhanh và nút "Gom tất cả đơn khu vực này", hỗ trợ tích chọn nhiều phiếu xuất để xe chạy một vòng giao liên tục thay vì đi lẻ. |
+| **Gán tài xế và phương tiện cho chuyến** | Có (`POST /api/warehouse/delivery-trips`) | Có | Có | Bảng lộ trình chuyến giao cho phép sắp xếp thứ tự các điểm dừng (Điểm 1, Điểm 2, Điểm 3...) bằng nút lên/xuống để tối ưu cung đường vòng chạy. Form gán thông tin bắt buộc: Tên tài xế, Biển số xe/Phương tiện, Thời gian dự kiến hoàn thành; trường mở rộng: Số điện thoại tài xế, Thời điểm xuất phát, Ghi chú lộ trình và ghi chú riêng từng điểm dừng. Gửi danh sách `stops` kèm `stopOrder` chính xác lên API. |
+| **In danh sách điểm giao của chuyến kèm địa chỉ và số điện thoại người nhận** | Có (`GET /api/warehouse/delivery-trips/{id}`) | Có | Có | Phiếu in chuẩn chứng từ kho vận & giao nhận thể hiện đầy đủ: Mã chuyến, Kho xuất phát, Ngày giờ khởi hành, Dự kiến hoàn thành, Họ tên tài xế, SĐT tài xế, Biển số xe; Bảng kê điểm giao theo thứ tự dừng có **Mã đơn/phiếu xuất, Người nhận/Đại lý, Địa chỉ giao hàng, Số điện thoại người nhận**, Tiền hàng/COD, Ghi chú và ô Ký nhận của khách; 3 ô chữ ký (Quản lý kho phân tuyến, Tài xế nhận hàng, Thủ kho). Nút "In danh sách" hỗ trợ in A4 sắc nét qua `window.print()` với `@media print`. Tự động mở xem trước sau khi tạo chuyến và cho phép in lại trên danh sách chuyến gần đây. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Tuân thủ nghiêm ngặt ma trận DB: Yêu cầu `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` để xem trang; yêu cầu `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`) để thao tác phân tuyến tạo chuyến. Tự động vô hiệu hóa nút submit và hiển thị cảnh báo khi thiếu quyền. Lắng nghe `auth:permissions-changed` để cập nhật tức thì khi quyền thay đổi. Không dùng role-based fallback. `ROLE_ADMIN` luôn có toàn quyền. Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: Kiểm thử toàn diện trong `tests/delivery-routes.test.cjs` bao quát trích xuất gom nhóm khu vực, xác thực dữ liệu, sắp xếp thứ tự điểm dừng, tạo payload, sinh mẫu in chứa địa chỉ & SĐT người nhận, cấu hình menu DB và bảo mật lưu trữ. Đã cập nhật `frontend/js/menu-config.js`, `serve_frontend.py`, `docs/FUNCTION_MAP.md` và `docs/FRONTEND_ROUTES.md`.
+
 ## S8-04 — Quản lý chỉ tiêu doanh số (Frontend) — 24/10/2026
 
 Nánh `feature/S8-04-chi-tieu-doanh-so(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ 3 tiêu chí nghiệp vụ theo yêu cầu: **chỉ làm frontend**.
