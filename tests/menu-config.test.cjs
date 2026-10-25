@@ -82,7 +82,7 @@ test('S6-08 delivery and stocktaking remain separate and follow their own matrix
   assert.equal(has(['ORDER_VIEW','WAREHOUSE_EXPORT']),true);
   assert.equal(has(['ORDER_VIEW']),false);assert.equal(has(['WAREHOUSE_EXPORT']),false);
   assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('delivery-confirmation'));
-  const stocktake=menu.menuItems.find(i=>i.id==='warehouse-stocktake');assert.equal(stocktake.permission,undefined);
+  const units=menu.menuItems.find(i=>i.id==='product-units');assert.equal(units.permission,undefined);
 });
 
 test('S6-03 picking menu uses live VIEW/EXPORT matrix for every internal role, ADMIN always allowed', () => {
@@ -113,10 +113,10 @@ test('S6-01 menu grants/revocations follow VIEW or MANAGE, never warehouse role 
   assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('warehouse-lots'));
 });
 
-test('S5-08 merge preserves stocktaking, stock minimums and warehouse transfers as distinct menus', () => {
+test('S5-08 consolidation into units, stock minimums and warehouse transfers as distinct menus', () => {
   const pages = [
     ['warehouse-lots', '/warehouse/lots'],
-    ['warehouse-stocktake', '/warehouse/units?tab=stocktake'],
+    ['product-units', '/warehouse/units'],
     ['stock-minimums', '/warehouse/minimums'],
     ['warehouse-transfers', '/warehouse/transfers'],
   ];
@@ -128,14 +128,14 @@ test('S5-08 merge preserves stocktaking, stock minimums and warehouse transfers 
   }
 });
 
-test('merged stocktaking menu follows VIEW or ADJUST grants and revocations without role fallback', () => {
+test('consolidated units menu follows VIEW, ADJUST, IMPORT, EXPORT, APPROVE, MANAGE grants and revocations without role fallback', () => {
   for (const role of ['ROLE_WAREHOUSE_MANAGER', 'ROLE_WAREHOUSE_STAFF', 'ROLE_VIEWER', 'ROLE_SALES']) {
-    for (const permission of ['WAREHOUSE_VIEW', 'WAREHOUSE_ADJUST']) {
-      assert.ok(ids({ roles: [role], permissions: [permission] }).includes('warehouse-stocktake'), `${role}: ${permission}`);
+    for (const permission of ['WAREHOUSE_VIEW', 'WAREHOUSE_ADJUST', 'WAREHOUSE_IMPORT', 'WAREHOUSE_EXPORT', 'WAREHOUSE_APPROVE', 'WAREHOUSE_MANAGE']) {
+      assert.ok(ids({ roles: [role], permissions: [permission] }).includes('product-units'), `${role}: ${permission}`);
     }
-    assert.ok(!ids({ roles: [role], permissions: [] }).includes('warehouse-stocktake'), role);
+    assert.ok(!ids({ roles: [role], permissions: [] }).includes('product-units'), role);
   }
-  assert.ok(ids({ roles: ['ROLE_ADMIN'], permissions: [] }).includes('warehouse-stocktake'));
+  assert.ok(ids({ roles: ['ROLE_ADMIN'], permissions: [] }).includes('product-units'));
 });
 
 test('admin can reach implemented account, audit and catalog pages', () => {
@@ -255,8 +255,8 @@ test('special dashboard view wins over the generic dashboard, independent of unr
   assert.equal(pageAt('/dashboard/').id, 'dashboard');
 });
 
-test('warehouse views resolve distinct sidebar entries with a stable default', () => {
-  for (const [tab, expected] of [['units', 'product-units'], ['receipts', 'import-export'], ['ledger', 'warehouse-ledger'], ['inventory', 'warehouse']]) {
+test('warehouse views resolve consolidated units sidebar entry and stable default', () => {
+  for (const [tab, expected] of [['units', 'product-units'], ['receipts', 'product-units'], ['ledger', 'product-units'], ['stocktake', 'product-units'], ['inventory', 'warehouse']]) {
     assert.equal(pageAt(`/warehouse/units?warehouseId=4&tab=${tab}`).id, expected);
   }
   assert.equal(pageAt('/warehouse/units').id, 'product-units');
@@ -299,6 +299,8 @@ test('group labels remain correct when earlier menu items are hidden by permissi
   assert.equal(sales.find(item => item.id === 'create-order').section, 'Kinh doanh');
   const warehouse = menu.getMenuForUser({ roles: ['ROLE_VIEWER'], permissions: ['WAREHOUSE_VIEW'] });
   assert.ok(warehouse.some(item => item.id === 'product-units'));
-  assert.equal(warehouse.find(item => item.id === 'warehouse-ledger').section, 'Kho hàng');
+  assert.equal(warehouse.find(item => item.id === 'product-units').section, 'Kho hàng');
   assert.ok(!warehouse.some(item => item.id === 'import-export'));
+  assert.ok(!warehouse.some(item => item.id === 'warehouse-ledger'));
+  assert.ok(!warehouse.some(item => item.id === 'warehouse-stocktake'));
 });

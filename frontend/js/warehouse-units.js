@@ -75,7 +75,7 @@
           select.disabled = !this.warehouseId;
         }
       }
-      $("btn-export-inventory-excel").disabled = !this.warehouseId;
+      const btnExportInv = $("btn-export-inventory-excel"); if (btnExportInv) btnExportInv.disabled = !this.warehouseId;
       const [products, inventory, vouchers, orders, suppliersData] = await Promise.all([
         this.request("/products/lookup"),
         this.warehouseId && Auth.hasPermission("WAREHOUSE_VIEW") ? this.request(`/warehouse/inventory?warehouseId=${this.warehouseId}`) : [],
@@ -525,10 +525,6 @@
     if (!allowed) return;
     document.title = tabId === "stocktake" ? "Kiểm kê kho & Chênh lệch | SaleStock" : "Đơn vị tính & Nhập / Xuất kho | SaleStock";
     document.querySelector(".units-main > h1").textContent = tabId === "stocktake" ? "Kiểm kê kho & Chênh lệch" : "Kho hàng";
-    if (tabId === "inventory-report") {
-      window.location.href = "/warehouse/inventory";
-      return;
-    }
     tabs.forEach((tab) => {
       const active = tab.dataset.tab === tabId;
       tab.classList.toggle("nav-tab--active", active);
@@ -543,7 +539,6 @@
     if (tabId === "sku-units") renderSkuTable();
     if (tabId === "create-receipt" && !receiptState.backendId) prepareReceiptForm();
     if (tabId === "ledger-audit") renderLedgerTable();
-    if (tabId === "inventory-report") renderInventoryTable();
     document.querySelector(".units-metrics-grid").hidden = tabId === "stocktake";
     if (tabId === "stocktake") {
       renderStocktakePanel();
@@ -556,7 +551,6 @@
       "sku-units": "units",
       "create-receipt": "receipts",
       "ledger-audit": "ledger",
-      "inventory-report": "inventory",
       "stocktake": "stocktake",
     }[tabId];
     if (tabParam) {
@@ -1273,8 +1267,9 @@
   // Inventory report
   // ══════════════════════════════════════════════════
   function renderInventoryTable() {
-    const search = $("inv-search-input").value.trim().toLowerCase();
     const tbody = $("inventory-table-body");
+    if (!tbody) return;
+    const search = $("inv-search-input")?.value?.trim().toLowerCase() || "";
     if (Store.loaded && !Store.warehouseId) {
       tbody.innerHTML = '<tr><td colspan="6" class="empty">Chưa cấu hình kho đang hoạt động để xem tồn kho.</td></tr>';
       return;
@@ -1886,7 +1881,7 @@
   });
 
   const requestedTab = {
-    receipts: "create-receipt", ledger: "ledger-audit", inventory: "inventory-report", stocktake: "stocktake",
+    receipts: "create-receipt", ledger: "ledger-audit", stocktake: "stocktake",
   }[initialTabParam] || "sku-units";
   $("active-warehouse-select").addEventListener("change", async () => {
     if (stocktakeIsActive()) {

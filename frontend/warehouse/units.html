@@ -180,17 +180,6 @@
                 class="nav-tab"
                 role="tab"
                 aria-selected="false"
-                aria-controls="panel-inventory-report"
-                id="tab-inventory-report"
-                data-tab="inventory-report"
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                <span>Tồn kho</span>
-              </button>
-              <button
-                class="nav-tab"
-                role="tab"
-                aria-selected="false"
                 aria-controls="panel-stocktake"
                 id="tab-stocktake"
                 data-tab="stocktake"
@@ -490,56 +479,6 @@
             </div>
           </section>
 
-          <!-- ══════════════════════════════════════════════════
-               PANEL 4: TỒN KHO QUY ĐỔI HAI CHIỀU (DUAL UNIT VIEW)
-               ══════════════════════════════════════════════════ -->
-          <section
-            class="tab-panel"
-            id="panel-inventory-report"
-            role="tabpanel"
-            aria-labelledby="tab-inventory-report"
-            hidden
-          >
-            <div class="panel-toolbar">
-              <div class="search-box">
-                <svg viewBox="0 0 24 24" class="search-box__icon">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-                <input
-                  type="search"
-                  id="inv-search-input"
-                  placeholder="Tìm tồn kho theo sản phẩm, mã SKU..."
-                  aria-label="Tìm tồn kho"
-                />
-              </div>
-
-              <div class="toolbar-actions">
-                <button class="btn btn--secondary btn--sm" id="btn-export-inventory-excel">
-                  <svg viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  <span>Xuất bảng kiểm kê</span>
-                </button>
-              </div>
-            </div>
-
-            <div class="table-container">
-              <table class="data-table inventory-table" id="inventory-table">
-                <thead>
-                  <tr>
-                    <th>Mã SKU & Sản phẩm</th>
-                    <th>Đơn vị cơ sở</th>
-                    <th>Tồn kho cơ sở (Sổ sách)</th>
-                    <th>Diễn giải quy cách đóng gói (Thực tế kho)</th>
-                    <th>Định mức an toàn</th>
-                    <th>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody id="inventory-table-body">
-                  <!-- Rendered via JS -->
-                </tbody>
-              </table>
-            </div>
-          </section>
 
           <!-- ══════════════════════════════════════════════════
                PANEL 5: KIỂM KÊ KHO & GHI NHẬN CHÊNH LỆCH (S5-08)

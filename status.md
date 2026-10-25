@@ -1,5 +1,27 @@
 # Trạng thái sprint 1–8
 
+## Tinh gọn điều hướng Kho hàng & Gom cụm Đơn vị tính (Frontend) — 25/10/2026
+
+Nhiệm vụ:
+1. Bỏ tab "Tồn kho" ra khỏi màn hình "Đơn vị tính" (`/warehouse/units`). Trang Tồn kho chuyên biệt (`/warehouse/inventory`) được giữ nguyên tại mục "Tồn kho" trên menu thanh bên (sidebar).
+2. Tinh gọn thanh bên (sidebar): Xóa các mục riêng lẻ "Nhập / Xuất kho" (`import-export`), "Sổ cái kho" (`warehouse-ledger`), "Kiểm kê kho" (`warehouse-stocktake`).
+3. Gom cụm toàn bộ các phân hệ trên vào màn hình "Đơn vị tính" (`/warehouse/units`) với 4 tab nghiệp vụ:
+   - Đơn vị tính (`sku-units`)
+   - Lập chứng từ (`create-receipt`)
+   - Sổ cái kho (`ledger-audit`)
+   - Kiểm kê kho (`stocktake`)
+
+| Tiêu chí / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Bỏ tab Tồn kho khỏi màn hình Đơn vị tính** | Có sẵn | ✅ Có | ✅ Đã kết nối đúng | Đã xóa tab button `tab-inventory-report` và tab panel `panel-inventory-report` khỏi `units.html`. Xóa chuyển hướng và mã render liên quan trong `warehouse-units.js`. Tồn kho tiếp tục được theo dõi độc lập tại `Kho hàng → Tồn kho` (`/warehouse/inventory`). |
+| **Gom Lập chứng từ, Sổ cái kho, Kiểm kê kho vào Đơn vị tính trên Sidebar** | Có sẵn | ✅ Có | ✅ Đã kết nối đúng | Tinh giản `menuItems` trong `menu-config.js`: gỡ bỏ 3 mục con `import-export`, `warehouse-ledger`, `warehouse-stocktake`. Giữ lại duy nhất mục `product-units` ("Đơn vị tính") trỏ về `/warehouse/units`. Hàm `getPageForLocation` map toàn bộ các tab của `/warehouse/units` về `product-units` để active đúng menu. |
+| **Bảo toàn 4 tab nghiệp vụ trong trang Đơn vị tính** | Có sẵn | ✅ Có | ✅ Đã kết nối đúng | Màn hình `/warehouse/units` hiển thị 4 tab rõ ràng: `Đơn vị tính`, `Lập chứng từ`, `Sổ cái kho`, `Kiểm kê kho`. Tự động chọn tab đầu tiên người dùng có quyền nếu truy cập trực tiếp không qua tab query param. |
+| **Ma trận phân quyền động (Database-backed Permission Matrix) & Không fallback role** | Có sẵn | ✅ Có | ✅ Đã kết nối đúng | `product-units` trên thanh bên yêu cầu hợp của các quyền phân hệ: `WAREHOUSE_VIEW`, `WAREHOUSE_MANAGE`, `WAREHOUSE_IMPORT`, `WAREHOUSE_EXPORT`, `WAREHOUSE_APPROVE`, `WAREHOUSE_ADJUST` (hoặc `ROLE_ADMIN`). Từng tab bên trong trang `/warehouse/units` được kiểm soát độc lập qua ma trận quyền: người dùng chỉ thấy các tab mình được cấp phép; thu hồi quyền lập tức ẩn tab và khóa form thao tác qua `auth:permissions-changed`. Không dùng role-based fallback. Tuyệt đối không lưu dữ liệu kinh doanh vào browser storage. |
+
+Kiểm thử:
+- **Node.js test suite**: Toàn bộ **277/277 tests PASS 100%**, bao gồm kiểm thử ma trận phân quyền `tests/menu-config.test.cjs`, điều hướng phân hệ kho và xác thực logic chứng từ/kiểm kê.
+- Đã đồng bộ vị trí hiển thị trong `docs/FUNCTION_MAP.md` (S5-04 và S5-08).
+
 ## S6-06 — Phân tuyến giao hàng và gán tài xế — 25/10/2026
 
 Triển khai đầy đủ cả Backend và Frontend tuân thủ 3 tiêu chí nghiệp vụ theo yêu cầu:
