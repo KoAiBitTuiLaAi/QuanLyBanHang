@@ -20,7 +20,7 @@ const menu = vm.runInNewContext(`${menuSource}\nMenuConfig;`, { URLSearchParams 
 
 // ── Test Menu Configuration ─────────────────────────────────────
 
-test("S7-07: menu 'dealer-invoices' chỉ hiển thị cho ROLE_DEALER khi có INVOICE_VIEW", () => {
+test("S7-07: menu 'dealer-invoices' hiển thị với quyền hóa đơn và ẩn khi không có cả hai quyền", () => {
   const ids = (user) => Array.from(menu.getMenuForUser(user), (item) => item.id);
 
   // Đại lý có INVOICE_VIEW -> Thấy menu
@@ -116,6 +116,7 @@ function createMockEnvironment({ user, debtData, invoicesData, invoiceDetailData
     },
     location: { href: "/dealer-invoices", search: "", pathname: "/dealer-invoices" },
     URLSearchParams,
+    AbortController,
     CustomEvent: class CustomEvent {
       constructor(type, init) {
         this.type = type;

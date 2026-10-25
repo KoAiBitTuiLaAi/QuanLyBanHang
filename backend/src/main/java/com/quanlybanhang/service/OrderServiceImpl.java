@@ -176,9 +176,6 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Autowired(required = false)
-    private DeliveryTripStopRepository deliveryTripStopRepository;
-
-    @Autowired(required = false)
     public void setDeliveryTripStopRepository(DeliveryTripStopRepository deliveryTripStopRepository) {
         this.deliveryTripStopRepository = deliveryTripStopRepository;
     }

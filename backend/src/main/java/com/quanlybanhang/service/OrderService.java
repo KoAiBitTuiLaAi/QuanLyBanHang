@@ -2,7 +2,6 @@ package com.quanlybanhang.service;
 
 import com.quanlybanhang.dto.request.DealerPortalReorderRequest;
 import com.quanlybanhang.dto.request.OrderRequest;
-import com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse;
 import com.quanlybanhang.dto.response.DealerPortalReorderPreviewResponse;
 import com.quanlybanhang.dto.response.DealerPortalReorderResponse;
 import com.quanlybanhang.dto.response.OrderResponse;
@@ -10,200 +9,234 @@ import com.quanlybanhang.dto.response.OrderResponse;
 import java.time.LocalDate;
 import java.util.List;
 
-import com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse;
 public interface OrderService {
 
     OrderResponse createOrder(OrderRequest request, String username);
 
+    /** Đơn gửi qua cổng luôn chờ duyệt, kể cả khi ADMIN hỗ trợ đại lý. */
     OrderResponse createPortalOrder(OrderRequest request, String username);
 
+    /** Assigned representative confirms a non-violating portal order, without granting exception approval. */
     OrderResponse confirmPortalOrder(Long id, String username);
 
     List<OrderResponse> getAllOrders();
 
     /**
-     * S4-04: Lấy danh sách đơn hàng đã lọc và phân trang theo phạm vi quyền hạn của người dùng.
-     * Áp dụng bảo mật đa tầng: WAREHOUSE_VIEW giới hạn kho, SALES chỉ thấy đơn của khách được phân công,
-     * DEALER chỉ thấy đơn của chính đại lý mình.
+     * Lấy danh sách đơn hàng kèm bộ lọc và tính tổng tiền tập kết quả (S4-07).
+     * Áp dụng phân quyền dòng dữ liệu: Nhân viên kinh doanh chỉ thấy đơn của đại lý mình phụ trách.
      */
-    org.springframework.data.domain.Page<OrderResponse> getOrders(com.quanlybanhang.dto.request.OrderFilterRequest filter, String currentUsername);
+    com.quanlybanhang.dto.response.OrderFilterResult getOrders(com.quanlybanhang.dto.request.OrderFilterRequest filter);
 
     OrderResponse getOrderById(Long id);
 
     OrderResponse getOrderById(Long id, String username);
 
     /**
-     * S5-06: Gia hạn thời gian giữ chỗ tồn kho cho đơn hàng (tối đa 48h từ hiện tại).
-     * Chỉ áp dụng cho đơn chưa xuất kho và có giữ chỗ tồn hợp lệ.
+     * Huỷ đơn hàng có lý do và người thực hiện (S4-06).
+     * Bắt buộc có lý do (reason không được để trống).
+     * Đơn đã xuất kho thì không huỷ được.
+     * Tự động nhả tồn kho đã giữ chỗ (reservedQuantity).
      */
-    OrderResponse extendReservation(Long id, int additionalHours, String username);
-
     OrderResponse cancelOrder(Long id, String reason, String username);
 
+    /** Overload huỷ đơn giữ tính tương thích ngược */
     OrderResponse cancelOrder(Long id, String username);
 
     /**
-     * S4-06: Cập nhật trạng thái vòng đời đơn hàng và ghi nhận lịch sử vào order_status_histories.
-     * Tự động quản lý giữ chỗ tồn kho (nhả tồn khi huỷ, trừ tồn khi xuất kho).
+     * Cập nhật trạng thái vòng đời của đơn hàng (S4-06):
+     * Nháp -> Chờ duyệt -> Đã duyệt -> Đang soạn hàng -> Đã xuất -> Đã giao -> Đóng
      */
     OrderResponse updateOrderStatus(Long id, String status, String note, String username);
 
     /**
-     * S4-06: Theo dõi chi tiết vòng đời đơn hàng gồm trạng thái hiện tại, các bước và lịch sử đầy đủ.
+     * Theo dõi chi tiết vòng đời đơn hàng và lịch sử chuyển trạng thái (S4-06).
      */
     com.quanlybanhang.dto.response.OrderTrackingResponse getOrderTracking(Long id, String username);
 
     /**
-     * Duyệt đơn hàng: chuyển status sang APPROVED / RECORDED và giữ chỗ tồn kho.
+     * Quản lý kinh doanh duyệt đơn hàng có dòng bán dưới giá sàn (S2-10).
      */
     OrderResponse approveOrder(Long id, String username);
 
     /**
-     * S5-06: Duyệt đơn hàng kèm thời hạn giữ chỗ tồn kho tuỳ chỉnh (tính bằng giờ, tối đa 72h).
+     * Duyệt đơn hàng kèm tuỳ chỉnh số giờ giữ chỗ tồn kho (S5-06).
      */
     OrderResponse approveOrder(Long id, Integer reservationHours, String username);
 
     /**
-     * S4-05: Duyệt đơn hàng vi phạm (bán dưới giá sàn hoặc vượt hạn mức công nợ).
-     * Yêu cầu quyền ORDER_APPROVE (hoặc ROLE_ADMIN / ROLE_SALES_MANAGER).
-     * Ghi nhận lịch sử duyệt bất biến vào bảng order_approval_histories (ai duyệt, lúc nào, ghi chú).
-     * Tự động kích hoạt giữ chỗ tồn kho (inventory_reserved = true).
-     *
-     * @param id ID đơn hàng cần duyệt
-     * @param comment Ghi chú phê duyệt của Quản lý kinh doanh (bắt buộc)
-     * @param username Tên đăng nhập người duyệt
-     * @return OrderResponse đã cập nhật trạng thái APPROVED
+     * S5-06: Tự động kiểm tra và nhả tồn kho giữ chỗ cho các đơn hàng đã quá hạn giữ chỗ.
+     * @return số lượng đơn hàng đã được nhả tồn giữ chỗ
+     */
+    int releaseExpiredReservations();
+
+    /**
+     * Quản lý kinh doanh từ chối đơn hàng có dòng bán dưới giá sàn (S2-10).
+     */
+
+    /**
+     * Quản lý kinh doanh duyệt đơn hàng kèm ý kiến phê duyệt tuỳ chọn (S4-05).
      */
     OrderResponse approveOrder(Long id, String comment, String username);
 
     /**
-     * S4-05: Từ chối duyệt đơn hàng vi phạm.
-     * Yêu cầu quyền ORDER_APPROVE và bắt buộc có lý do từ chối.
-     * Ghi nhận lịch sử từ chối bất biến vào order_approval_histories.
-     * Đơn hàng chuyển sang trạng thái REJECTED (kết thúc vòng đời).
+     * Quản lý kinh doanh từ chối đơn hàng (S2-10, S4-05). Bắt buộc nhập ý kiến/lý do.
      */
     OrderResponse rejectOrder(Long id, String reason, String username);
 
     /**
-     * S4-05: Trả về yêu cầu nhân viên kinh doanh chỉnh sửa đơn hàng vi phạm.
-     * Bắt buộc có lý do/hướng dẫn chỉnh sửa cụ thể.
-     * Ghi nhận lịch sử vào order_approval_histories.
-     * Đơn hàng chuyển sang trạng thái RETURNED để NVKD có thể sửa lại.
+     * Kiểm tra tồn khả dụng của SKU trong kho phục vụ đại lý và gợi ý số lượng tối đa (S4-03).
+     */
+    com.quanlybanhang.dto.response.OrderInventoryCheckResponse checkInventory(
+            com.quanlybanhang.dto.request.OrderInventoryCheckRequest request);
+    /**
+     * Quản lý kinh doanh trả lại sửa đơn hàng (S4-05). Bắt buộc nhập ý kiến/lý do.
      */
     OrderResponse returnOrder(Long id, String reason, String username);
 
+    /**
+     * Cập nhật trạng thái duyệt đơn hàng qua request chung (S4-05).
+     */
     OrderResponse updateOrderStatus(Long id, com.quanlybanhang.dto.request.OrderStatusUpdateRequest request, String username);
 
+    /**
+     * Lấy danh sách đơn hàng có phân trang và bộ lọc đầy đủ (S4-05, S4-07).
+     */
     org.springframework.data.domain.Page<OrderResponse> getOrders(
             String status,
-            String customerName,
-            LocalDate startDate,
-            LocalDate endDate,
+            String approvalReason,
+            String search,
+            Boolean approvalRequired,
             Long dealerId,
+            String createdBy,
+            Long territoryId,
+            LocalDate dateFrom,
+            LocalDate dateTo,
             org.springframework.data.domain.Pageable pageable);
 
+    /**
+     * Tương thích ngược - gọi getOrders đầy đủ.
+     */
     default org.springframework.data.domain.Page<OrderResponse> getOrders(
-            com.quanlybanhang.dto.request.OrderFilterRequest filter) {
-        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
-                filter.getPage(),
-                filter.getSize(),
-                org.springframework.data.domain.Sort.by(
-                        org.springframework.data.domain.Sort.Direction.fromString(filter.getSortDirection()),
-                        filter.getSortBy()
-                )
-        );
-        return getOrders(
-                filter.getStatus(),
-                filter.getCustomerName(),
-                filter.getStartDate(),
-                filter.getEndDate(),
-                filter.getDealerId(),
-                pageable
-        );
+            String status,
+            String approvalReason,
+            String search,
+            Boolean approvalRequired,
+            org.springframework.data.domain.Pageable pageable) {
+        return getOrders(status, approvalReason, search, approvalRequired, null, null, null, null, null, pageable);
     }
 
     /**
-     * Tạo đơn hàng mới bằng cách sao chép từ một đơn hàng đã có (S2-09).
-     *
-     * @param id ID của đơn hàng gốc cần sao chép
-     * @param username Tên đăng nhập người thực hiện (lấy từ JWT principal)
-     * @return OrderResponse của đơn hàng mới tạo
+     * Lấy lịch sử duyệt đơn hàng (S4-05).
+     */
+    List<com.quanlybanhang.dto.response.OrderApprovalHistoryResponse> getOrderApprovalHistory(Long orderId);
+
+    /**
+     * Tính giá và chiết khấu tự động khi thêm một dòng hàng cho đại lý (S4-01).
+     */
+    com.quanlybanhang.dto.response.OrderLineItemPricingResponse calculateLineItemPricing(
+            com.quanlybanhang.dto.request.OrderLineItemPricingRequest request);
+
+    /**
+     * Tính lại toàn bộ giá và chiết khấu cho danh sách dòng hàng (S4-01).
+     */
+    com.quanlybanhang.dto.response.OrderCalculateResponse calculateOrder(
+            com.quanlybanhang.dto.request.OrderCalculateRequest request);
+
+    /**
+    /**
+     * S4-09: Sao chép một đơn cũ thành đơn mới ở trạng thái Nháp (DRAFT).
+     * Toàn bộ dòng hàng của đơn đã chọn được sao chép.
+     * Giá và chiết khấu được áp lại theo bảng giá và chính sách hiện hành, không kế thừa giá cũ.
+     * Bản sao luôn bắt đầu ở trạng thái Nháp.
      */
     OrderResponse copyOrder(Long id, String username);
 
     /**
-     * S2-09: Sao chép đơn hàng gần nhất của đại lý vào bản nháp đơn hàng.
-     * Tìm đơn hàng mới nhất (theo createdAt) của đại lý, áp dụng bảng giá hiện hành,
-     * loại bỏ các sản phẩm đã ngừng kinh doanh và lưu vào bảng order_drafts.
-     *
-     * @param dealerId ID đại lý cần sao chép đơn
-     * @param username Tên đăng nhập người thực hiện
-     * @return JsonNode chứa dữ liệu bản nháp vừa tạo
+     * S4-09: Sao chép các dòng hàng của đơn cũ trực tiếp vào bản nháp tạo đơn của người dùng.
      */
-    com.fasterxml.jackson.databind.JsonNode copyLastOrderToDraft(Long dealerId, String username);
+    com.fasterxml.jackson.databind.JsonNode copyOrderToDraft(Long id, String username);
 
     /**
-     * S2-09: Lấy lịch sử mua hàng của đại lý trong N tháng gần nhất.
+     * S4-04: Thêm nhanh cả nhóm hàng đã mua lần trước vào bản nháp tạo đơn mới của người dùng.
+     * Tự động tìm đơn hàng hợp lệ gần nhất của đại lý và nạp các dòng hàng vào bản nháp.
+     */
+    com.fasterxml.jackson.databind.JsonNode copyLastOrderToDraft(Long dealerId, String username);
+    /**
+     * Lấy lịch sử mua hàng của đại lý trong N tháng gần nhất (S4-04).
      */
     DealerPurchaseHistoryResult getDealerPurchaseHistory(Long dealerId, int months, String currentUsername);
 
-    record DealerPurchaseHistoryItem(
-            Long orderId,
-            String orderCode,
-            LocalDate orderDate,
-            String status,
-            String statusDisplayName,
-            java.math.BigDecimal totalAmount,
-            int totalItems,
-            List<DealerPurchaseHistoryDetailItem> items
-    ) {}
+    /**
+     * Sao chép đơn hàng cũ thành đơn nháp mới, áp lại giá/chiết khấu hiện hành (S4-09).
+     */
 
-    record DealerPurchaseHistoryDetailItem(
-            Long productId,
-            String productCode,
-            String productName,
-            String unit,
-            java.math.BigDecimal quantity,
-            java.math.BigDecimal unitPrice,
-            java.math.BigDecimal totalAmount,
-            boolean productActive
-    ) {}
+
+    /**
+     * Tạo nội dung HTML để in/xuất PDF đơn hàng (S4-08).
+     */
+    String generateOrderPrintHtml(Long orderId);
+
+    // ── Data records (S4-04) ──
 
     record DealerPurchaseHistoryResult(
             Long dealerId,
             String dealerName,
             String dealerCode,
             int months,
-            int totalOrders,
-            java.math.BigDecimal totalSpent,
-            List<DealerPurchaseHistoryItem> orders
+            java.time.LocalDate fromDate,
+            java.time.LocalDate toDate,
+            List<ProductPurchaseSummary> products,
+            List<RecentOrderSummary> recentOrders
     ) {}
 
+    record ProductPurchaseSummary(
+            Long productId,
+            String productCode,
+            String productName,
+            String categoryName,
+            java.math.BigDecimal totalBaseQuantity,
+            String baseUnit,
+            java.math.BigDecimal averageMonthlyQuantity,
+            int orderCount,
+            java.math.BigDecimal lastPrice,
+            java.time.LocalDateTime lastOrderAt
+    ) {}
+
+    record RecentOrderSummary(
+            Long orderId,
+            String orderCode,
+            String status,
+            java.math.BigDecimal totalAmount,
+            java.time.LocalDateTime createdAt,
+            List<String> productNames
+    ) {}
     /**
-     * S4-04: Lấy danh sách đơn hàng cho người dùng có thể là SALES, DEALER, ADMIN, v.v.
-     * - Nhân viên bán hàng (ROLE_SALES): chỉ thấy đơn của khách hàng mình phụ trách.
+     * Lấy danh sách đơn hàng theo ngữ cảnh người dùng hiện tại (S4-07, S5-01):
      * - Đại lý (ROLE_DEALER): chỉ thấy đơn của chính đại lý mình.
-     * - Quản lý / Kế toán / Admin: thấy toàn bộ đơn hàng.
+     * - Nhân viên kinh doanh (ROLE_SALES): chỉ thấy đơn của đại lý mình phụ trách.
+     * - Quản trị, Quản lý, Kế toán, Kho, Viewer: thấy toàn bộ đơn hàng.
      */
     List<OrderResponse> getOrdersForUser(String username);
 
     /**
-     * S4-04: Xem chi tiết đơn hàng kèm kiểm tra quyền sở hữu đối với SALES / DEALER.
+     * Lấy chi tiết đơn hàng theo ngữ cảnh người dùng hiện tại (S4-07, S5-01).
+     * Ném lỗi AccessDeniedException (403) nếu cố truy cập đơn của đại lý khác.
      */
     OrderResponse getOrderByIdForUser(Long id, String username);
 
     /**
-     * S4-10, S5-01: Lấy danh sách đơn hàng của riêng đại lý đăng nhập.
+     * S5-01: Lấy danh sách đơn hàng của chính đại lý đăng nhập.
+     * Kèm trạng thái, ngày giao dự kiến, tổng tiền.
      */
     List<OrderResponse> getOrdersForDealer(String username);
 
     /**
-     * S4-10, S5-01: Xem chi tiết đơn hàng của riêng đại lý đăng nhập (bảo vệ bằng DEALER ID).
+     * S5-01: Xem chi tiết dòng hàng và số lượng thực giao nếu giao thiếu cho đại lý.
      */
     OrderResponse getOrderByIdForDealer(Long id, String username);
 
     /**
-     * S5-01: Cập nhật thông tin thực giao hàng (ngày giao, số lượng thực giao, ghi chú).
+     * Cập nhật thông tin giao hàng và số lượng thực giao (S5-01).
      */
     OrderResponse updateOrderDelivery(Long id, com.quanlybanhang.dto.request.OrderDeliveryUpdateRequest request, String username);
     /**
@@ -231,16 +264,11 @@ public interface OrderService {
     DealerPortalReorderResponse createPortalReorder(Long sourceOrderId, DealerPortalReorderRequest request, String username);
 
     /**
-     * S6-09: Lấy thông tin theo dõi giao hàng của đơn dành cho Đại lý.
-     * Hiển thị 5 mốc thời gian: đã duyệt, đang soạn, đã xuất, đang giao, đã giao.
-     * Xem được số lượng thực giao từng dòng hàng và thông tin xe/tài xế.
-     * Ràng buộc chặt chẽ theo phạm vi đại lý sở hữu đơn hàng (ORDER_VIEW).
+     * S6-09: Delivery milestones and actual quantities within the selected dealer scope.
      */
-    DealerDeliveryTrackingResponse getDealerOrderDeliveryTracking(Long orderId, Long dealerId);
+    com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse getDealerOrderDeliveryTracking(Long orderId, Long dealerId);
 
-    /**
-     * S6-09: Lấy thông tin theo dõi giao hàng dành cho nhân viên kinh doanh / quản lý.
-     */
-    DealerDeliveryTrackingResponse getOrderDeliveryTrackingForStaff(Long orderId, String username);
+    /** S6-09: Delivery tracking within the authenticated staff member's order scope. */
+    com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse getOrderDeliveryTrackingForStaff(Long orderId, String username);
 }
 

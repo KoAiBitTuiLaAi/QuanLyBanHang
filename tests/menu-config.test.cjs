@@ -8,6 +8,15 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S7-07 dealer debt page allows either independent permission and hides after both are revoked', () => {
+  for (const permission of ['FINANCE_VIEW_DEBT', 'INVOICE_VIEW']) {
+    assert.ok(ids({roles:['ROLE_DEALER'], permissions:[permission]}).includes('dealer-invoices'));
+    assert.ok(!ids({roles:['ROLE_ACCOUNTANT'], permissions:[permission]}).includes('dealer-invoices'));
+  }
+  assert.ok(!ids({roles:['ROLE_DEALER'], permissions:['ORDER_VIEW']}).includes('dealer-invoices'));
+  assert.ok(ids({roles:['ROLE_ADMIN'], permissions:[]}).includes('dealer-invoices'));
+});
+
 test('S8-02 financial returns allow VIEW or ADJUST, no extra dealer or finance grant and no accountant fallback',()=>{
  for(const role of ['ROLE_VIEWER','ROLE_ACCOUNTANT','ROLE_SALES']){
   assert.ok(!ids({roles:[role],permissions:[]}).includes('debt-adjustment'));

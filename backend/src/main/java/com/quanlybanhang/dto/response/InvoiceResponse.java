@@ -34,6 +34,14 @@ public class InvoiceResponse {
     private BigDecimal discountAmount;
     private BigDecimal totalAmount;
     private BigDecimal adjustedTotalAmount;
+    /** Effective collectible value after confirmed returns; the source invoice is unchanged. */
+    private BigDecimal effectiveAmount;
+
+    public java.util.Map<String, String> getExactAmounts() {
+        return com.quanlybanhang.util.ExactAmounts.of("subtotalAmount", subtotalAmount, "discountAmount", discountAmount,
+                "totalAmount", totalAmount, "adjustedTotalAmount", adjustedTotalAmount, "effectiveAmount", effectiveAmount,
+                "paidAmount", paidAmount, "remainingAmount", remainingAmount);
+    }
 
     /** Số tiền đã thanh toán phân bổ cho hóa đơn này (FIFO) (S7-07). */
     private BigDecimal paidAmount;

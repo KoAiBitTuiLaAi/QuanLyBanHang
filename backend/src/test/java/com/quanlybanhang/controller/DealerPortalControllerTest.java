@@ -262,6 +262,8 @@ class DealerPortalControllerTest {
 
         mvc.perform(get("/api/portal/debt/summary").with(authentication(noFinanceAuth)))
                 .andExpect(status().isForbidden());
+        mvc.perform(get("/api/portal/debt").with(authentication(noFinanceAuth)))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -329,7 +331,11 @@ class DealerPortalControllerTest {
         mvc.perform(get("/api/portal/invoices/501/pdf").param("download", "true").with(authentication(dealerAuth)))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF))
-                .andExpect(header().string("Content-Disposition", "attachment; filename=\"hoa-don-00000001.pdf\""));
+                .andExpect(result -> {
+                    var disposition = org.springframework.http.ContentDisposition.parse(result.getResponse().getHeader("Content-Disposition"));
+                    org.junit.jupiter.api.Assertions.assertEquals("attachment", disposition.getType());
+                    org.junit.jupiter.api.Assertions.assertEquals("hoa-don-00000001.pdf", disposition.getFilename());
+                });
     }
 
     @Test
