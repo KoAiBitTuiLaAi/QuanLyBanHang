@@ -369,6 +369,8 @@
 
           <footer class="dp-modal-footer">
             <button class="btn btn--secondary" data-close-modal="payment-detail" type="button">Đóng</button>
+            <button id="btn-print-from-detail" class="btn btn--secondary" type="button" style="color: var(--teal-deep, #0f766e);">In phiếu thu</button>
+            <button id="btn-download-pdf-from-detail" class="btn btn--secondary" type="button">Tải PDF</button>
             <button id="btn-open-adjust-from-detail" class="btn btn--danger" type="button" hidden>Lập bút toán điều chỉnh</button>
           </footer>
         </div>
@@ -474,6 +476,34 @@
 
           <footer class="dp-modal-footer">
             <button class="btn btn--secondary" data-close-modal="order-settlements" type="button">Đóng</button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           MODAL 5: XEM TRƯỚC VÀ IN PHIẾU THU / TẢI PDF (S7-09)
+           ══════════════════════════════════════════════════════ -->
+      <div id="modal-receipt-print" class="dp-modal-overlay" hidden>
+        <div class="dp-modal dp-modal--large dp-receipt-modal" role="dialog" aria-labelledby="modal-receipt-print-title">
+          <header class="dp-modal-header no-print">
+            <h2 id="modal-receipt-print-title">Chứng từ Phiếu thu tiền công nợ</h2>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button id="btn-print-receipt-action" class="btn btn--primary btn--sm" type="button">In phiếu thu</button>
+              <button id="btn-download-receipt-pdf" class="btn btn--secondary btn--sm" type="button">Tải file PDF</button>
+              <button class="dp-modal-close" data-close-modal="receipt-print" aria-label="Đóng">&times;</button>
+            </div>
+          </header>
+
+          <div class="dp-modal-body" style="background: #f1f5f9; padding: 20px;">
+            <div id="dp-receipt-print-area" class="dp-receipt-paper">
+              <!-- Điền động bằng JS (renderReceiptHtml) -->
+            </div>
+          </div>
+
+          <footer class="dp-modal-footer no-print">
+            <button class="btn btn--secondary" data-close-modal="receipt-print" type="button">Đóng</button>
+            <button id="btn-download-receipt-pdf-footer" class="btn btn--secondary" type="button">Tải file PDF</button>
+            <button id="btn-print-receipt-action-footer" class="btn btn--primary" type="button">In phiếu thu</button>
           </footer>
         </div>
       </div>

@@ -560,3 +560,268 @@
   }
 }
 
+
+
+/* ══════════════════════════════════════════════════════
+   MẪU IN PHIẾU THU & TẢI PDF (S7-09)
+   ══════════════════════════════════════════════════════ */
+
+.dp-receipt-modal {
+  max-width: 860px;
+}
+
+.dp-receipt-paper {
+  background: #ffffff;
+  border: 1px solid var(--line, #dce4eb);
+  border-radius: var(--radius-sm, 6px);
+  padding: 32px 36px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  color: var(--ink-900, #182433);
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.dp-receipt-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 2px solid #334155;
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+}
+
+.dp-receipt-company {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #1e293b;
+}
+
+.dp-receipt-company strong {
+  font-size: 0.9375rem;
+  color: #0f172a;
+}
+
+.dp-receipt-form-meta {
+  text-align: right;
+  font-size: 0.75rem;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.dp-receipt-form-meta strong {
+  font-size: 0.8125rem;
+  color: #0f172a;
+}
+
+.dp-receipt-title-box {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.dp-receipt-main-title {
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.dp-receipt-sub-date {
+  font-size: 0.875rem;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.dp-receipt-code-badge {
+  font-size: 0.875rem;
+  color: var(--teal-deep, #0f766e);
+  font-weight: 700;
+}
+
+.dp-receipt-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+  font-size: 0.875rem;
+}
+
+.dp-receipt-info-row {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.dp-receipt-label {
+  width: 210px;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #334155;
+}
+
+.dp-receipt-value {
+  flex: 1;
+  color: #0f172a;
+}
+
+.dp-receipt-amount {
+  font-size: 1.1875rem;
+  font-weight: 800;
+  color: #15803d;
+}
+
+.dp-receipt-words {
+  color: #1e293b;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.dp-receipt-alloc-section {
+  margin-top: 18px;
+  margin-bottom: 24px;
+}
+
+.dp-receipt-alloc-title {
+  font-weight: 700;
+  font-size: 0.875rem;
+  margin-bottom: 10px;
+  color: #0f172a;
+}
+
+.dp-receipt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.dp-receipt-table th,
+.dp-receipt-table td {
+  border: 1px solid #cbd5e1;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.dp-receipt-table th {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.dp-receipt-table .num {
+  text-align: right;
+}
+
+.dp-receipt-footer-notes {
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-style: italic;
+  margin-bottom: 28px;
+  line-height: 1.6;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 12px;
+}
+
+.dp-receipt-signatures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  text-align: center;
+  margin-top: 24px;
+  padding-top: 10px;
+}
+
+.dp-receipt-sig-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.dp-receipt-sig-block strong {
+  color: #0f172a;
+}
+
+.dp-receipt-sig-hint {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.dp-receipt-sig-space {
+  height: 64px;
+}
+
+.dp-receipt-sig-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: #0f172a;
+}
+
+/* ── Chế độ in (Print media) chuẩn A4 ── */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .no-print,
+  .dp-header,
+  .dp-header-actions,
+  .dp-notice,
+  .dp-tabs,
+  .dp-filter-panel,
+  .dp-table-container,
+  .dp-modal-header,
+  .dp-modal-footer,
+  .dp-modal-close,
+  .app-sidebar,
+  .app-topbar,
+  nav,
+  header,
+  footer {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  #modal-receipt-print,
+  #modal-receipt-print .dp-modal-body,
+  #dp-receipt-print-area,
+  #dp-receipt-print-area * {
+    visibility: visible !important;
+  }
+  #modal-receipt-print {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #modal-receipt-print .dp-modal {
+    position: static !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #dp-receipt-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm 15mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}
