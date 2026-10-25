@@ -77,6 +77,11 @@ class DeliveryTripIntegrationTest {
     private String staffToken;
 
     @Autowired private DeliveryTripRepository trips;
+    @Autowired private com.quanlybanhang.repository.TerritoryRepository territories;
+    @Autowired private com.quanlybanhang.repository.DealerRepository dealers;
+    @Autowired private com.quanlybanhang.repository.DealerDeliveryPointRepository deliveryPoints;
+    @Autowired private com.quanlybanhang.repository.OrderRepository orders;
+    @Autowired private com.quanlybanhang.repository.WarehouseVoucherRepository vouchers;
 
     @BeforeEach
     void setUp() {
@@ -348,6 +353,166 @@ class DeliveryTripIntegrationTest {
                 .status(DeliveryStopStatus.FAILED).failedReason("Chờ giao lại").deliveryAmount(new BigDecimal("100"))
                 .returnedToWarehouse(returned).build());
         return trips.save(trip);
+    }
+
+    @Test
+    @DisplayName("S6-06: Toàn trình gom phiếu xuất theo khu vực, gán tài xế/xe, in bảng kê điểm giao và tuân thủ ma trận quyền")
+    void s606_FullFlow_RouteTerritory_AssignDriver_PrintManifest_PermissionMatrix() {
+        String uid = UUID.randomUUID().toString().substring(0, 6);
+
+        // 1. Khởi tạo Khu vực (Territory) và Đại lý có điểm giao hàng
+        var territory = territories.save(com.quanlybanhang.model.Territory.builder()
+                .code("KV-TB-" + uid)
+                .name("Khu vực Tây Bắc " + uid)
+                .active(true)
+                .build());
+
+        var dealer = dealers.save(com.quanlybanhang.model.Dealer.builder()
+                .code("DL-TB-" + uid)
+                .name("Đại lý Điện Biên " + uid)
+                .territory(territory)
+                .warehouse(warehouse)
+                .active(true)
+                .locked(false)
+                .build());
+
+        var dp = deliveryPoints.save(com.quanlybanhang.model.DealerDeliveryPoint.builder()
+                .dealer(dealer)
+                .receiverName("Anh Tuấn Điện Biên")
+                .phone("0901234567")
+                .address("Số 123 Đường Điện Biên Phủ, TP. Điện Biên")
+                .isDefault(true)
+                .build());
+
+        // 2. Khởi tạo Đơn hàng đã xuất kho (EXPORTED)
+        var order = orders.save(com.quanlybanhang.model.Order.builder()
+                .orderCode("DH-TB-" + uid)
+                .warehouse(warehouse)
+                .dealer(dealer)
+                .deliveryPoint(dp)
+                .customerName(dealer.getName())
+                .status("EXPORTED")
+                .totalAmount(new BigDecimal("15000000.00"))
+                .backordered(false)
+                .inventoryReserved(false)
+                .createdAt(LocalDateTime.now())
+                .build());
+
+        // 3. Khởi tạo Phiếu xuất kho (WarehouseVoucher EXPORT)
+        var voucher = vouchers.save(com.quanlybanhang.model.WarehouseVoucher.builder()
+                .voucherCode("PXDH-" + uid)
+                .type(com.quanlybanhang.model.WarehouseVoucherType.EXPORT)
+                .warehouse(warehouse)
+                .status("CONFIRMED")
+                .shipmentOrderId(order.getId())
+                .documentNumber(order.getOrderCode())
+                .voucherDate(LocalDateTime.now())
+                .recordedAt(LocalDateTime.now())
+                .build());
+
+        // 4. Lấy danh sách đơn hàng/phiếu xuất đủ điều kiện theo khu vực (S6-06)
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_VIEW, Permission.WAREHOUSE_EXPORT));
+
+        JsonNode eligibleNode = call(HttpMethod.GET,
+                API + "/eligible-orders?warehouseId=" + warehouse.getId() + "&territoryId=" + territory.getId(),
+                staffToken, null, 200);
+
+        assertThat(eligibleNode.get("data").isArray()).isTrue();
+        boolean foundOrder = false;
+        for (JsonNode item : eligibleNode.get("data")) {
+            if (item.get("orderId").asLong() == order.getId()) {
+                foundOrder = true;
+                assertThat(item.get("territoryId").asLong()).isEqualTo(territory.getId());
+                assertThat(item.get("territoryName").asText()).isEqualTo(territory.getName());
+                assertThat(item.get("receiverName").asText()).isEqualTo("Anh Tuấn Điện Biên");
+                assertThat(item.get("receiverPhone").asText()).isEqualTo("0901234567");
+                assertThat(item.get("shipmentVoucherCode").asText()).isEqualTo(voucher.getVoucherCode());
+            }
+        }
+        assertThat(foundOrder).isTrue();
+
+        // 5. Gom phiếu xuất vào chuyến giao, gán tài xế và phương tiện (POST /api/warehouse/delivery-trips)
+        Map<String, Object> createTripReq = new HashMap<>();
+        createTripReq.put("warehouseId", warehouse.getId());
+        createTripReq.put("tripCode", "CG-TB-" + uid);
+        createTripReq.put("driverName", "Lê Văn Tải");
+        createTripReq.put("driverPhone", "0988777666");
+        createTripReq.put("vehiclePlate", "27B-123.45");
+        createTripReq.put("routeName", "Tuyến Tây Bắc - Điện Biên");
+        createTripReq.put("territoryId", territory.getId());
+        createTripReq.put("expectedCompletionTime", LocalDateTime.now().plusHours(6).toString());
+        createTripReq.put("shipmentVoucherIds", List.of(voucher.getId()));
+
+        JsonNode createdTripNode = call(HttpMethod.POST, API, staffToken, createTripReq, 200);
+        long tripId = createdTripNode.get("data").get("id").asLong();
+        assertThat(createdTripNode.get("data").get("driverName").asText()).isEqualTo("Lê Văn Tải");
+        assertThat(createdTripNode.get("data").get("vehiclePlate").asText()).isEqualTo("27B-123.45");
+        assertThat(createdTripNode.get("data").get("routeName").asText()).isEqualTo("Tuyến Tây Bắc - Điện Biên");
+        assertThat(createdTripNode.get("data").get("territoryName").asText()).isEqualTo(territory.getName());
+        assertThat(createdTripNode.get("data").get("totalPoints").asInt()).isEqualTo(1);
+
+        // 6. Gán lại tài xế và phương tiện cho chuyến (PUT /api/warehouse/delivery-trips/{id})
+        Map<String, Object> updateTripReq = new HashMap<>();
+        updateTripReq.put("driverName", "Trần Bác Tài");
+        updateTripReq.put("driverPhone", "0911223344");
+        updateTripReq.put("vehiclePlate", "27C-888.99");
+        updateTripReq.put("routeName", "Tuyến Tây Bắc Mở Rộng");
+        updateTripReq.put("territoryId", territory.getId());
+        updateTripReq.put("note", "Đổi xe trọng tải lớn");
+
+        JsonNode updatedTripNode = call(HttpMethod.PUT, API + "/" + tripId, staffToken, updateTripReq, 200);
+        assertThat(updatedTripNode.get("data").get("driverName").asText()).isEqualTo("Trần Bác Tài");
+        assertThat(updatedTripNode.get("data").get("vehiclePlate").asText()).isEqualTo("27C-888.99");
+        assertThat(updatedTripNode.get("data").get("routeName").asText()).isEqualTo("Tuyến Tây Bắc Mở Rộng");
+
+        // 7. Lấy bảng kê điểm giao hàng kèm địa chỉ và SĐT người nhận (GET /api/warehouse/delivery-trips/{id}/manifest)
+        JsonNode manifestNode = call(HttpMethod.GET, API + "/" + tripId + "/manifest", staffToken, null, 200);
+        assertThat(manifestNode.get("data").get("tripCode").asText()).isEqualTo("CG-TB-" + uid);
+        assertThat(manifestNode.get("data").get("driverName").asText()).isEqualTo("Trần Bác Tài");
+        assertThat(manifestNode.get("data").get("vehiclePlate").asText()).isEqualTo("27C-888.99");
+        assertThat(manifestNode.get("data").get("totalStops").asInt()).isEqualTo(1);
+        JsonNode stopNode = manifestNode.get("data").get("stops").get(0);
+        assertThat(stopNode.get("receiverName").asText()).isEqualTo("Anh Tuấn Điện Biên");
+        assertThat(stopNode.get("receiverPhone").asText()).isEqualTo("0901234567");
+        assertThat(stopNode.get("deliveryAddress").asText()).isEqualTo("Số 123 Đường Điện Biên Phủ, TP. Điện Biên");
+        assertThat(stopNode.get("voucherCode").asText()).isEqualTo(voucher.getVoucherCode());
+
+        // 8. Tải PDF bảng kê điểm giao hàng (GET /api/warehouse/delivery-trips/{id}/manifest/pdf)
+        HttpHeaders pdfHeaders = new HttpHeaders();
+        pdfHeaders.setBearerAuth(staffToken);
+        var pdfResponse = http.exchange(API + "/" + tripId + "/manifest/pdf", HttpMethod.GET, new HttpEntity<>(pdfHeaders), byte[].class);
+        if (pdfResponse.getStatusCode().value() != 200) {
+            System.err.println("PDF ERROR: status=" + pdfResponse.getStatusCode() + ", body=" + (pdfResponse.getBody() != null ? new String(pdfResponse.getBody(), java.nio.charset.StandardCharsets.UTF_8) : "null"));
+        }
+        assertThat(pdfResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(pdfResponse.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
+        assertThat(new String(pdfResponse.getBody(), 0, 5, java.nio.charset.StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
+
+        // 9. Xem trước in HTML (GET /api/warehouse/delivery-trips/{id}/manifest/print)
+        HttpHeaders printHeaders = new HttpHeaders();
+        printHeaders.setBearerAuth(staffToken);
+        var printResponse = http.exchange(API + "/" + tripId + "/manifest/print", HttpMethod.GET, new HttpEntity<>(printHeaders), String.class);
+        assertThat(printResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(printResponse.getBody()).contains("BẢNG KÊ ĐIỂM GIAO HÀNG THEO CHUYẾN");
+        assertThat(printResponse.getBody()).contains("Anh Tuấn Điện Biên");
+        assertThat(printResponse.getBody()).contains("0901234567");
+
+        // 10. Kiểm tra Ma trận phân quyền động (Database-backed Permission Matrix)
+        // Khi thu hồi WAREHOUSE_EXPORT, chỉ còn WAREHOUSE_VIEW:
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_VIEW));
+
+        // GET manifest và PDF vẫn được phép (200 OK)
+        call(HttpMethod.GET, API + "/" + tripId + "/manifest", staffToken, null, 200);
+        // Nhưng gọi lệnh ghi PUT cập nhật tài xế ngay lập tức trả về 403 Forbidden!
+        call(HttpMethod.PUT, API + "/" + tripId, staffToken, updateTripReq, 403);
+
+        // Thu hồi toàn bộ quyền: ngay lập tức trả về 403 Forbidden trên request kế tiếp!
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of());
+        call(HttpMethod.GET, API + "/" + tripId + "/manifest", staffToken, null, 403);
+
+        // ROLE_ADMIN luôn có toàn quyền
+        call(HttpMethod.GET, API + "/" + tripId + "/manifest", adminToken, null, 200);
+        call(HttpMethod.PUT, API + "/" + tripId, adminToken, updateTripReq, 200);
     }
 
     private JsonNode call(HttpMethod method, String path, String jwt, Object body, int expectedStatus) {

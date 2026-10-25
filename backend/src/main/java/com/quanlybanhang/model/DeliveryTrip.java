@@ -45,6 +45,20 @@ public class DeliveryTrip {
     @Column(name = "vehicle_plate", nullable = false, length = 30)
     private String vehiclePlate;
 
+    /**
+     * Tên tuyến giao hàng (S6-06).
+     * Phục vụ Quản lý kho phân tuyến giao hàng theo khu vực.
+     */
+    @Column(name = "route_name", length = 150)
+    private String routeName;
+
+    /**
+     * Khu vực / địa bàn phân tuyến của chuyến (S6-06).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "territory_id")
+    private Territory territory;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     @Builder.Default

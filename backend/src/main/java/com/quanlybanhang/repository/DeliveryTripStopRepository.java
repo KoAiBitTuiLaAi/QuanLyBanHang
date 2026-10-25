@@ -1,6 +1,7 @@
 package com.quanlybanhang.repository;
 
 import com.quanlybanhang.model.DeliveryStopStatus;
+import com.quanlybanhang.model.DeliveryTripStatus;
 import com.quanlybanhang.model.DeliveryTripStop;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -15,5 +16,8 @@ public interface DeliveryTripStopRepository extends JpaRepository<DeliveryTripSt
     List<DeliveryTripStop> findByTripIdAndStatus(Long tripId, DeliveryStopStatus status);
 
     boolean existsByOrderId(Long orderId);
-}
 
+    List<DeliveryTripStop> findByOrderId(Long orderId);
+
+    boolean existsByOrderIdAndTrip_Status(Long orderId, DeliveryTripStatus status);
+}

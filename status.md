@@ -1,5 +1,19 @@
 # Trạng thái sprint 1–8
 
+## S6-06 — Phân tuyến giao hàng và gán tài xế (Backend) — 25/10/2026
+
+Yêu cầu người dùng: "Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE." (Hình ảnh đính kèm: S6-06. Là Quản lý kho, tôi muốn phân tuyến giao hàng và gán tài xế, để xe chạy một vòng giao được nhiều điểm thay vì đi lẻ).
+Phạm vi: **Chỉ làm backend (BE)** theo yêu cầu của người dùng, không sửa frontend.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Gom nhiều phiếu xuất vào một chuyến giao theo khu vực** | ✅ Có | Chưa làm (Yêu cầu chỉ làm BE) | Đã kết nối đúng ở BE | Backend mở rộng `CreateDeliveryTripRequest` hỗ trợ `routeName`, `territoryId`, gom danh sách phiếu xuất theo `shipmentVoucherIds` hoặc `orderIds`. Mở rộng `GET /api/warehouse/delivery-trips/eligible-orders` lọc đơn hàng/phiếu xuất đã xuất kho theo kho (`warehouseId`), khu vực (`territoryId`) và từ khóa (`keyword`). Tự động liên kết và lưu `voucherCode` trên từng điểm giao (`DeliveryTripStop`). Loại bỏ đơn hàng đang thuộc chuyến khác hoặc đã chuyển backorder. Quyền yêu cầu: `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **Gán tài xế và phương tiện cho chuyến** | ✅ Có | Chưa làm (Yêu cầu chỉ làm BE) | Đã kết nối đúng ở BE | Bổ sung API `PUT /api/warehouse/delivery-trips/{id}` tiếp nhận `UpdateDeliveryTripRequest` (`driverName`, `driverPhone`, `vehiclePlate`, `routeName`, `territoryId`, `expectedCompletionTime`, `note`). Kiểm tra chặt chẽ chuyến đang ở trạng thái `IN_PROGRESS`, gán tài xế, xe và tuyến giao hàng; ghi log kiểm toán. Quyền yêu cầu: `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **In danh sách điểm giao của chuyến kèm địa chỉ và số điện thoại người nhận** | ✅ Có | Chưa làm (Yêu cầu chỉ làm BE) | Đã kết nối đúng ở BE | Bổ sung bộ 3 API: (1) `GET /api/warehouse/delivery-trips/{id}/manifest` trả JSON bảng kê điểm giao đầy đủ họ tên, SĐT, địa chỉ nhận hàng, mã phiếu xuất, mã đơn hàng, số tiền, danh sách mặt hàng; (2) `GET /api/warehouse/delivery-trips/{id}/manifest/pdf` xuất PDF chuẩn A4 OpenPDF có quốc hiệu, thông tin tài xế/xe/tuyến, bảng kê điểm giao, tổng tiền hàng và chữ ký các bên; (3) `GET /api/warehouse/delivery-trips/{id}/manifest/print` xuất HTML bản in hỗ trợ xem trước và in trực tiếp (`window.print()`). Quyền yêu cầu: `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **Ma trận phân quyền động (Database-backed Permission Matrix) & Warehouse Scoping** | ✅ Có | Chưa làm (Yêu cầu chỉ làm BE) | Đã kết nối đúng ở BE | Thực thi ma trận quyền DB nghiêm ngặt: Quyền xem/bảng kê/PDF/print/eligible-orders bắt buộc `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT`. Quyền tạo chuyến/cập nhật chuyến/đổi trạng thái điểm giao bắt buộc `WAREHOUSE_EXPORT`. `ROLE_ADMIN` luôn có toàn quyền. Không dùng role-based fallback. Thu hồi quyền trên phiên JWT hiện tại lập tức có hiệu lực trả về `403 Forbidden` trên API request kế tiếp. Phân vùng dữ liệu kho (Warehouse Scoping) bảo đảm nhân viên kho chỉ truy cập được các chuyến giao thuộc kho được phân công (`user.getWarehouses()`). |
+
+Kiểm thử: **47/47 tests Backend DeliveryTrip qua 100%** (`DeliveryTripControllerTest`, `DeliveryTripSecurityTest`, `DeliveryTripServiceTest`, `DeliveryTripIntegrationTest`). Đã cập nhật `docs/FUNCTION_MAP.md` và `backend/API_DOCUMENTATION.md`.
+
 ## S8-04 — Quản lý chỉ tiêu doanh số (Frontend) — 24/10/2026
 
 Nánh `feature/S8-04-chi-tieu-doanh-so(frontend)`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ 3 tiêu chí nghiệp vụ theo yêu cầu: **chỉ làm frontend**.

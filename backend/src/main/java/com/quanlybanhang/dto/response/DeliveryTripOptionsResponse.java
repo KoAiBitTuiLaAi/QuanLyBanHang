@@ -15,6 +15,7 @@ import java.util.List;
 public class DeliveryTripOptionsResponse {
 
     private List<NamedResourceResponse> warehouses;
+    private List<NamedResourceResponse> territories;
     private List<StatusOption> tripStatuses;
     private List<StatusOption> stopStatuses;
     private boolean canManage;

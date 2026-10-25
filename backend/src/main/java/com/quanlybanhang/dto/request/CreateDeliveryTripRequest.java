@@ -46,6 +46,21 @@ public class CreateDeliveryTripRequest {
     @NotNull(message = "Thời gian dự kiến hoàn thành không được để trống")
     private LocalDateTime expectedCompletionTime;
 
+    /**
+     * Tên tuyến giao hàng (S6-06).
+     */
+    private String routeName;
+
+    /**
+     * ID Khu vực / địa bàn phân tuyến (S6-06).
+     */
+    private Long territoryId;
+
+    /**
+     * Danh sách ID phiếu xuất kho để gom vào chuyến theo khu vực (S6-06).
+     */
+    private List<Long> shipmentVoucherIds;
+
     private String note;
 
     /**

@@ -73,6 +73,15 @@ class DeliveryTripServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private com.quanlybanhang.repository.TerritoryRepository territoryRepository;
+
+    @Mock
+    private com.quanlybanhang.repository.WarehouseVoucherRepository warehouseVoucherRepository;
+
+    @Mock
+    private com.quanlybanhang.service.DeliveryTripPdfService deliveryTripPdfService;
+
     @InjectMocks
     private DeliveryTripServiceImpl tripService;
 
@@ -477,5 +486,132 @@ class DeliveryTripServiceTest {
         trip.addStop(stop1);
         trip.addStop(stop2);
         return trip;
+    }
+
+    @Test
+    @DisplayName("S6-06: Tạo chuyến giao hàng với tuyến giao và khu vực thành công")
+    void createTrip_WithRouteAndTerritory_Success() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse1));
+        when(tripRepository.existsByTripCode(any())).thenReturn(false);
+
+        com.quanlybanhang.model.Territory territory = com.quanlybanhang.model.Territory.builder()
+                .id(10L)
+                .code("KV-HN-HK")
+                .name("Khu vực Hoàn Kiếm")
+                .build();
+        when(territoryRepository.findById(10L)).thenReturn(Optional.of(territory));
+
+        CreateDeliveryTripRequest req = CreateDeliveryTripRequest.builder()
+                .warehouseId(1L)
+                .driverName("Nguyễn Văn Lái")
+                .driverPhone("0988111222")
+                .vehiclePlate("29C-999.99")
+                .routeName("Tuyến Phố Cổ - Hoàn Kiếm")
+                .territoryId(10L)
+                .expectedCompletionTime(LocalDateTime.now().plusHours(4))
+                .stops(List.of(
+                        CreateDeliveryTripStopRequest.builder()
+                                .receiverName("Cửa hàng A")
+                                .receiverPhone("0912345678")
+                                .deliveryAddress("10 Tràng Tiền, Hoàn Kiếm")
+                                .deliveryAmount(new BigDecimal("5000000.00"))
+                                .build()
+                ))
+                .build();
+
+        when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(invocation -> {
+            DeliveryTrip t = invocation.getArgument(0);
+            t.setId(100L);
+            return t;
+        });
+
+        DeliveryTripResponse res = tripService.createTrip(req, "admin");
+
+        assertThat(res).isNotNull();
+        assertThat(res.getDriverName()).isEqualTo("Nguyễn Văn Lái");
+        assertThat(res.getVehiclePlate()).isEqualTo("29C-999.99");
+        assertThat(res.getRouteName()).isEqualTo("Tuyến Phố Cổ - Hoàn Kiếm");
+        assertThat(res.getTerritoryId()).isEqualTo(10L);
+        assertThat(res.getTerritoryName()).isEqualTo("Khu vực Hoàn Kiếm");
+    }
+
+    @Test
+    @DisplayName("S6-06: Gán tài xế, phương tiện và đổi tuyến giao cho chuyến thành công")
+    void updateTrip_AssignDriverAndVehicle_Success() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        DeliveryTrip trip = createSampleTrip();
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+
+        com.quanlybanhang.model.Territory newTerritory = com.quanlybanhang.model.Territory.builder()
+                .id(20L)
+                .code("KV-HN-CG")
+                .name("Khu vực Cầu Giấy")
+                .build();
+        when(territoryRepository.findById(20L)).thenReturn(Optional.of(newTerritory));
+        when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(i -> i.getArgument(0));
+
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("Bác Tài Mới")
+                .driverPhone("0933444555")
+                .vehiclePlate("29B-555.66")
+                .routeName("Tuyến Cầu Giấy - Mỹ Đình")
+                .territoryId(20L)
+                .note("Đổi xe lớn theo tuyến mới")
+                .build();
+
+        DeliveryTripResponse res = tripService.updateTrip(10L, req, "admin");
+
+        assertThat(res).isNotNull();
+        assertThat(res.getDriverName()).isEqualTo("Bác Tài Mới");
+        assertThat(res.getDriverPhone()).isEqualTo("0933444555");
+        assertThat(res.getVehiclePlate()).isEqualTo("29B-555.66");
+        assertThat(res.getRouteName()).isEqualTo("Tuyến Cầu Giấy - Mỹ Đình");
+        assertThat(res.getTerritoryId()).isEqualTo(20L);
+    }
+
+    @Test
+    @DisplayName("S6-06: Cập nhật chuyến đã hoàn tất -> ném IllegalStateException")
+    void updateTrip_NotRunning_ThrowsException() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        DeliveryTrip trip = createSampleTrip();
+        trip.setStatus(DeliveryTripStatus.COMPLETED);
+        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("Tài mới")
+                .vehiclePlate("29C-111.11")
+                .build();
+
+        assertThatThrownBy(() -> tripService.updateTrip(10L, req, "admin"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Chỉ có thể cập nhật thông tin chuyến giao khi chuyến đang chạy");
+    }
+
+    @Test
+    @DisplayName("S6-06: In bảng kê điểm giao ủy quyền cho PdfService")
+    void getManifest_DelegatesToPdfService() {
+        setAuth("admin", "ROLE_ADMIN", "WAREHOUSE_VIEW", "WAREHOUSE_EXPORT");
+
+        com.quanlybanhang.dto.response.DeliveryTripManifestResponse mockManifest = com.quanlybanhang.dto.response.DeliveryTripManifestResponse.builder()
+                .tripId(10L)
+                .tripCode("CG-20261022-001")
+                .routeName("Tuyến Test")
+                .build();
+
+        when(deliveryTripPdfService.getManifest(10L, "admin")).thenReturn(mockManifest);
+        when(deliveryTripPdfService.generateManifestPdf(10L, "admin")).thenReturn("%PDF-test".getBytes());
+        when(deliveryTripPdfService.generateManifestPrintHtml(10L, "admin")).thenReturn("<html>test</html>");
+
+        var manifest = tripService.getManifest(10L, "admin");
+        byte[] pdf = tripService.generateManifestPdf(10L, "admin");
+        String html = tripService.generateManifestPrintHtml(10L, "admin");
+
+        assertThat(manifest.getTripCode()).isEqualTo("CG-20261022-001");
+        assertThat(pdf).isNotEmpty();
+        assertThat(html).isEqualTo("<html>test</html>");
     }
 }

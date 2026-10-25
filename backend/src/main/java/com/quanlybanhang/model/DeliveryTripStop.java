@@ -35,6 +35,9 @@ public class DeliveryTripStop {
     @Column(name = "order_code", length = 50)
     private String orderCode;
 
+    @Column(name = "voucher_code", length = 50)
+    private String voucherCode;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dealer_id")
     private Dealer dealer;

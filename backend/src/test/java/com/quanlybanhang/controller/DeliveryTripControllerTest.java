@@ -241,4 +241,132 @@ class DeliveryTripControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.returnedToWarehouse").value(true));
     }
+
+    @Test
+    @DisplayName("PUT /api/warehouse/delivery-trips/{id}: Cập nhật tài xế, phương tiện và tuyến giao hợp lệ (S6-06)")
+    void updateTrip_Valid_Returns200() throws Exception {
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("Trần Văn Tài")
+                .driverPhone("0912345678")
+                .vehiclePlate("51D-999.88")
+                .routeName("Tuyến Quận 1 - Bình Thạnh")
+                .note("Đổi xe tải lớn hơn")
+                .build();
+
+        DeliveryTripResponse response = DeliveryTripResponse.builder()
+                .id(1L)
+                .tripCode("CG-20261022-001")
+                .driverName("Trần Văn Tài")
+                .driverPhone("0912345678")
+                .vehiclePlate("51D-999.88")
+                .routeName("Tuyến Quận 1 - Bình Thạnh")
+                .build();
+
+        when(deliveryTripService.updateTrip(eq(1L), any(), any())).thenReturn(response);
+
+        mockMvc.perform(put("/api/warehouse/delivery-trips/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.driverName").value("Trần Văn Tài"))
+                .andExpect(jsonPath("$.data.vehiclePlate").value("51D-999.88"))
+                .andExpect(jsonPath("$.data.routeName").value("Tuyến Quận 1 - Bình Thạnh"));
+    }
+
+    @Test
+    @DisplayName("PUT /api/warehouse/delivery-trips/{id}: Thiếu driverName hoặc vehiclePlate -> 400 Bad Request (S6-06)")
+    void updateTrip_MissingFields_Returns400() throws Exception {
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("")
+                .vehiclePlate("")
+                .build();
+
+        mockMvc.perform(put("/api/warehouse/delivery-trips/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /api/warehouse/delivery-trips/{id}/manifest: Lấy bảng kê điểm giao hàng (S6-06)")
+    void getManifest_Returns200() throws Exception {
+        DeliveryTripManifestResponse manifest = DeliveryTripManifestResponse.builder()
+                .tripId(1L)
+                .tripCode("CG-20261022-001")
+                .driverName("Nguyễn Văn Lái")
+                .vehiclePlate("29C-123.45")
+                .routeName("Tuyến Miền Đông")
+                .totalStops(2)
+                .totalAmount(new BigDecimal("20000000.00"))
+                .stops(List.of(
+                        DeliveryTripManifestResponse.ManifestStopResponse.builder()
+                                .stopId(10L)
+                                .stopOrder(1)
+                                .dealerName("Đại lý Alpha")
+                                .receiverName("Trần Văn Nhận")
+                                .receiverPhone("0987654321")
+                                .deliveryAddress("123 Lê Lợi, Q1")
+                                .deliveryAmount(new BigDecimal("10000000.00"))
+                                .build()
+                ))
+                .build();
+
+        when(deliveryTripService.getManifest(eq(1L), any())).thenReturn(manifest);
+
+        mockMvc.perform(get("/api/warehouse/delivery-trips/1/manifest"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.tripCode").value("CG-20261022-001"))
+                .andExpect(jsonPath("$.data.stops[0].receiverName").value("Trần Văn Nhận"))
+                .andExpect(jsonPath("$.data.stops[0].receiverPhone").value("0987654321"))
+                .andExpect(jsonPath("$.data.stops[0].deliveryAddress").value("123 Lê Lợi, Q1"));
+    }
+
+    @Test
+    @DisplayName("GET /api/warehouse/delivery-trips/{id}/manifest/pdf: Tải file PDF bảng kê (S6-06)")
+    void downloadManifestPdf_ReturnsPdf() throws Exception {
+        byte[] pdfBytes = "%PDF-1.4 mock pdf content".getBytes();
+        when(deliveryTripService.generateManifestPdf(eq(1L), any())).thenReturn(pdfBytes);
+        when(deliveryTripService.getTripById(1L)).thenReturn(DeliveryTripResponse.builder().id(1L).tripCode("CG-001").build());
+
+        mockMvc.perform(get("/api/warehouse/delivery-trips/1/manifest/pdf"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", "inline; filename=\"bang-ke-chuyen-giao-CG-001.pdf\""));
+    }
+
+    @Test
+    @DisplayName("GET /api/warehouse/delivery-trips/{id}/manifest/print: Xem trước bản in HTML (S6-06)")
+    void getManifestPrintHtml_ReturnsHtml() throws Exception {
+        String html = "<html><body><h1>BẢNG KÊ ĐIỂM GIAO HÀNG THEO CHUYẾN</h1></body></html>";
+        when(deliveryTripService.generateManifestPrintHtml(eq(1L), any())).thenReturn(html);
+
+        mockMvc.perform(get("/api/warehouse/delivery-trips/1/manifest/print"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("BẢNG KÊ ĐIỂM GIAO HÀNG")));
+    }
+
+    @Test
+    @DisplayName("GET /api/warehouse/delivery-trips/eligible-orders: Lọc theo warehouseId và territoryId (S6-06)")
+    void getEligibleOrders_WithTerritory_ReturnsFilteredOrders() throws Exception {
+        DeliveryEligibleOrderResponse order = DeliveryEligibleOrderResponse.builder()
+                .orderId(100L)
+                .orderCode("DH-20261022-001")
+                .dealerName("Đại lý Mai Linh")
+                .territoryId(5L)
+                .territoryName("Khu vực Hoàn Kiếm")
+                .shipmentVoucherCode("PX-20261022-01")
+                .build();
+
+        when(deliveryTripService.getEligibleOrders(eq(1L), eq(5L), eq("Mai Linh"))).thenReturn(List.of(order));
+
+        mockMvc.perform(get("/api/warehouse/delivery-trips/eligible-orders?warehouseId=1&territoryId=5&keyword=Mai Linh"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].orderCode").value("DH-20261022-001"))
+                .andExpect(jsonPath("$.data[0].territoryName").value("Khu vực Hoàn Kiếm"))
+                .andExpect(jsonPath("$.data[0].shipmentVoucherCode").value("PX-20261022-01"));
+    }
 }
