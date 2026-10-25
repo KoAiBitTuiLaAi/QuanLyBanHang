@@ -275,3 +275,154 @@ test('S7-02: Không sử dụng lưu trữ trình duyệt (localStorage/sessionS
   assert.equal(storageCalls, null, 'Tuyệt đối không được gọi API lưu trữ trình duyệt cho dữ liệu kinh doanh');
 });
 
+test('S7-09: Đọc số tiền thành chữ tiếng Việt chuẩn biểu mẫu kế toán', () => {
+  assert.equal(Utils.numberToVietnameseWords(15000000), 'Mười lăm triệu đồng chẵn.');
+  assert.equal(Utils.numberToVietnameseWords(10500000), 'Mười triệu năm trăm nghìn đồng chẵn.');
+  assert.equal(Utils.numberToVietnameseWords(250000), 'Hai trăm năm mươi nghìn đồng chẵn.');
+  assert.equal(Utils.numberToVietnameseWords(1000000), 'Một triệu đồng chẵn.');
+  assert.equal(Utils.numberToVietnameseWords(0), 'Không đồng chẵn.');
+  assert.equal(Utils.numberToVietnameseWords(null), '');
+  assert.equal(Utils.numberToVietnameseWords(''), '');
+});
+
+test('S7-09: Mẫu in phiếu thu hiển thị đầy đủ mã duy nhất, đại lý, số tiền, hình thức, người thu và đối trừ', () => {
+  const samplePayment = {
+    id: 101,
+    paymentCode: 'PT-20261024-0005',
+    dealerId: 12,
+    dealerCode: 'DL-001',
+    dealerName: 'Đại lý Cấp 1 Minh Phát',
+    dealerAddress: '123 Đường Trần Phú, Quận 5',
+    amount: 15000000,
+    paymentDate: '2026-10-24',
+    paymentMethod: 'CHUYEN_KHOAN',
+    referenceCode: 'UNC-20261024-88',
+    recordedBy: 'Kế toán Thu Hằng',
+    note: 'Thanh toán tiền hàng đợt 2',
+    allocations: [
+      {
+        orderId: 201,
+        orderCode: 'HD-20261020-001',
+        allocatedAmount: 10000000,
+        orderTotalAmount: 25000000,
+        orderPaidAmount: 25000000,
+        orderRemainingAmount: 0,
+        orderPaymentStatus: 'PAID',
+        orderPaymentStatusDisplayName: 'Đã thanh toán',
+      },
+      {
+        orderId: 202,
+        orderCode: 'HD-20261022-002',
+        allocatedAmount: 5000000,
+        orderTotalAmount: 12000000,
+        orderPaidAmount: 5000000,
+        orderRemainingAmount: 7000000,
+        orderPaymentStatus: 'PARTIALLY_PAID',
+        orderPaymentStatusDisplayName: 'Thanh toán một phần',
+      },
+    ],
+  };
+
+  const html = Utils.renderReceiptHtml(samplePayment);
+
+  // 1. Mã duy nhất
+  assert.match(html, /PT-20261024-0005/);
+  // 2. Thông tin đại lý
+  assert.match(html, /Đại lý Cấp 1 Minh Phát/);
+  assert.match(html, /DL-001/);
+  // 3. Số tiền bằng số và bằng chữ
+  assert.match(html, /15\.000\.000/);
+  assert.match(html, /Mười lăm triệu đồng chẵn\./);
+  // 4. Hình thức thu
+  assert.match(html, /Chuyển khoản/);
+  assert.match(html, /UNC-20261024-88/);
+  // 5. Người thu tiền
+  assert.match(html, /Kế toán Thu Hằng/);
+  // 6. Chi tiết đối trừ
+  assert.match(html, /HD-20261020-001/);
+  assert.match(html, /HD-20261022-002/);
+  // 7. Chữ ký các bên
+  assert.match(html, /Người nộp tiền/);
+  assert.match(html, /Người thu tiền/);
+  assert.match(html, /Kế toán trưởng/);
+  assert.match(html, /Thủ trưởng đơn vị/);
+});
+
+test('S7-09: Tạo Binary Blob PDF chuẩn %PDF-1.4 (application/pdf) để tải về máy', async () => {
+  const samplePayment = {
+    id: 101,
+    paymentCode: 'PT-20261024-0005',
+    dealerId: 12,
+    dealerCode: 'DL-001',
+    dealerName: 'Đại lý Minh Phát',
+    amount: 15000000,
+    paymentDate: '2026-10-24',
+    paymentMethod: 'TIEN_MAT',
+    recordedBy: 'Nguyễn Văn Thu',
+    allocations: [
+      {
+        orderId: 201,
+        orderCode: 'HD-001',
+        allocatedAmount: 15000000,
+        orderTotalAmount: 15000000,
+        orderRemainingAmount: 0,
+        orderPaymentStatus: 'PAID',
+      },
+    ],
+  };
+
+  const blob = Utils.generateReceiptPdfBlob(samplePayment);
+  assert.ok(blob, 'Blob PDF phải được tạo thành công');
+  assert.equal(blob.type, 'application/pdf');
+
+  const text = await blob.text();
+  assert.ok(text.startsWith('%PDF-1.4'), 'File PDF phải bắt đầu bằng header %PDF-1.4');
+  assert.ok(text.includes('PT-20261024-0005'), 'Nội dung PDF phải chứa mã phiếu thu');
+  assert.ok(text.includes('15.000.000'), 'Nội dung PDF phải chứa số tiền thu');
+  assert.ok(text.includes('%%EOF'), 'File PDF phải kết thúc bằng %%EOF');
+});
+
+test('S7-09: Phân quyền in và tải PDF theo Permission Matrix (không role fallback)', () => {
+  // 1. ROLE_ADMIN luôn có quyền
+  assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_ADMIN'], permissions: [] }), true);
+
+  // 2. FINANCE_VIEW_DEBT có quyền
+  assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_USER'], permissions: ['FINANCE_VIEW_DEBT'] }), true);
+
+  // 3. FINANCE_MANAGE có quyền
+  assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_USER'], permissions: ['FINANCE_MANAGE'] }), true);
+
+  // 4. ROLE_ACCOUNTANT bị thu hồi quyền trong DB -> BỊ CHẶN (không role fallback)
+  assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_ACCOUNTANT'], permissions: ['ORDER_VIEW'] }), false);
+
+  // 5. Null / invalid
+  assert.equal(Utils.canPrintReceipt(null), false);
+  assert.equal(Utils.canPrintReceipt({}), false);
+});
+
+test('S7-09: Giao diện và Style hỗ trợ Modal xem trước, nút In, tải PDF và CSS @media print', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../frontend/finance/debt-payments.html'), 'utf-8');
+  const css = fs.readFileSync(path.join(__dirname, '../frontend/css/debt-payments.css'), 'utf-8');
+  const js = fs.readFileSync(path.join(__dirname, '../frontend/js/debt-payments.js'), 'utf-8');
+
+  // HTML: Modal in phiếu thu và các nút điều khiển
+  assert.match(html, /id="modal-receipt-print"/);
+  assert.match(html, /id="dp-receipt-print-area"/);
+  assert.match(html, /id="btn-print-receipt-action"/);
+  assert.match(html, /id="btn-download-receipt-pdf"/);
+  assert.match(html, /id="btn-print-from-detail"/);
+  assert.match(html, /id="btn-download-pdf-from-detail"/);
+
+  // CSS: Định dạng phiếu thu và Media print chuẩn A4
+  assert.match(css, /\.dp-receipt-paper/);
+  assert.match(css, /\.dp-receipt-signatures/);
+  assert.match(css, /@media\s+print/);
+  assert.match(css, /#dp-receipt-print-area/);
+
+  // JS: Thao tác in phiếu và tải PDF
+  assert.match(js, /data-action="print-receipt"/);
+  assert.match(js, /openReceiptPrintModal/);
+  assert.match(js, /downloadReceiptPdf/);
+  assert.match(js, /window\.print\(\)/);
+});
+

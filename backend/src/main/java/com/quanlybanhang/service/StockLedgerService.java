@@ -43,21 +43,31 @@ public class StockLedgerService {
     private Page<StockLedgerEntryResponse> search(Long warehouseId, Long categoryId, String keyword,
             StockStatus status, boolean belowMinimum, int page, int size) {
         if (page < 0 || size < 1 || size > 200) throw new IllegalArgumentException("Trang phải không âm; số dòng mỗi trang từ 1 đến 200");
-        if ((warehouseId != null && warehouseId < 1) || (categoryId != null && categoryId < 1))
-            throw new IllegalArgumentException("Mã kho/nhóm hàng không hợp lệ");
-        if (keyword != null && keyword.length() > 150) throw new IllegalArgumentException("Từ khóa tối đa 150 ký tự");
-        List<Long> allowed = visibleWarehouses().stream().map(Warehouse::getId).toList();
-        if (warehouseId != null && !allowed.contains(warehouseId))
-            throw new AccessDeniedException("Bạn không có quyền xem tồn của kho này");
+        var query = prepareQuery(warehouseId, categoryId, keyword, status, belowMinimum);
         var paging = PageRequest.of(page, size);
-        if (allowed.isEmpty()) return Page.empty(paging);
-        String term = keyword == null || keyword.isBlank() ? null : "%" + keyword.trim().toLowerCase(Locale.ROOT)
-                .replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
-        var rows = belowMinimum ? ledger.findBelowMinimum(allowed, warehouseId, categoryId, term, status == null ? null : status.name(), paging)
-                : ledger.findLedger(allowed, warehouseId, categoryId, term, status == null ? null : status.name(), paging);
+        if (query.warehouseIds().isEmpty()) return Page.empty(paging);
+        var rows = belowMinimum ? ledger.findBelowMinimum(query.warehouseIds(), warehouseId, categoryId, query.keyword(), query.stockStatus(), paging)
+                : ledger.findLedger(query.warehouseIds(), warehouseId, categoryId, query.keyword(), query.stockStatus(), paging);
         return rows.map(StockLedgerEntryResponse::from);
     }
 
+    public record Query(List<Long> warehouseIds, List<String> warehouseCodes, Long warehouseId, Long categoryId,
+            String keyword, String stockStatus, boolean belowMinimum) {}
+
+    /** The UI and Excel export share validation, literal keyword escaping and the same DB-backed scope. */
+    public Query prepareQuery(Long warehouseId, Long categoryId, String keyword, StockStatus status, boolean belowMinimum) {
+        if ((warehouseId != null && warehouseId < 1) || (categoryId != null && categoryId < 1))
+            throw new IllegalArgumentException("Mã kho/nhóm hàng không hợp lệ");
+        if (keyword != null && keyword.length() > 150) throw new IllegalArgumentException("Từ khóa tối đa 150 ký tự");
+        List<Warehouse> visible = visibleWarehouses();
+        if (warehouseId != null && visible.stream().noneMatch(w -> w.getId().equals(warehouseId)))
+            throw new AccessDeniedException("Bạn không có quyền xem tồn của kho này");
+        List<Warehouse> selected = visible.stream().filter(w -> warehouseId == null || w.getId().equals(warehouseId)).toList();
+        String term = keyword == null || keyword.isBlank() ? null : "%" + keyword.trim().toLowerCase(Locale.ROOT)
+                .replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+        return new Query(selected.stream().map(Warehouse::getId).toList(), selected.stream().map(Warehouse::getCode).toList(),
+                warehouseId, categoryId, term, status == null ? null : status.name(), belowMinimum);
+    }
     /** Permission is mandatory; roles may ONLY restrict data scope, never grant access. */
     private List<Warehouse> visibleWarehouses() {
         return visibleWarehousesFor("WAREHOUSE_VIEW");

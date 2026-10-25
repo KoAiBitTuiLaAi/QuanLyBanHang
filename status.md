@@ -13,6 +13,38 @@ Nánh `feature/S8-04-chi-tieu-doanh-so(frontend)`. Đã đọc `AGENTS.md` và h
 
 Kiểm thử: **7/7 tests S8-04 qua 100%** trong `tests/sales-targets.test.cjs`; toàn bộ **266/266 tests Node** trong dự án qua; **13/13 tests server/route Python** qua. Đã cập nhật `serve_frontend.py`, `frontend/js/menu-config.js` và `docs/FUNCTION_MAP.md`.
 
+## S7-09 — In phiếu thu cho mỗi khoản đã ghi nhận (Frontend) — 24/10/2026
+
+Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai frontend tuân thủ đầy đủ các yêu cầu nghiệp vụ theo ảnh mô tả: **chỉ làm frontend**, không sửa backend.
+
+| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã nối đúng | Quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| Phiếu thu có mã duy nhất | Có | Có | Có | Mã phiếu thu duy nhất `PT-YYYYMMDD-XXXX` (do backend sinh tự động khi lưu phiếu qua `POST /api/finance/debt-payments`) được hiển thị nổi bật trên tiêu đề chứng từ, khung xem trước và file PDF xuất ra. |
+| Thông tin đại lý | Có | Có | Có | Thể hiện đầy đủ tên đại lý (`dealerName`), mã đại lý (`dealerCode`) và địa chỉ đơn vị nộp tiền, hỗ trợ kế toán công nợ và đại lý đối soát chứng từ tại chỗ. |
+| Số tiền (bằng số & bằng chữ) | Có | Có | Có | Hiển thị số tiền thu bằng số chuẩn định dạng VND (`15.000.000 ₫`) và tự động chuyển đổi đọc thành chữ chuẩn mực chứng từ kế toán Việt Nam (`numberToVietnameseWords`, ví dụ: "Mười lăm triệu đồng chẵn."). |
+| Hình thức thu tiền & Người thu | Có | Có | Có | Ghi nhận rõ hình thức thu (`paymentMethod`: Tiền mặt, Chuyển khoản, Khác) kèm mã chứng từ gốc/UNC (`referenceCode`), ngày thu tiền (`paymentDate`), ngày giờ ghi nhận và họ tên/tài khoản người thu tiền (`recordedBy`). Kèm bảng kê chi tiết các hoá đơn được đối trừ (`allocations`) và 4 cột chữ ký (Người nộp tiền, Người thu tiền, Kế toán trưởng, Thủ trưởng đơn vị). |
+| In hoặc tải PDF được | Có (APIs S7-02) | Có | Có | Hỗ trợ 2 phương thức: (1) **In phiếu thu**: Nút "In phiếu" trên bảng danh sách, trong modal chi tiết hoặc mở tự động sau khi lập phiếu thu thành công; mở modal xem trước và gọi `window.print()` áp dụng CSS `@media print` chuẩn A4 chuyên nghiệp, ẩn các thanh điều hướng/nút bấm; (2) **Tải PDF**: Tạo trực tiếp file PDF nhúng chuẩn binary `%PDF-1.4` (`application/pdf`) tải về máy `phieu-thu-PT-XXXX.pdf` để gửi đại lý ngay tại chỗ. |
+| Ma trận phân quyền động (Permission Matrix) & An toàn dữ liệu | Có | Có | Có | Quyền `FINANCE_VIEW_DEBT` hoặc `FINANCE_MANAGE` để xem, in và tải PDF phiếu thu. `ROLE_ADMIN` luôn có toàn quyền. Tuyệt đối không role fallback (`ROLE_ACCOUNTANT` mất quyền trong DB sẽ bị ẩn nút và chặn in). Đóng modal in ngay lập tức khi nhận sự kiện `auth:permissions-changed`. Không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+
+Kiểm thử: **14/14 tests S7-02/S7-09 qua 100%** trong `tests/debt-payments.test.cjs`; toàn bộ **247/247 test frontend qua 100%**; **13/13 clean routes test qua 100%**. Đã cập nhật `docs/FUNCTION_MAP.md`.
+
+Cập nhật **23/10/2026**, thêm frontend báo cáo doanh số S8-06.
+
+## S8-06 — Báo cáo doanh số đa chiều (chỉ frontend) — 23/10/2026
+
+Nguồn tiêu chí: User story S8-06 (*"Là Quản lý kinh doanh, tôi muốn xem báo cáo doanh số theo nhiều chiều, để biết mặt hàng nào và khu vực nào đang thực sự sinh lãi"*). Chỉ triển khai **frontend** theo yêu cầu.
+
+| Tiêu chí / hạng mục | Backend | Frontend | Kết nối / ma trận quyền |
+|---|---|---|---|
+| Nhóm theo nhân viên, khu vực, đại lý, nhóm hàng hoặc SKU | Chưa làm — cần API `GET /api/reports/sales` và `GET /api/reports/sales/options` | Đã làm: trang `/reports/sales`, bộ lọc chọn chiều nhóm (5 chiều), bộ lọc thời gian, khu vực, đại lý, nhóm hàng, nhân viên | Trang yêu cầu quyền `ORDER_VIEW` từ ma trận; menu chỉ hiện cho `ROLE_ADMIN` và `ROLE_SALES_MANAGER` có `ORDER_VIEW` |
+| Hiển thị doanh số, sản lượng và biên lợi nhuận gộp | Chưa làm — API cần trả `revenue`, `quantity`, `grossMargin` theo chiều nhóm | Đã làm: bảng có cột doanh số, sản lượng; cột biên LN gộp tự ẩn/hiện theo quyền xem margin; KPI tổng hợp phía trên bảng | Biên lợi nhuận chỉ hiển thị khi `ROLE_SALES_MANAGER` hoặc `ROLE_ADMIN`; không dùng role fallback |
+| Biên lợi nhuận chỉ Quản lý kinh doanh xem được | Chưa làm — backend cần kiểm role trước khi trả `grossMargin` | Đã làm: cột margin, KPI margin và dữ liệu margin trong Excel chỉ hiển thị khi `canSeeMargin()` = true (ROLE_SALES_MANAGER hoặc ROLE_ADMIN) | Frontend ẩn cột; backend cần bổ sung kiểm tra và không trả trường `grossMargin` cho role khác |
+| So sánh với cùng kỳ trước và xuất Excel | Chưa làm — API cần nhận tham số `compare=true` và trả `previousRevenue`, `changePercent` | Đã làm: checkbox so sánh cùng kỳ hiện thêm cột DS cùng kỳ và tăng/giảm %; xuất Excel dùng XLSX bao gồm margin (nếu có quyền) và so sánh (nếu bật) | Xuất Excel kiểm lại quyền trước khi tải dữ liệu; hủy xuất khi mất quyền |
+| Ma trận quyền và thu hồi | Chưa làm — controller cần `ORDER_VIEW` và kiểm margin theo role | Đã làm: guard trang `ORDER_VIEW`; thu hồi quyền chuyển 403 và ẩn menu/xóa dữ liệu; đồng bộ quyền mỗi 15 giây qua `auth:permissions-changed` | Frontend kết nối đúng ma trận; **backend chưa có API**, cần triển khai để trang hoạt động đầy đủ |
+| Bố cục và tương thích | Không cần thay đổi | Dùng app-shell, app-navigation, lề chung `app-navigation.css`; bảng cuộn nội bộ; responsive desktop/tablet/mobile | Không lưu dữ liệu nghiệp vụ vào browser storage; route đã cập nhật trong `serve_frontend.py` và `FRONTEND_ROUTES.md` |
+
+Giới hạn: **backend chưa có API** `/api/reports/sales` và `/api/reports/sales/options` — trang sẽ hiển thị lỗi khi gọi API. Cần triển khai backend để trang hoạt động. Không tự commit/merge/push.
+
 ---
 
 ## S7-08 — Nhắc hạn thanh toán tự động cho đại lý (Frontend) (24/10/2026)
@@ -1104,6 +1136,25 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 4. Nối preview chiết khấu cho cổng/đặt lại, UI sales xác nhận đơn cổng; nghiệm thu MySQL/SMTP/360px theo AC.
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
+
+## S8-08 — Xuất báo cáo tồn kho ra tệp Excel (2026-10-23)
+
+Branch `feature/S8-08/xuat-bao-cao-ton-kho-ra-tep-excel` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend, không commit/push.
+
+| Yêu cầu | Backend | Frontend | Kết nối/phân quyền và bằng chứng |
+|---|---|---|---|
+| Xuất theo bộ lọc đang áp dụng | Hoàn thành: API GET `/api/warehouse/stock-ledger/export`, nhận warehouseId/categoryId/keyword/stockStatus/belowMinimum; dùng chung chuẩn hóa và truy vấn của bảng | Nút cũ vẫn xuất phía client, chưa nối endpoint mới | Kiểm thử workbook khớp API bảng với toàn bộ bộ lọc; ký tự `%`, `_` được tìm literal; xuất tất cả kết quả, không chỉ trang hiện tại |
+| Giữ nguyên ba cột tồn | Hoàn thành: Tồn thực tế, Đang giữ chỗ, Tồn khả dụng là ba cột số riêng biệt; giữ mẫu 12 cột hiện có | Không sửa mẫu frontend | XLSX được mở lại bằng POI; kiểm số thập phân 12.3456 / 2.1111 / 10.2345, kiểu Number và header |
+| Tên tệp chứa mã kho và ngày xuất | Hoàn thành: `So-ton-kho_KHO-A_2026-10-23.xlsx`, nhiều kho có các mã hoặc mã đầu kèm số kho; ngày Việt Nam | Chưa nhận tên mới do chưa nối API | Test header Content-Disposition và clock; CORS expose header để FE có thể dùng tên tệp backend |
+| Quyền từ ma trận DB và phạm vi kho | Hoàn thành: WAREHOUSE_VIEW hoặc ADMIN, không fallback từ vai trò/quyền kho khác; áp phân công kho hiện có | Nút cũ đã dùng WAREHOUSE_VIEW và xử lý sự kiện thu hồi; chưa nối API mới | Test cùng JWT: cấp quyền cho phép, thu hồi trả 403; kho ngoài phạm vi trả 403; ADMIN toàn quyền |
+| Xuất đủ dữ liệu và quản lý tài nguyên | Hoàn thành: Slice 1.000 dòng/lô, SXSSF cửa sổ 100; tệp tạm được dọn cả khi lỗi; mặc định tối đa 100.000 dòng, vượt thì trả 400, không cắt thiếu | Chưa nối luồng tải backend | Test đủ 1.002 dòng qua hai lô và không rò tệp tạm khi vượt giới hạn |
+| Tài liệu và hồi quy | Đã cập nhật API_DOCUMENTATION.md; 29/29 tests qua, không failure/error/skip | Không sửa file frontend | Gồm 6 ca tích hợp XLSX/JWT/DB và hồi quy sổ tồn/phân quyền; H2 MySQL mode, chưa kiểm MySQL/Microsoft Excel thật |
+
+Không thêm quyền mới, không thay đổi ma trận đã lưu hay dữ liệu tồn. Chưa nghiệm thu end-to-end nút xuất với tên mới cho đến khi frontend gọi API tải XLSX thay cho trình tạo file client hiện tại.
+
+Lệnh kiểm thử: `mvn -q clean "-Dtest=StockLedgerExcelIntegrationTest,StockLedgerServiceTest,StockLedgerControllerTest,PermissionRevocationTest,RolePermissionConfigTest" test`.
+
+---
 
 ## S8-02 — Lập chứng từ điều chỉnh giảm công nợ khi trả hàng (2026-10-23)
 
