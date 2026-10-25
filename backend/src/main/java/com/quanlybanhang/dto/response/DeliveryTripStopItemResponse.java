@@ -18,5 +18,9 @@ public class DeliveryTripStopItemResponse {
     private BigDecimal quantity;
     private BigDecimal unitPrice;
     private BigDecimal totalPrice;
+    private BigDecimal baseQuantity;
+    private String baseUnit;
+    private String lotNumber;
+    private java.time.LocalDate expiryDate;
 }
 

@@ -54,6 +54,7 @@ class DeliveryTripServiceTest {
 
     @Mock
     private WarehouseInventoryRepository inventoryRepository;
+    @Mock private com.quanlybanhang.repository.WarehouseLotInventoryRepository lotInventoryRepository;
 
     @Mock
     private OrderRepository orderRepository;
@@ -169,7 +170,7 @@ class DeliveryTripServiceTest {
     void createTrip_WithCustomStops_Success() {
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse1));
         when(tripRepository.existsByTripCode(anyString())).thenReturn(false);
-        when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(invocation -> {
+        when(tripRepository.saveAndFlush(any(DeliveryTrip.class))).thenAnswer(invocation -> {
             DeliveryTrip t = invocation.getArgument(0);
             t.setId(10L);
             long idGen = 100L;
@@ -247,7 +248,7 @@ class DeliveryTripServiceTest {
 
         assertThatThrownBy(() -> tripService.createTrip(req, "admin"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Thời gian dự kiến hoàn thành phải sau thời điểm xuất phát");
+                .hasMessageContaining("Thời gian dự kiến hoàn thành phải sau");
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -419,6 +420,12 @@ class DeliveryTripServiceTest {
                 .totalPrice(new BigDecimal("3000000.00"))
                 .build();
         stop1.getItems().add(item);
+        var original=OrderItem.builder().id(701L).product(product).quantity(BigDecimal.TEN).exportedQuantity(BigDecimal.TEN)
+                .unit("thùng").conversionFactor(new BigDecimal("24")).baseUnit("lon").baseQuantity(new BigDecimal("240")).build();
+        var order=Order.builder().id(7L).warehouse(warehouse1).status("SHIPPING").build();order.addItem(original);stop1.setOrder(order);
+        item.setOrderItemId(701L);item.setUnit("thùng");item.setConversionFactor(new BigDecimal("24"));
+        item.setBaseUnit("lon");item.setBaseQuantity(new BigDecimal("240"));
+        when(orderRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
 
         WarehouseInventory inv = WarehouseInventory.builder()
                 .id(1L)
@@ -428,7 +435,7 @@ class DeliveryTripServiceTest {
                 .build();
 
         when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 50L)).thenReturn(Optional.of(inv));
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 50L)).thenReturn(Optional.of(inv));
         when(stopRepository.save(any(DeliveryTripStop.class))).thenAnswer(i -> i.getArgument(0));
 
         ReturnStopGoodsRequest req = ReturnStopGoodsRequest.builder()
@@ -438,8 +445,9 @@ class DeliveryTripServiceTest {
         DeliveryTripStopResponse res = tripService.returnStopGoodsToWarehouse(10L, 101L, req, "admin");
 
         assertThat(res.getReturnedToWarehouse()).isTrue();
-        // Kiểm tra tồn kho được cộng lại đúng 10 đơn vị (100 + 10 = 110)
-        assertThat(inv.getBaseQuantity()).isEqualByComparingTo(new BigDecimal("110.0000"));
+        // 10 thùng × 24 lon; khôi phục đơn vị cơ sở và giữ chỗ cho lượt giao lại.
+        assertThat(inv.getBaseQuantity()).isEqualByComparingTo("340");
+        assertThat(inv.getReservedQuantity()).isEqualByComparingTo("240");
         verify(inventoryRepository).save(inv);
         verify(auditLogService).logAction(eq("DELIVERY_TRIP"), eq(trip.getTripCode()), eq("RETURN_TO_WAREHOUSE"),
                 eq("false"), eq("true"), anyString(), eq("admin"));
@@ -504,9 +512,10 @@ class DeliveryTripServiceTest {
     void confirmationPopulatesActualQuantitiesForSprint7() throws Exception {
         var trip = createSampleTrip();
         var product = Product.builder().id(50L).build();
-        var line = OrderItem.builder().product(product).unit("thùng").quantity(new BigDecimal("2"))
+        var line = OrderItem.builder().id(701L).product(product).unit("thùng").quantity(new BigDecimal("2"))
+                .exportedQuantity(new BigDecimal("2")).baseUnit("lon").baseQuantity(new BigDecimal("48"))
                 .conversionFactor(new BigDecimal("24")).build();
-        var order = Order.builder().id(7L).status("EXPORTED").items(new ArrayList<>(List.of(line))).build();
+        var order = Order.builder().id(7L).warehouse(warehouse1).status("SHIPPING").build();order.addItem(line);
         var stop = trip.getStops().get(0);
         stop.setOrder(order);
         stop.getItems().add(DeliveryTripStopItem.builder().product(product).unit("thùng").quantity(new BigDecimal("2")).build());
@@ -595,7 +604,7 @@ class DeliveryTripServiceTest {
                 ))
                 .build();
 
-        when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(invocation -> {
+        when(tripRepository.saveAndFlush(any(DeliveryTrip.class))).thenAnswer(invocation -> {
             DeliveryTrip t = invocation.getArgument(0);
             t.setId(100L);
             return t;

@@ -4759,6 +4759,33 @@ Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và
 | `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
 | `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
 | `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
+
+## Sprint 6 — Hiệu chỉnh xuất từng phần, chuyến giao và nhập trả (25/10/2026)
+
+**Cập nhật từ kiểm tra MySQL thật:** `audit_logs.action` dùng `VARCHAR(100)` để lưu đầy đủ tên hành động như `ASSIGN_PRODUCT_LOCATION`/`REMOVE_PRODUCT_LOCATION`. Cột VARCHAR(20) cũ làm giao dịch gán vị trí thất bại. Đã mở rộng cột trên máy kiểm thử, giữ charset/collation và dữ liệu; mô hình JPA cập nhật cùng nhánh để các lần khởi động/schema migration tiếp theo giữ đúng kích thước. Không reset database. Bằng chứng web: `docs/SPRINT6_WEB_CHECK.md`.
+
+Mục này cập nhật hợp đồng S6-05/06/08/09; thay thế các mô tả cũ yêu cầu xuất đủ đơn mới gán chuyến hoặc frontend S6-08 chỉ xem trước.
+
+| API | Quyền DB | Hợp đồng hiện tại |
+|---|---|---|
+| `GET /api/warehouse/delivery-trips/options` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` | Kho trong phạm vi, trạng thái, `canManage`, `failureReasons[{value,label}]`, `proofMaxBytes`, `proofMaxPixels`, `proofContentTypes` |
+| `GET /api/warehouse/delivery-trips/eligible-orders?warehouseId=...` | Như trên | Một dòng cho mỗi phiếu EXPORT/CONFIRMED còn hàng và chưa gán chuyến; có `shipmentVoucherId`, `shipmentVoucherCode`. Một đơn có thể có nhiều dòng; đơn xuất thiếu được giao phần đã xuất |
+| `POST /api/warehouse/delivery-trips` | `WAREHOUSE_EXPORT` | Chỉ một trong ba danh sách: `shipmentVoucherIds`, `orderIds`, hoặc `stops`. Ưu tiên `stops[{orderId,shipmentVoucherId,note}]` theo thứ tự giao; hàng, quy đổi, lô và tiền lấy từ phiếu/đơn gốc, không tin dữ liệu hàng/tiền client. Phiếu phải cùng kho với đơn và chuyến, không dùng lặp |
+| `GET /api/warehouse/delivery-trips`, `/{id}` | VIEW hoặc EXPORT | Page chuyến có các `stops`; mỗi điểm có `shipmentVoucherId`, `voucherCode`, `orderStatus`, `orderStatusDisplayName`, `orderFullyDelivered`, `canConfirm`, `canReturn`, `returnReason`. Dòng hàng thêm `baseQuantity`, `baseUnit`, `lotNumber`, `expiryDate` |
+| `POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/confirm-delivery` | EXPORT | Multipart: `receiverName` (bắt buộc, tối đa 100), `deliveredAt` (ISO local datetime, từ lúc xuất phát tới hiện tại), `proof` (PNG/JPEG hợp lệ ≤5 MiB, ≤20 triệu điểm ảnh). Trả chi tiết chuyến. Lưu ảnh, cộng thực giao, lịch sử và audit trong cùng giao dịch |
+| `PUT /api/warehouse/delivery-trips/{id}/stops/{stopId}/status` | EXPORT | `status=FAILED`, `failedReason` bắt buộc; thêm `failureReasonCode` từ options (`CLOSED/ABSENT/REFUSED/ADDRESS/OTHER`). Không tự hoàn tồn. `DELIVERED` cần chứng từ qua endpoint multipart |
+| `POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/return-to-warehouse` | EXPORT | `returnReason` bắt buộc ≤500; `note` tùy chọn ≤500. Chỉ nhận điểm FAILED hoặc PENDING của chuyến đã đóng/hủy, chưa nhận trả. Người thao tác xác nhận đã thực nhận hàng. Khôi phục đúng số cơ sở và lô/NSX/HSD đóng băng, giữ chỗ lại cho đơn còn hiệu lực, giảm số đã xuất và mở nợ hàng để xuất lại; không nhận lặp |
+| `GET /api/warehouse/delivery-trips/{id}/stops/{stopId}/proof` | VIEW hoặc EXPORT | Ảnh được bảo vệ theo phạm vi kho; `Cache-Control: no-store`; không có ảnh trả 404 |
+| `POST /api/warehouse/order-shipments/{id}/confirm` | EXPORT | Đơn còn nợ hàng có thể xuất bù khi đang SHIPPING; giữ trạng thái SHIPPING trong khi còn chuyến giao |
+| `GET /api/portal/orders/{id}` | `ORDER_VIEW`, phạm vi đại lý của phiên | `deliveryMilestones`, `pickingAt/exportedAt/shippingAt/deliveredAt` và thực giao tích lũy. Giao một phiếu không tự hoàn tất đơn; chỉ ngày giao cũ không được đổi thành giờ 00:00 giả |
+
+`ROLE_ADMIN` luôn được phép. Quyền được đọc từ ma trận DB ở mỗi request, gồm JWT đã đăng nhập; bỏ quyền có hiệu lực ngay request tiếp theo. Vai trò chỉ giới hạn phạm vi dữ liệu. Frontend đọc VIEW hoặc EXPORT; ghi cần EXPORT cùng cờ nghiệp vụ server.
+
+**Giao từng phần:** mỗi điểm gắn một phiếu xuất bất biến và đóng băng dòng nguồn/đơn vị/lô. Thực giao cộng dồn, không vượt lượng đã xuất hoặc lượng đặt. Đơn chỉ DELIVERED khi mọi dòng đã giao đủ; trước đó không đủ điều kiện phát hành hóa đơn S7-01. Nhập trả là thao tác vật lý riêng, không tự xảy ra khi báo giao thất bại/hủy chuyến. Đơn CANCELLED/REJECTED nhận hàng về nhưng không được giữ chỗ/mở lại.
+
+**Khóa và hoàn tác:** tạo chuyến khóa đơn theo ID, khóa phiếu và ràng buộc unique `shipment_voucher_id`; xác nhận/nhập trả khóa chuyến và đơn trước khi làm bẩn dòng điểm giao. Nhập trả khóa tồn/lô theo thứ tự sản phẩm. Lỗi ghi audit cũng hoàn tác ảnh, số thực giao, tồn/lô, giữ chỗ và trạng thái; không tự gửi lại khi chưa rõ kết quả lưu.
+
+**Dữ liệu cũ:** các cột snapshot/nguồn mới cho phép null, không xóa/reset dữ liệu. Đơn xuất cũ không có phiếu chỉ dùng thông tin quy đổi đã chốt trên đơn khi xác định được duy nhất dòng hàng; hàng quản lý lô thiếu chứng từ phải đối soát, không suy đoán lô hay tự cộng tồn. Điểm thủ công không gắn đơn không được cộng tồn/phát sinh hóa đơn. Giao dịch nhập trả lịch sử thiếu snapshot vẫn được thẻ kho đọc theo cách ghi cũ, không tự viết lại lịch sử.
 ---
 
 ## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend — 24/10/2026)

@@ -1,116 +1,208 @@
-/** S6-08 frontend only: GET real orders; draft forms/images never claim persistence. */
-const DeliveryPreview = (() => {
-  const allowed=permissions=>permissions('ORDER_VIEW') && permissions('WAREHOUSE_EXPORT');
-  function createClient({request,permissions,onChange=()=>{}}){
-    const state={rows:[],page:0,pages:0,total:0,loading:false,error:'',filters:{},epoch:0};let read=0;
-    const emit=()=>onChange(state),canRead=()=>allowed(permissions);
-    function clear(){state.epoch++;read++;Object.assign(state,{rows:[],pages:0,total:0,loading:false,error:''});emit();}
-    async function load(page=0,filters=state.filters){
-      if(!canRead())return false;
-      const epoch=state.epoch,id=++read;Object.assign(state,{rows:[],page,filters:{...filters},loading:true,error:''});emit();
-      try{
-        const query=new URLSearchParams({page,size:20});if(filters.keyword)query.set('keyword',filters.keyword);
-        if(filters.status)query.set('status',filters.status);
-        const result=await request('/orders?'+query);
-        if(epoch!==state.epoch || id!==read || !canRead())return false;
-        if(!Array.isArray(result?.data))throw Error('Danh sách đơn trả về không hợp lệ.');
-        state.rows=result.data;state.total=Number.isInteger(result.totalElements)?result.totalElements:result.data.length;
-        state.pages=Number.isInteger(result.totalPages)?result.totalPages:(result.data.length?1:0);return true;
-      }catch(e){if(epoch===state.epoch && id===read && canRead())state.error=e.message;return false;}
-      finally{if(epoch===state.epoch && id===read){state.loading=false;emit();}}
+/** S6-08: server-backed delivery confirmation. Business drafts remain in memory only. */
+const DeliveryConfirmation = (() => {
+  const base = '/warehouse/delivery-trips';
+  const allowed = permissions => permissions('WAREHOUSE_VIEW', 'WAREHOUSE_EXPORT');
+  function createClient({request, permissions, onChange = () => {}}) {
+    const state = {options:null, rows:[], trips:[], detail:null, page:0, pages:0, total:0, filters:{}, loading:false,
+      detailLoading:false, busy:false, uncertain:false, error:'', detailError:'', notice:'', epoch:0};
+    let serial=0, detailSerial=0, writePending=false;
+    const emit=()=>onChange(state), canRead=()=>allowed(permissions);
+    const canWrite=()=>canRead() && permissions('WAREHOUSE_EXPORT') && state.options?.canManage===true;
+    const path=(tripId,stopId)=>base+'/'+encodeURIComponent(tripId)+'/stops/'+encodeURIComponent(stopId);
+    function clear() {
+      state.epoch++;serial++;detailSerial++;
+      Object.assign(state,{options:null,rows:[],trips:[],detail:null,pages:0,total:0,loading:false,detailLoading:false,
+        busy:writePending,uncertain:false,error:'',detailError:'',notice:''});emit();
     }
-    return {state,canRead,load,clear};
+    function close() { detailSerial++;state.detail=null;state.detailLoading=false;state.detailError='';state.uncertain=false;emit(); }
+    async function load(page=0,filters=state.filters) {
+      if (!canRead() || !state.options || writePending) return false;
+      const id=++serial, epoch=state.epoch;close();
+      Object.assign(state,{page,filters:{...filters},rows:[],trips:[],loading:true,error:'',notice:''});emit();
+      try {
+        const query=new URLSearchParams({page,size:20});
+        for(const key of ['warehouseId','status','keyword'])if(filters[key])query.set(key,filters[key]);
+        const result=await request(base+'?'+query);
+        if(epoch!==state.epoch || id!==serial || !canRead())return false;
+        if(!Array.isArray(result?.content) || !Number.isInteger(result.totalPages) || !Number.isInteger(result.totalElements))
+          throw Error('Danh sách chuyến giao không hợp lệ.');
+        state.trips=result.content;state.pages=result.totalPages;state.total=result.totalElements;
+        state.rows=result.content.flatMap(trip=>(trip.stops||[]).map(stop=>({trip,stop})));return true;
+      } catch(e) {if(epoch===state.epoch && id===serial && canRead())state.error=e.message;return false;}
+      finally {if(epoch===state.epoch && id===serial){state.loading=false;emit();}}
+    }
+    async function initialize() {
+      clear();if(!canRead())return false;const epoch=state.epoch;state.loading=true;emit();
+      try {
+        const options=await request(base+'/options');
+        if(epoch!==state.epoch || !canRead())return false;
+        if(!Array.isArray(options?.warehouses) || !Array.isArray(options.tripStatuses) || !Array.isArray(options.failureReasons)
+          || !Array.isArray(options.proofContentTypes) || !(options.proofMaxBytes>0) || !(options.proofMaxPixels>0))
+          throw Error('Không tải được tùy chọn giao nhận.');
+        state.options=options;state.loading=false;emit();return writePending?true:await load(0);
+      } catch(e) {if(epoch===state.epoch && canRead()){state.error=e.message;state.loading=false;emit();}return false;}
+    }
+    async function open(tripId,stopId) {
+      if(!canRead() || writePending)return false;
+      const id=++detailSerial,epoch=state.epoch;state.detail=null;state.detailLoading=true;state.detailError='';emit();
+      try {
+        const trip=await request(base+'/'+encodeURIComponent(tripId));
+        if(epoch!==state.epoch || id!==detailSerial || !canRead())return false;
+        const stop=trip?.stops?.find(s=>String(s.id)===String(stopId));
+        if(String(trip?.id)!==String(tripId) || !stop || !Array.isArray(stop.items))throw Error('Điểm giao không còn trong chuyến.');
+        state.detail={trip,stop};state.uncertain=false;return true;
+      } catch(e) {if(epoch===state.epoch && id===detailSerial && canRead()){state.detailError=e.message;state.error=e.message;}return false;}
+      finally {if(epoch===state.epoch && id===detailSerial){state.detailLoading=false;emit();}}
+    }
+    async function write(suffix,options) {
+      if(!canWrite() || !state.detail || writePending || state.uncertain)return false;
+      const {trip,stop}=state.detail, epoch=state.epoch;
+      writePending=true;state.busy=true;state.detailError='';state.notice='';emit();
+      try {
+        const result=await request(path(trip.id,stop.id)+suffix,options);
+        if(epoch!==state.epoch || !canRead())return false;
+        const updated=Array.isArray(result?.stops)?result.stops.find(s=>String(s.id)===String(stop.id)):result;
+        if(!updated || String(updated.id)!==String(stop.id))throw Error('Đã gửi thao tác nhưng chưa xác định được kết quả. Hãy tải lại điểm giao.');
+        state.detail={trip:Array.isArray(result.stops)?result:trip,stop:updated};
+        state.rows=state.rows.map(row=>String(row.trip.id)===String(trip.id) && String(row.stop.id)===String(stop.id)
+          ? {trip:state.detail.trip,stop:updated}:row);
+        state.notice='Đã lưu kết quả giao nhận lên hệ thống.';return true;
+      } catch(e) {
+        if(epoch===state.epoch && canRead()) {
+          state.uncertain=!e.status || e.status>=500;
+          state.detailError=state.uncertain?'Chưa rõ kết quả lưu. Tải lại điểm giao để kiểm tra trước khi gửi lại.':e.message;
+        }
+        return false;
+      } finally {writePending=false;state.busy=false;emit();}
+    }
+    async function confirm(input) {
+      if(!canWrite() || !state.detail?.stop.canConfirm || state.uncertain || writePending)return false;
+      const file=input.proof, o=state.options, time=Date.parse(input.deliveredAt), start=Date.parse(state.detail.trip.departureTime);
+      let error='';
+      if(!input.receiverName?.trim() || input.receiverName.trim().length>100)error='Nhập người nhận thực tế, tối đa 100 ký tự.';
+      else if(!Number.isFinite(time) || time>Date.now() || (Number.isFinite(start) && time<start))error='Thời điểm giao phải từ lúc xuất phát đến hiện tại.';
+      else if(!file || !o.proofContentTypes.includes(file.type) || file.size<=0 || file.size>o.proofMaxBytes)error='Chọn ảnh PNG/JPEG trong giới hạn dung lượng.';
+      if(error){state.detailError=error;emit();return false;}
+      const form=new FormData();form.set('receiverName',input.receiverName.trim());form.set('deliveredAt',input.deliveredAt);form.set('proof',file);
+      return write('/confirm-delivery',{method:'POST',body:form});
+    }
+    async function fail(code,detail) {
+      if(!canWrite() || !state.detail?.stop.canConfirm || state.uncertain || writePending)return false;
+      const reason=state.options.failureReasons.find(r=>r.value===code), text=String(detail||'').trim();
+      if(!reason || !text || text.length>400){state.detailError='Chọn lý do và nhập chi tiết, tối đa 400 ký tự.';emit();return false;}
+      return write('/status',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'FAILED',failureReasonCode:code,failedReason:text})});
+    }
+    async function receive(reason,checked) {
+      if(!canWrite() || !state.detail?.stop.canReturn || state.uncertain || writePending)return false;
+      const text=String(reason||'').trim();
+      if(!checked || !text || text.length>500){state.detailError='Xác nhận đã thực nhận hàng và nhập lý do, tối đa 500 ký tự.';emit();return false;}
+      return write('/return-to-warehouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({returnReason:text})});
+    }
+    async function proof() {
+      if(!canRead() || !state.detail?.stop.hasSignedProof)return null;
+      const {trip,stop}=state.detail,epoch=state.epoch,id=detailSerial;
+      try {
+        const blob=await request(path(trip.id,stop.id)+'/proof',{responseType:'blob'});
+        if(epoch!==state.epoch || id!==detailSerial || !canRead())return null;
+        if(!['image/jpeg','image/png'].includes(blob.type))throw Error('Chứng từ không phải ảnh PNG/JPEG.');
+        return blob;
+      } catch(e) {if(epoch===state.epoch && id===detailSerial && canRead()){state.detailError=e.message;emit();}return null;}
+    }
+    return {state,canRead,canWrite,initialize,load,open,close,confirm,fail,receive,proof,clear};
   }
   return {allowed,createClient};
 })();
-if(typeof module!=='undefined')module.exports=DeliveryPreview;
+if(typeof module!=='undefined')module.exports=DeliveryConfirmation;
 
 if(typeof document!=='undefined')(async()=>{
   if(!Auth.requireLogin())return;await Auth.ready;
-  const $=id=>document.getElementById(id),permission=p=>Auth.hasPermission(p),canRead=()=>DeliveryPreview.allowed(permission);
-  if(!canRead()){location.href='/error?status=403';return;}
+  const $=id=>document.getElementById(id), allowed=(...p)=>Auth.hasAnyPermission(...p);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const money=v=>v!=null&&Number.isFinite(Number(v))?Number(v).toLocaleString('vi-VN',{style:'currency',currency:'VND'}):'Chưa có dữ liệu';
-  const date=v=>/^\d{4}-\d{2}-\d{2}/.test(v||'')?v.slice(0,10).split('-').reverse().join('/'):'Chưa có dữ liệu';
-  const pending=o=>['EXPORTED','SHIPPED'].includes(o.status),delivered=o=>['DELIVERED','CLOSED','COMPLETED'].includes(o.status);
-  const note='Chưa có API S6-08. Nội dung và ảnh chỉ xem trước, chưa được lưu; không thay đổi đơn, tồn kho hoặc hóa đơn.';
-  let blobUrl=null,imageVersion=0,detailVersion=0,previousFocus=null;
-  async function request(path){const response=await Auth.apiFetch(path,{cache:'no-store'}),body=await response.json().catch(()=>null);if(!response.ok||!body?.success)throw Error(body?.message||'Không tải được dữ liệu. Chọn Làm mới để thử lại.');return body;}
-  const client=DeliveryPreview.createClient({request,permissions:permission,onChange:render});
-  function message(text){$('dc-error').textContent=text||'';$('dc-error').hidden=!text;}
-  function imageError(text){$('err-proof-image').textContent=text||'';$('err-proof-image').classList.toggle('dc-field-error--show',!!text);}
-  function clearImage(){imageVersion++;if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=null;$('confirm-proof-file').value='';$('proof-preview-img').removeAttribute('src');$('img-zoom-fullscreen').removeAttribute('src');$('proof-preview-container').hidden=true;$('proof-dropzone').hidden=false;$('proof-file-name').textContent='';$('proof-file-size').textContent='';$('modal-image-zoom').hidden=true;imageError('');}
-  function closeForms(){detailVersion++;clearImage();for(const id of ['modal-confirm-delivery','modal-failed-delivery','modal-proof-detail','modal-failed-detail'])$(id).hidden=true;for(const id of ['form-confirm-delivery','form-failed-delivery'])$(id).reset();previousFocus?.focus?.();}
-  function options(rows){
-    const select=$('active-warehouse-select'),value=select.value,warehouses=new Map(rows.filter(o=>o.warehouseId!=null).map(o=>[String(o.warehouseId),o.warehouseName||o.warehouseCode||String(o.warehouseId)]));
-    select.innerHTML='<option value="">Tất cả kho trên trang này</option>'+[...warehouses].map(([id,name])=>`<option value="${esc(id)}">${esc(name)}</option>`).join('');if(warehouses.has(value))select.value=value;
+  const money=v=>v==null?'Chưa có số liệu':new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:2}).format(Number(v));
+  const quantity=v=>v==null?'Chưa có số liệu':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:4}).format(Number(v));
+  const show=(id,text)=>{$(id).textContent=text||'';$(id).hidden=!text;};
+  let shownOptions=null,shownDetail='',previewUrl=null,proofUrl=null,previewFile=null,imageEpoch=0;
+  async function request(path,options={}) {
+    const {responseType,...rest}=options, response=await Auth.apiFetch(path,{cache:'no-store',...rest});
+    if(responseType==='blob') {if(!response.ok)throw Object.assign(Error('Không tải được ảnh ký nhận.'),{status:response.status});return response.blob();}
+    const payload=await response.json().catch(()=>null);
+    if(!response.ok || !payload?.success)throw Object.assign(Error(payload?.message||'Không tải/lưu được dữ liệu.'),{status:response.status});
+    return payload.data;
   }
-  function render(){
-    const s=client.state,permitted=canRead();if(s.loading||!permitted)closeForms();options(s.rows);
-    const warehouse=$('active-warehouse-select').value,rows=s.rows.filter(o=>!warehouse||String(o.warehouseId)===warehouse);
-    message(s.error);$('dc-table-meta').textContent=s.loading?'Đang tải đơn…':s.error?'Không tải được danh sách':`${rows.length} đơn trên trang ${s.page+1}; tổng ${s.total} đơn theo bộ lọc máy chủ. Ảnh/chứng từ S6-08 chưa có API.`;
-    $('dc-page').textContent=s.pages?`Trang ${s.page+1} / ${s.pages}`:'Không có dữ liệu';
-    $('dc-prev').disabled=s.loading||!permitted||s.page===0;$('dc-next').disabled=s.loading||!permitted||s.page+1>=s.pages;
-    for(const id of ['dc-btn-refresh','dc-filter-status','dc-search','active-warehouse-select'])$(id).disabled=s.loading||!permitted;
-    $('dc-search-clear').hidden=!$('dc-search').value;
-    $('stat-pending').textContent=s.loading||s.error?'—':rows.filter(pending).length;$('stat-delivered').textContent=s.loading||s.error?'—':rows.filter(delivered).length;
-    $('stat-failed').textContent='—';$('stat-invoice-ready').textContent='—';
-    $('dc-orders-tbody').innerHTML=rows.map(o=>`<tr><td><strong>${esc(o.orderCode||o.id)}</strong><small>${esc(o.warehouseName||o.warehouseCode||'Chưa gắn kho')}</small></td><td>${esc(o.dealerName||o.customerName||'Chưa có tên đại lý')}</td><td>Hẹn: ${date(o.expectedDeliveryDate)}<br>Giao: ${date(o.actualDeliveryDate)}</td><td>${money(o.totalAmount)}</td><td>${esc(o.statusDisplayName||o.status)}</td><td>Chưa có API ảnh ký nhận</td><td>Chưa kết nối điều kiện S6-08</td><td>${pending(o)&&permitted?`<button type="button" class="dc-btn dc-btn--secondary dc-btn--sm" data-confirm-order="${esc(o.id)}">Mở form giao nhận</button><button type="button" class="dc-btn dc-btn--secondary dc-btn--sm" data-failed-order="${esc(o.id)}">Mở form giao thất bại</button>`:'Chỉ xem trạng thái đơn'}</td></tr>`).join('')||`<tr><td colspan="8" class="dc-empty">${s.loading?'Đang tải…':s.error?'Không tải được dữ liệu. Chọn Làm mới.':'Không có đơn phù hợp trên trang này.'}</td></tr>`;
-    $('btn-submit-confirm').disabled=true;$('btn-submit-failed').disabled=true;
+  const client=DeliveryConfirmation.createClient({request,permissions:allowed,onChange:render});
+  function clearImages() {
+    imageEpoch++;if(previewUrl)URL.revokeObjectURL(previewUrl);if(proofUrl)URL.revokeObjectURL(proofUrl);
+    previewUrl=proofUrl=null;previewFile=null;
+    for(const id of ['dc-preview','dc-stored-proof']){$(id).removeAttribute('src');$(id).hidden=true;}
+    $('dc-proof-file').value='';$('dc-download-proof').removeAttribute('href');$('dc-download-proof').hidden=true;
   }
-  async function openForm(id,kind,button){
-    if(!canRead()||client.state.loading)return;closeForms();const version=++detailVersion,epoch=client.state.epoch;button.disabled=true;message('');
-    try{
-      const result=await request('/orders/'+encodeURIComponent(id));
-      if(version!==detailVersion||epoch!==client.state.epoch||!canRead())return;
-      const order=result.data;if(String(order?.id)!==String(id)||!pending(order))throw Error('Đơn không còn ở bước xuất/chờ giao. Hãy tải lại danh sách.');
-      const prefix=kind==='confirm'?'summary-confirm-':'summary-failed-';
-      $(prefix+'code').textContent=order.orderCode||order.id;$(prefix+'dealer').textContent=order.dealerName||order.customerName||'Chưa có dữ liệu';
-      $(prefix+'address').textContent='API đơn hiện chưa trả địa chỉ giao nhận tại đây';$(prefix+'amount').textContent=money(order.totalAmount);
-      $('confirm-warehouse-name').value=order.warehouseName||order.warehouseCode||'';
-      $('confirm-delivery-time').value='';$('failed-return-time').value='';$('failed-voucher-code').value='Chưa tạo phiếu';
-      previousFocus=button;const modal=$(kind==='confirm'?'modal-confirm-delivery':'modal-failed-delivery');modal.hidden=false;modal.setAttribute('aria-modal','true');
-      const focus=modal.querySelector('input:not([readonly]):not([disabled]),select:not([disabled]),button:not([disabled])');focus?.focus();
-    }catch(e){if(version===detailVersion&&canRead())message(e.message);}finally{button.disabled=false;}
-  }
-  $('dc-orders-tbody').addEventListener('click',e=>{const confirm=e.target.closest('[data-confirm-order]'),failed=e.target.closest('[data-failed-order]');if(confirm)openForm(confirm.dataset.confirmOrder,'confirm',confirm);else if(failed)openForm(failed.dataset.failedOrder,'failed',failed);});
-  $('dc-btn-refresh').addEventListener('click',()=>client.load(client.state.page));
-  $('dc-prev').addEventListener('click',()=>{if(client.state.page>0)client.load(client.state.page-1);});$('dc-next').addEventListener('click',()=>{if(client.state.page+1<client.state.pages)client.load(client.state.page+1);});
-  const search=()=>client.load(0,{keyword:$('dc-search').value.trim(),status:$('dc-filter-status').value});
-  $('dc-filter-status').addEventListener('change',search);$('dc-search').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();search();}});
-  $('dc-search').addEventListener('input',()=>{$('dc-search-clear').hidden=!$('dc-search').value;});$('dc-search-clear').addEventListener('click',()=>{$('dc-search').value='';search();});
-  $('active-warehouse-select').addEventListener('change',render);
-  for(const attr of ['data-close-confirm','data-close-failed','data-close-proof','data-close-failed-detail'])document.querySelectorAll('['+attr+']').forEach(b=>b.addEventListener('click',closeForms));
-  for(const id of ['form-confirm-delivery','form-failed-delivery'])$(id).addEventListener('submit',e=>{e.preventDefault();message(note);});
-  const drop=$('proof-dropzone');drop.tabIndex=0;drop.setAttribute('role','button');drop.setAttribute('aria-label','Chọn ảnh chỉ để xem trước, chưa lưu');
-  drop.addEventListener('click',()=>{if(canRead())$('confirm-proof-file').click();});drop.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();drop.click();}});
-  async function preview(file){
-    if(!canRead()||$('modal-confirm-delivery').hidden||!file)return;
-    const version=++imageVersion;message('');imageError('');
-    if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>10*1024*1024){imageError('Ảnh xem trước phải là JPG/PNG/WEBP, tối đa 10MB. Chưa có tệp nào được lưu.');return;}
-    const candidate=URL.createObjectURL(file),image=new Image();image.src=candidate;
-    try{await image.decode();if(version!==imageVersion||!canRead()||$('modal-confirm-delivery').hidden){URL.revokeObjectURL(candidate);return;}
-      if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=candidate;$('proof-preview-img').src=candidate;$('proof-file-name').textContent=file.name;$('proof-file-size').textContent=(file.size/1024).toFixed(1)+' KB — chưa tải lên';$('proof-preview-container').hidden=false;drop.hidden=true;
-    }catch{URL.revokeObjectURL(candidate);if(version===imageVersion)imageError('Không đọc được ảnh. Chọn ảnh hợp lệ khác; chưa có tệp nào được lưu.');}
-  }
-  $('confirm-proof-file').addEventListener('change',e=>preview(e.target.files?.[0]));drop.addEventListener('dragover',e=>e.preventDefault());drop.addEventListener('drop',e=>{e.preventDefault();preview(e.dataTransfer.files?.[0]);});
-  $('btn-change-proof').addEventListener('click',()=>$('confirm-proof-file').click());$('btn-remove-proof').addEventListener('click',clearImage);
-  $('btn-zoom-proof').addEventListener('click',()=>{if(blobUrl&&canRead()){$('img-zoom-fullscreen').src=blobUrl;$('modal-image-zoom').hidden=false;}});
-  $('modal-image-zoom').addEventListener('click',()=>{$('modal-image-zoom').hidden=true;});
-  document.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){if(!$('modal-image-zoom').hidden)$('modal-image-zoom').hidden=true;else closeForms();}
-    if(e.key==='Tab'){
-      const modal=['modal-confirm-delivery','modal-failed-delivery'].map($).find(m=>!m.hidden);if(!modal)return;
-      const controls=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]')].filter(el=>el.getClientRects().length);
-      const first=controls[0],last=controls.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  function render() {
+    const s=client.state,read=client.canRead(),write=client.canWrite(),busy=s.busy;
+    $('dc-denied').hidden=read;$('dc-workspace').hidden=!read;
+    show('dc-error',s.error);show('dc-notice',s.notice);show('dc-detail-error',s.detailError);
+    if(s.options!==shownOptions) {
+      shownOptions=s.options;
+      $('dc-warehouse').innerHTML='<option value="">Tất cả kho được giao</option>'+(s.options?.warehouses||[]).map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+'</option>').join('');
+      $('dc-trip-status').innerHTML='<option value="">Tất cả trạng thái</option>'+(s.options?.tripStatuses||[]).map(x=>'<option value="'+esc(x.value)+'">'+esc(x.label)+'</option>').join('');
+      $('dc-fail-reason').innerHTML='<option value="">Chọn lý do</option>'+(s.options?.failureReasons||[]).map(x=>'<option value="'+esc(x.value)+'">'+esc(x.label)+'</option>').join('');
+      $('dc-proof-policy').textContent=s.options?'Ảnh PNG/JPEG tối đa '+(s.options.proofMaxBytes/1024/1024)+' MB, '+s.options.proofMaxPixels.toLocaleString('vi-VN')+' điểm ảnh. Ảnh chỉ được lưu khi xác nhận thành công.':'';
     }
+    $('dc-count').textContent=s.loading?'Đang tải chuyến giao…':s.error?'Chưa tải được dữ liệu':s.rows.length+' điểm giao trên trang '+(s.page+1)+'; tổng '+s.total+' chuyến theo bộ lọc.';
+    $('dc-page').textContent=s.pages?'Trang '+(s.page+1)+' / '+s.pages:'Không có chuyến';
+    $('dc-prev').disabled=busy||s.loading||!read||s.page===0;$('dc-next').disabled=busy||s.loading||!read||s.page+1>=s.pages;
+    $('dc-reload').disabled=busy||!read;
+    $('dc-filter').querySelectorAll('input,select,button').forEach(el=>el.disabled=busy||s.loading||!s.options||!read);
+    $('dc-rows').innerHTML=s.rows.map(({trip,stop})=>'<tr><td><strong>'+esc(trip.tripCode)+'</strong><small>'+esc(stop.voucherCode||stop.orderCode||'Điểm giao')+'</small><small>'+esc(trip.warehouseName)+'</small></td><td>'+esc(stop.receiverName||stop.dealerName)+'<small>'+esc(stop.deliveryAddress)+'</small></td><td>'+esc(money(stop.deliveryAmount))+'</td><td>'+esc(stop.statusDisplayName||stop.status)+(stop.returnedToWarehouse?'<small>Đã nhập trả kho</small>':'')+'</td><td>'+esc(stop.orderFullyDelivered?'Đã giao đủ đơn':stop.orderStatusDisplayName||(stop.orderId?'Chưa giao đủ đơn':'Điểm dừng không gắn đơn'))+'</td><td><button type="button" class="btn btn--secondary" data-trip="'+esc(trip.id)+'" data-stop="'+esc(stop.id)+'" '+(busy?'disabled':'')+'>Mở điểm giao</button></td></tr>').join('')||'<tr><td colspan="6">'+(s.loading?'Đang tải…':s.error?'Không tải được dữ liệu. Chọn Tải lại.':'Không có điểm giao trên trang này.')+'</td></tr>';
+    const d=s.detail,key=d?[d.trip.id,d.stop.id,d.stop.status,d.stop.returnedToWarehouse,d.stop.hasSignedProof].join(':'):'';
+    $('dc-detail').hidden=!read||!d;
+    if(key!==shownDetail) {
+      shownDetail=key;clearImages();
+      for(const id of ['dc-confirm-form','dc-fail-form','dc-return-form'])$(id).reset();
+      if(d) {
+        $('dc-receiver').value=d.stop.receiverName||'';
+        const date=new Date(Date.now()-new Date().getTimezoneOffset()*60000);$('dc-delivered-at').value=date.toISOString().slice(0,19);
+      }
+    }
+    if(!d)return;
+    $('dc-detail-title').textContent=(d.stop.voucherCode||d.stop.orderCode||'Điểm giao')+' · '+d.trip.tripCode;
+    $('dc-detail-info').textContent=[d.trip.warehouseName,d.stop.receiverName,d.stop.receiverPhone,d.stop.deliveryAddress].filter(Boolean).join(' · ');
+    $('dc-detail-state').textContent=[d.stop.statusDisplayName||d.stop.status,d.stop.failedReason,d.stop.returnedToWarehouse?'Đã nhập trả: '+(d.stop.returnReason||''):null,
+      s.uncertain?'Cần tải lại để xác định kết quả lưu':!write?'Chỉ xem; chưa có quyền thực hiện':null].filter(Boolean).join(' · ');
+    $('dc-lines').innerHTML=d.stop.items.map(item=>'<article class="pick-line"><strong>'+esc(item.productCode)+' — '+esc(item.productName)+'</strong><p>'+esc(quantity(item.quantity))+' '+esc(item.unit)+'; cơ sở: '+esc(quantity(item.baseQuantity))+' '+esc(item.baseUnit||'')+(item.lotNumber?'; lô '+esc(item.lotNumber):'')+'</p></article>').join('')||'<p>Điểm giao cũ chưa có dòng hàng/chứng từ gốc. Cần đối soát trước khi nhập trả.</p>';
+    $('dc-confirm-form').hidden=!write||!d.stop.canConfirm;$('dc-fail-form').hidden=!write||!d.stop.canConfirm;$('dc-return-form').hidden=!write||!d.stop.canReturn;
+    for(const id of ['dc-confirm-form','dc-fail-form','dc-return-form'])$(id).querySelectorAll('input,select,button').forEach(el=>el.disabled=busy||s.detailLoading||s.uncertain||!write);
+    $('dc-detail-reload').disabled=busy||!read;$('dc-close').disabled=busy;
+    $('dc-proof-actions').hidden=!d.stop.hasSignedProof;$('dc-view-proof').disabled=busy||!read;
+    $('dc-signed-info').textContent=d.stop.hasSignedProof?[d.stop.receiverName,d.stop.deliveredAt,d.stop.confirmedBy].filter(Boolean).join(' · '):'';
+  }
+  $('dc-filter').addEventListener('submit',e=>{e.preventDefault();client.load(0,{warehouseId:$('dc-warehouse').value,status:$('dc-trip-status').value,keyword:$('dc-keyword').value.trim()});});
+  $('dc-prev').addEventListener('click',()=>client.load(client.state.page-1));$('dc-next').addEventListener('click',()=>client.load(client.state.page+1));
+  $('dc-reload').addEventListener('click',()=>client.state.options?client.load(client.state.page):client.initialize());
+  $('dc-rows').addEventListener('click',async e=>{const b=e.target.closest('[data-trip][data-stop]');if(b && await client.open(b.dataset.trip,b.dataset.stop))$('dc-detail-title').focus();});
+  $('dc-close').addEventListener('click',()=>client.close());
+  $('dc-detail-reload').addEventListener('click',()=>{const d=client.state.detail;if(d)client.open(d.trip.id,d.stop.id);});
+  $('dc-proof-file').addEventListener('change',async e=>{
+    const file=e.target.files?.[0],o=client.state.options,epoch=++imageEpoch;
+    if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl=null;previewFile=null;$('dc-preview').hidden=true;
+    if(!file)return;
+    if(!o?.proofContentTypes.includes(file.type)||file.size>o.proofMaxBytes||!file.size){show('dc-detail-error','Chọn ảnh PNG/JPEG trong giới hạn dung lượng.');return;}
+    const url=URL.createObjectURL(file),img=new Image();img.src=url;
+    try {
+      await img.decode();
+      if(epoch!==imageEpoch||!client.canWrite()||!client.state.detail){URL.revokeObjectURL(url);return;}
+      if(img.naturalWidth*img.naturalHeight>o.proofMaxPixels)throw Error('Ảnh vượt giới hạn điểm ảnh.');
+      previewUrl=url;previewFile=file;$('dc-preview').src=url;$('dc-preview').hidden=false;show('dc-detail-error','');
+    }catch(err){URL.revokeObjectURL(url);if(epoch===imageEpoch)show('dc-detail-error',err.message||'Ảnh không hợp lệ.');}
   });
-  for(const id of ['modal-confirm-delivery','modal-failed-delivery'])$(id).addEventListener('click',e=>{if(e.target===$(id))closeForms();});
-  $('btn-logout').addEventListener('click',()=>Auth.logout());$('btn-logout-topbar').addEventListener('click',()=>Auth.logout());$('btn-avatar').addEventListener('click',()=>location.href='/profile');
-  const overlay=document.createElement('div');overlay.className='sidebar-overlay';document.body.append(overlay);
-  const sidebar=open=>{$('sidebar').classList.toggle('sidebar--open',open);overlay.classList.toggle('sidebar-overlay--visible',open);};
-  $('sidebar-toggle').addEventListener('click',()=>sidebar(true));$('sidebar-close').addEventListener('click',()=>sidebar(false));overlay.addEventListener('click',()=>sidebar(false));
-  function identity(){const user=Auth.getUser();$('user-name').textContent=user.fullName||user.username;$('user-role').textContent=(user.roles||[]).map(MenuConfig.getRoleDisplayName).join(', ');$('user-avatar-fallback').textContent=(user.fullName||user.username||'U').charAt(0);}
-  window.addEventListener('auth:permissions-changed',()=>{client.clear();closeForms();if(canRead()){identity();client.load();}});window.addEventListener('pagehide',closeForms);
-  identity();await client.load();
+  $('dc-confirm-form').addEventListener('submit',e=>{e.preventDefault();client.confirm({receiverName:$('dc-receiver').value,deliveredAt:$('dc-delivered-at').value,proof:previewFile});});
+  $('dc-fail-form').addEventListener('submit',e=>{e.preventDefault();client.fail($('dc-fail-reason').value,$('dc-fail-detail').value);});
+  $('dc-return-form').addEventListener('submit',e=>{e.preventDefault();client.receive($('dc-return-reason').value,$('dc-return-checked').checked);});
+  $('dc-view-proof').addEventListener('click',async()=>{
+    const blob=await client.proof();if(!blob)return;if(proofUrl)URL.revokeObjectURL(proofUrl);proofUrl=URL.createObjectURL(blob);
+    $('dc-stored-proof').src=proofUrl;$('dc-stored-proof').hidden=false;$('dc-download-proof').href=proofUrl;$('dc-download-proof').download='bien-ban-giao-hang.'+(blob.type==='image/png'?'png':'jpg');$('dc-download-proof').hidden=false;
+  });
+  window.addEventListener('auth:permissions-changed',()=>{clearImages();client.initialize();});window.addEventListener('pagehide',clearImages);
+  await client.initialize();
+  const query=new URLSearchParams(location.search);
+  if(query.get('tripId') && query.get('stopId'))await client.open(query.get('tripId'),query.get('stopId'));
 })();

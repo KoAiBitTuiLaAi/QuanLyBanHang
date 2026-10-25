@@ -376,6 +376,20 @@ class DealerOrderTrackingServiceTest {
     // S6-09: THEO DÕI TRẠNG THÁI GIAO HÀNG (5 MỐC & THỰC GIAO TỪNG DÒNG)
     // ══════════════════════════════════════════════════════════════════════════════
 
+    @Test void partialStopDoesNotForgeWholeOrderDeliveryAndLegacyDateDoesNotInventMidnight(){
+        var order=createTestOrder(55L,"DH-PARTIAL",dealerMinhPhat,"SHIPPING",BigDecimal.TEN,BigDecimal.ONE,BigDecimal.TEN,BigDecimal.ONE);
+        when(orderRepository.findById(55L)).thenReturn(Optional.of(order));
+        var trip=DeliveryTrip.builder().id(2L).status(DeliveryTripStatus.IN_PROGRESS).departureTime(LocalDateTime.now().minusHours(2)).build();
+        var stop=DeliveryTripStop.builder().id(3L).order(order).trip(trip).status(DeliveryStopStatus.DELIVERED).deliveredAt(LocalDateTime.now().minusHours(1)).build();
+        when(deliveryTripStopRepository.findByOrderIdOrderByIdDesc(55L)).thenReturn(List.of(stop));
+        var tracking=orderService.getDealerOrderDeliveryTracking(55L,1L);
+        assertThat(tracking.getDeliveredAt()).isNull();assertThat(tracking.getMilestones().get(3).getStatus()).isEqualTo("CURRENT");
+        assertThat(tracking.getMilestones().get(4).getStatus()).isEqualTo("PENDING");
+        order.setStatus("DELIVERED");order.setActualDeliveryDate(LocalDate.of(2026,10,22));
+        when(deliveryTripStopRepository.findByOrderIdOrderByIdDesc(55L)).thenReturn(List.of());
+        assertThat(orderService.getDealerOrderDeliveryTracking(55L,1L).getDeliveredAt()).isNull();
+    }
+
     @Test
     @DisplayName("S6-09: Hiển thị đầy đủ 5 mốc thời gian: đã duyệt, đang soạn, đã xuất, đang giao, đã giao")
     void getDealerOrderDeliveryTracking_FiveMilestonesPresentAndOrdered() {

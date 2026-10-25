@@ -3971,8 +3971,6 @@ public class OrderServiceImpl implements OrderService {
             OrderStatusHistory delHist = historyByStatus.get("DELIVERED");
             if (delHist != null) {
                 deliveredAt = delHist.getChangedAt();
-            } else if (order.getActualDeliveryDate() != null) {
-                deliveredAt = order.getActualDeliveryDate().atStartOfDay();
             }
         }
 
@@ -3980,13 +3978,14 @@ public class OrderServiceImpl implements OrderService {
         // Trật tự mốc: 1. APPROVED -> 2. PICKING -> 3. EXPORTED -> 4. SHIPPING -> 5. DELIVERED
         boolean isDelivered = "DELIVERED".equalsIgnoreCase(currentStatus)
                 || "CLOSED".equalsIgnoreCase(currentStatus)
-                || "COMPLETED".equalsIgnoreCase(currentStatus)
-                || (stop != null && stop.getStatus() == DeliveryStopStatus.DELIVERED);
+                || "COMPLETED".equalsIgnoreCase(currentStatus);
+        if (!isDelivered) deliveredAt = null; // A partial shipment must not finish the whole order's timeline.
         boolean isShipping = "SHIPPING".equalsIgnoreCase(currentStatus)
                 || (!isDelivered && trip != null && trip.getStatus() == DeliveryTripStatus.IN_PROGRESS && stop != null && stop.getStatus() == DeliveryStopStatus.PENDING);
         boolean isExported = "EXPORTED".equalsIgnoreCase(currentStatus)
                 || "SHIPPED".equalsIgnoreCase(currentStatus)
-                || (exportVoucher != null && !isShipping && !isDelivered);
+                || (exportVoucher != null && !isShipping && !isDelivered
+                    && !Set.of("PICKING", "PROCESSING", "CANCELLED", "REJECTED", "RETURNED").contains(currentStatus));
         boolean isPicking = "PICKING".equalsIgnoreCase(currentStatus)
                 || "PROCESSING".equalsIgnoreCase(currentStatus);
         boolean isApproved = "APPROVED".equalsIgnoreCase(currentStatus)
