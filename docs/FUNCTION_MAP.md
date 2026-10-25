@@ -101,7 +101,7 @@
 - S8-06: Kinh doanh → Báo cáo doanh số → Chọn chiều nhóm, bộ lọc thời gian/đại lý/khu vực/nhóm hàng/nhân viên, xem doanh số/sản lượng/biên lợi nhuận gộp, so sánh cùng kỳ và xuất Excel.
 - S8-07: Báo cáo → Tồn kho & Vòng quay → Xem giá trị tồn theo kho và theo nhóm hàng, số ngày tồn bình quân SKU, phát hiện hàng chậm luân chuyển đang chôn vốn và xuất Excel.
 - S8-08: Kho hàng → Tồn kho → Áp dụng bộ lọc, xuất báo cáo tồn kho ra tệp Excel qua API máy chủ, giữ nguyên ba cột tồn và tên tệp chứa mã kho kèm ngày xuất.
-- S8-09: Một phần: Báo cáo → Công nợ theo tuổi nợ → Tổng hợp nhóm tuổi nợ và theo nhân viên, chỉ ra đại lý rủi ro nhất, xuất Excel; Backend hoàn tất đầy đủ API và ma trận quyền REPORT_FINANCE, frontend chờ bật adapter kết nối.
+- S8-09: Báo cáo → Công nợ theo tuổi nợ → Lọc ngày chốt/nhân viên, xem tổng hợp nhóm tuổi nợ và đại lý theo mức rủi ro, xuất Excel.
 - S8-10: Tài chính → Sổ công nợ → tab Sổ chi tiết → Chọn đại lý và khoảng thời gian, xem phát sinh tăng giảm kèm số dư lũy kế, xuất PDF và Excel.
 
 ## Nguồn đối chiếu

@@ -345,7 +345,7 @@ Chỉ đồng bộ `origin/develop` tại `c09694f`, xử lý 5 file xung đột
 | Nguồn lỗi build S8-07 | Service xuất Excel và ba DTO tương ứng giống hệt origin/develop; không phát sinh từ 5 file giải quyết xung đột. Giữ nguyên, không sửa trong lượt chỉ đồng bộ |
 | Phạm vi DB | Không chạy backend nghiệp vụ, không reset DB/seed hoặc tạo/sửa/hủy chứng từ |
 
-## S8-09 — Công nợ quá hạn theo tuổi nợ (25/10/2026, Backend hoàn tất)
+## S8-09 — Công nợ quá hạn theo tuổi nợ (25/10/2026, Backend & Frontend tích hợp)
 
 Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Tuân thủ đầy đủ `AGENTS.md` và `SKILLS/SKILL_backend.md`. Đã xây dựng toàn bộ backend gồm Controller, Service, DTO, Repository query, dịch vụ xuất Excel Apache POI và bộ kiểm thử tự động unit + integration.
 
@@ -1504,38 +1504,15 @@ Giới hạn: **backend chưa có API** `/api/reports/sales` và `/api/reports/s
 
 
 
-## S8-09 — Công nợ quá hạn theo tuổi nợ (24/10/2026, chỉ frontend)
+## S8-09 — Công nợ quá hạn theo tuổi nợ (25/10/2026, nối frontend với backend)
 
+Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Backend S8-09 đã có API và ma trận `REPORT_FINANCE`; frontend trước đó còn adapter `available: false` nên trang khóa bộ lọc và không gọi API. Đã bật adapter thật bằng `Auth.apiFetch`, dùng đúng `/api/reports/debt-aging/options` và `/api/reports/debt-aging` với ngày chốt, nhân viên hoặc `unassignedOnly`. Backend tiếp tục là nguồn duy nhất cho số liệu, nhóm tuổi nợ và thứ hạng rủi ro. Excel frontend xuất từ snapshot đầy đủ đã được kiểm tra.
 
-
-Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Nhánh `feature/S8-09-frontend-xem_bao_cao_cong_no_qua_han_theo_tuoi_no`. Đã đọc AGENTS.md và hai SKILLS; giữ shell/content frame SaleStock. Không sửa bất kỳ file backend/schema/quyền mặc định; chưa commit/push/merge.
-
-
-
-| Yêu cầu | Backend | Frontend | Kết nối/kiểm chứng |
-
+| Hạng mục | Backend | Frontend | Đã kết nối đúng |
 |---|---|---|---|
+| Tùy chọn và báo cáo theo bộ lọc | ✅ API options/report, dữ liệu tiền dạng chuỗi, giới hạn phạm vi nhân viên | ✅ Gọi API thật qua `Auth.apiFetch`, gửi đúng query và xử lý lỗi | ✅ Endpoint và envelope `{success,message,data}` khớp |
+| Nhóm tuổi nợ, tổng hợp nhân viên, thứ hạng rủi ro | ✅ Tính và sắp thứ hạng tại server | ✅ Xác thực snapshot rồi hiển thị, không tự tính nghiệp vụ | ✅ Frontend dùng dữ liệu từ server |
+| Xuất Excel | ✅ API export có sẵn | ✅ Bốn sheet từ snapshot đầy đủ đã tải | ✅ Xuất theo cùng bộ lọc/snapshot |
+| Phân quyền | ✅ `REPORT_FINANCE` từ ma trận DB; ADMIN được phép | ✅ Menu/trang/nút theo `REPORT_FINANCE`, xóa dữ liệu khi mất quyền | ✅ Backend và frontend cùng áp dụng quyền |
 
-| Tổng hợp nhóm tuổi nợ và nhân viên | Chưa có API/DTO/service S8-09 | Đã dựng bộ lọc ngày chốt/nhân viên/chưa phân công, ba chỉ số, bảng nhóm và nhân viên; ngưỡng từ adapter, không tự tính nghiệp vụ | **Chưa nối thật**. Adapter sản phẩm available=false, thông báo chờ backend, số liệu “—”, không có request phỏng đoán/dữ liệu demo |
-
-| Đại lý rủi ro cao nhất | Chưa có tiêu chí/xếp hạng S8-09 | Sẵn sàng hiển thị riskBasis/riskRank/riskLabel từ server, giữ đồng hạng, mở dòng ưu tiên và phân trang 20/50/100 | Logic kiểm thử bằng fixture riêng; không lấy nợ cao nhất hoặc cờ vi phạm làm xếp hạng thay backend |
-
-| Xuất Excel | Chưa có snapshot báo cáo thật | Sẵn logic bốn sheet theo toàn bộ snapshot, giữ chính xác tiền dạng text, không formula/hyperlink, tên file theo ngày/bộ lọc | **Khóa trên bản chạy thật đến khi nối API**; kiểm thử file tải xuống đủ dòng, vượt giới hạn an toàn Number, chống công thức |
-
-| Ma trận quyền DB | REPORT_FINANCE đã có catalog; API 403 riêng S8-09 chưa tồn tại để nghiệm thu | Menu/guard/nút theo REPORT_FINANCE, ADMIN luôn có quyền; không fallback ACCOUNTANT, scope nội bộ loại đại lý-only | Test non-admin một vai trò VIEWER, cấp/thu hồi cùng JWT, hủy dữ liệu trễ; quyền API backend thật **chờ triển khai** |
-
-| Lỗi/đổi bộ lọc/xuất bất đồng bộ | Không thay đổi backend | Xóa số cũ và khóa xuất khi thay bộ lọc, mất quyền, dữ liệu lỗi/không đầy đủ; hủy đọc cũ, bỏ phản hồi trễ, chống bấm xuất liên tiếp | Kiểm thử Chrome cách ly; báo cáo rỗng hợp lệ khác với thiếu API, không hiện 0 giả |
-
-| Tài liệu/đối chiếu | Chỉ đọc source để xác nhận thiếu S8-09 | FUNCTION_MAP và FRONTEND_ROUTES đã bổ sung vị trí; tài liệu hợp đồng **đề xuất**, không giả thành API có sẵn | `docs/S8-09_FRONTEND_CONTRACT.md`; phải thống nhất với thành viên backend trước khi bật adapter |
-
-
-
-Phối hợp Antigravity CLI bằng model **Claude Opus 4.6 (Thinking)** rà luồng xuất Excel/quyền/race/formula. Nhận xét được đối chiếu với code và kiểm thử, bổ sung các ca đổi bộ lọc giữa lúc xuất, thu hồi giữa hai lần kiểm tra, bấm kép và corpus `=`, `+`, `-`, `@`, tab/CR. Không thay bảo vệ frontend bằng backend mới ngoài phạm vi.
-
-
-
-Kết quả cuối: **209/209 unit tests JS**, **13/13 tests server/route**, **18/18 kịch bản Chrome S8-09** và **216/216 kiểm tra bố cục trên 36 trang × 6 kích thước** qua. Đã xem ảnh pending-backend/desktop/mobile và đọc lại file Excel tải xuống bằng bộ đọc XLSX. Kiểm tra FUNCTION_MAP có 69 story, không trùng ID, đúng thứ tự. `git diff --check` sạch; không có diff trong backend. Khi chạy đồng thời hai bộ Chrome trên server Python thử nghiệm, từng gặp timeout khởi tạo/trạng thái sidebar; chạy lại từng bộ riêng đều qua, không đổi code shell để che lỗi test.
-
-
-
-Kiểm thử frontend dùng script/trang thật + adapter HTTP mock **chỉ trong tests**, không tạo/sửa/xóa dữ liệu DB nghiệp vụ. Không coi các fixture là bằng chứng API đã hoạt động hoặc backend đã thực thi REPORT_FINANCE. Lệnh: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/debt-aging.browser.cjs`; `node tests/content-layout.browser.cjs` (`NAV_TEST_URL` trỏ frontend cổng 5538).
+Tài liệu API/frontend: `backend/API_DOCUMENTATION.md`, `docs/S8-09_FRONTEND_CONTRACT.md`. Unit tests adapter S8-09: 11/11 đạt, gồm URL/query, envelope, lỗi HTTP/JSON và AbortSignal. Browser test chưa chạy được trong checkout này do thiếu module Node `playwright`; vì vậy chưa xem đây là kiểm thử UI end-to-end trên backend đang chạy.
