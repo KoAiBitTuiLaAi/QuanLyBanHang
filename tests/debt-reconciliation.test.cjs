@@ -9,6 +9,22 @@ const path = require('node:path');
 
 const DebtReconciliationUtils = require('../frontend/js/debt-reconciliation-utils.js');
 
+test('S7-06: Large decimal balances and discrepancies keep every cent', () => {
+  assert.equal(DebtReconciliationUtils.formatMoney('9007199254740993.25'), '9.007.199.254.740.993,25 ₫');
+  assert.equal(DebtReconciliationUtils.moneyDifference('9007199254740993.25', '9007199254740993.24'), '0.01');
+  assert.equal(DebtReconciliationUtils.moneyDifference('-1.25', '0.75'), '-2.00');
+  const wideDifference = DebtReconciliationUtils.moneyDifference('9999999999999999999999.99', '-9999999999999999999999.99');
+  assert.equal(wideDifference, '19999999999999999999999.98');
+  assert.notEqual(DebtReconciliationUtils.formatMoney(wideDifference), '—');
+  assert.equal(DebtReconciliationUtils.validateDiscrepancyFeedback('9007199254740993.25', '9007199254740993.24', 'Thiếu phiếu thu').difference, '0.01');
+  assert.equal(DebtReconciliationUtils.buildExportUrl(12), '/api/finance/debt-reconciliations/12/pdf');
+  assert.equal(DebtReconciliationUtils.buildExportUrl(12, true), '/api/portal/debt-reconciliations/12/pdf');
+  assert.throws(() => DebtReconciliationUtils.buildExportUrl('../other'));
+  for (const value of ['', 'Infinity', 'NaN', '1e3', '1.001', '1,50'])
+    assert.equal(DebtReconciliationUtils.moneyCents(value), null);
+  assert.equal(DebtReconciliationUtils.validateDateRange('2026-02-30', '2026-03-01').valid, false);
+});
+
 test('DebtReconciliationUtils: Định dạng tiền tệ VND chính xác, xử lý số âm và null/undefined', () => {
   assert.equal(DebtReconciliationUtils.formatMoney(null), '—');
   assert.equal(DebtReconciliationUtils.formatMoney(undefined), '—');
@@ -52,16 +68,16 @@ test('DebtReconciliationUtils: Xác thực và tính toán phản hồi lệch c
   // Trường hợp lệch: Hệ thống 10.000.000, Đại lý báo 8.000.000 -> Chênh lệch 2.000.000
   const diffResult = DebtReconciliationUtils.validateDiscrepancyFeedback(10000000, 8000000, 'Chưa ghi nhận phiếu thu PT-001 ngày 25/10');
   assert.equal(diffResult.valid, true);
-  assert.equal(diffResult.systemBalance, 10000000);
-  assert.equal(diffResult.dealerClaimedAmount, 8000000);
-  assert.equal(diffResult.difference, 2000000);
+  assert.equal(diffResult.systemBalance, '10000000');
+  assert.equal(diffResult.dealerClaimedAmount, '8000000');
+  assert.equal(diffResult.difference, '2000000.00');
   assert.equal(diffResult.isMatched, false);
   assert.equal(diffResult.reason, 'Chưa ghi nhận phiếu thu PT-001 ngày 25/10');
 
   // Trường hợp khớp đúng: Hệ thống 10.000.000, Đại lý báo 10.000.000 -> Chênh lệch 0
   const matchResult = DebtReconciliationUtils.validateDiscrepancyFeedback(10000000, 10000000, 'Số liệu hoàn toàn khớp đúng');
   assert.equal(matchResult.valid, true);
-  assert.equal(matchResult.difference, 0);
+  assert.equal(matchResult.difference, '0.00');
   assert.equal(matchResult.isMatched, true);
 
   // Lỗi thiếu số tiền đại lý

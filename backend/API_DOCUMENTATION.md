@@ -4,6 +4,46 @@ Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
+## S7-06 — Biên bản đối chiếu công nợ đã lưu và phản hồi đại lý (25/10/2026)
+
+Trang `/finance/debt-reconciliation`, menu **Tài chính → Đối chiếu công nợ**, dùng cho kế toán và đại lý theo quyền. Tạo biên bản chụp số liệu đầu kỳ, tăng/giảm, cuối kỳ và từng chứng từ trong một transaction `REPEATABLE_READ`; toàn bộ bản số liệu và thông tin đại lý được lưu tại `debt_reconciliations.snapshot_json`. Không sửa/xóa bản đã lưu, không tính lại khi xem/PDF. Có thể lập một biên bản mới cho cùng kỳ để đối chiếu lại sau khi xử lý phản hồi.
+
+| Method | Endpoint (sau `/api`) | Quyền / hành vi |
+|---|---|---|
+| GET | `/finance/debt-reconciliations/options?keyword=&page=0` | `FINANCE_VIEW_DEBT`; tìm đại lý trong phạm vi, 50 dòng/trang |
+| POST | `/finance/debt-reconciliations` | `FINANCE_VIEW_DEBT` **và** `FINANCE_MANAGE`; Admin được phép; tài khoản có scope đại lý không được lập thay kế toán |
+| GET | `/finance/debt-reconciliations?dealerId=&from=&to=&page=0` | Danh sách biên bản đã lưu, 20 dòng/trang; ngày lọc chọn các kỳ nằm trọn trong khoảng; bỏ cả `from`/`to` để xem mọi kỳ |
+| GET | `/finance/debt-reconciliations/{id}` | Chi tiết bản số liệu và phản hồi đã lưu |
+| GET | `/finance/debt-reconciliations/{id}/pdf` | PDF tiếng Việt, mã biên bản, kỳ, đầu kỳ/phát sinh/cuối kỳ, trạng thái và hai ô ký xác nhận; `Cache-Control: no-store` |
+| GET | `/portal/debt-reconciliations/options` | Chỉ đại lý liên kết tài khoản; Admin có thể tra cứu |
+| GET | `/portal/debt-reconciliations` và `/{id}`, `/{id}/pdf` | `FINANCE_VIEW_DEBT`, scope chính đại lý từ DB; không tin `dealerId` từ client |
+| POST | `/portal/debt-reconciliations/{id}/response` | Chỉ tài khoản đại lý liên kết có `FINANCE_VIEW_DEBT`; kế toán/Admin không xác nhận thay |
+
+Tạo biên bản:
+
+```json
+{"dealerId":10,"from":"2026-10-01","to":"2026-10-25","requestKey":"bed44420-bb8c-4a2b-af14-209d98b545de"}
+```
+
+`requestKey` là UUID do client cấp. Gửi lại cùng khóa, người lập, đại lý và kỳ trả biên bản cũ; tái dùng cho dữ liệu khác trả `409`. Unique constraint ngăn tạo trùng đồng thời; yêu cầu thua cuộc có thể nhận `409`, phải tải lại danh sách trước khi thao tác tiếp. Chỉ POST chủ động mới tạo bản ghi; mở trang/lọc/tải PDF không tự lập biên bản.
+
+Xác nhận hoặc phản hồi:
+
+```json
+{"version":0,"status":"CONFIRMED"}
+```
+
+```json
+{"version":0,"status":"DISPUTED","claimedBalance":"950000.25","reason":"Chưa ghi nhận phiếu thu PT-002"}
+```
+
+Chỉ cho chuyển `PENDING → CONFIRMED` hoặc `PENDING → DISPUTED` một lần. Bắt buộc version hiện tại; số dư phản hồi lệch phải khác cuối kỳ, tối đa 22 chữ số nguyên/2 chữ số lẻ; lý do sau trim không trống, tối đa 500 ký tự. Số chênh do server tính `cuối kỳ hệ thống - số dư đại lý`. Xác nhận khớp dùng số dư đã lưu. Pessimistic row lock + `@Version` bảo vệ phản hồi đồng thời; bản đã phản hồi/version cũ trả `409`. Lưu người/thời gian phản hồi và audit log trong cùng transaction, không tự sinh bút toán điều chỉnh công nợ.
+
+Các trường tiền trả bằng **chuỗi thập phân** (`"950000.25"`), cả snapshot và chênh lệch. Trình duyệt dùng số nguyên BigInt theo xu để không mất độ chính xác. Frontend không tự ghi trạng thái xác nhận khi chưa có kết quả server; khi mất kết nối lúc POST, khóa ghi tiếp và yêu cầu tải lại danh sách. Thu hồi quyền làm ẩn/khóa màn hình và hủy/loại phản hồi trễ; JWT hiện tại nhận `403` ở request sau. Vai trò chỉ giới hạn phạm vi; SALES chỉ thấy đại lý phụ trách, DEALER chỉ đại lý liên kết, không có role fallback thay quyền DB.
+
+Nguồn số liệu dùng cùng sổ công nợ S8-10: đơn ghi sổ theo `recorded_at/created_at`, phiếu thu theo `payment_date`, điều chỉnh hóa đơn có dấu theo `adjustment_date` (bao gồm chứng từ giảm nợ trả hàng); không cộng lặp hóa đơn và đơn hàng. Đây là số liệu từ chứng từ/trạng thái hiện có tại **thời điểm lập**, không phải cơ chế tái dựng lịch sử thay đổi đã bị xóa; giữ số dư âm. Phiếu phát sinh/backdate sau đó không sửa snapshot cũ: cần lập bản mới khi muốn cập nhật. Áp dụng `app.debt-statement.max-rows`; vượt giới hạn trả `400`, không lưu/PDF một phần. Phản hồi trên cổng là xác nhận ứng dụng, không phải chữ ký số. Chưa có luồng gửi email; đại lý truy cập biên bản qua cổng.
+
+
 ## S6-07 — Frontend theo dõi chuyến giao và sửa số liệu đọc (23/10/2026)
 
 Menu **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`. VIEW hoặc EXPORT theo ma trận DB; ADMIN luôn có quyền. Các API theo dõi dùng scope kho sẵn có, không dùng vai trò thay grant.
