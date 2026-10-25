@@ -1429,3 +1429,15 @@ Nguyên nhân xung đột mới: develop tiếp nhận PR #172 sau lần hòa nh
 Bản giải quyết để người dùng tự hoàn tất merge commit và push.
 
 Kiểm chứng lần hòa nhập này: 123 tests / 11 lớp đều đạt, 0 failures/errors/skipped. Đã fetch lại và xác nhận MERGE_HEAD trùng origin/develop tại 3d10ced8d22ccee811de935358f017e6bfe61b70. Không còn file unmerged; diff S6-08 so với develop qua kiểm tra whitespace. Chưa commit/push.
+
+## S8-03 — Lập phiếu điều chỉnh tồn kho có phê duyệt (Backend) — 25/10/2026
+
+Nhánh `feature/S8-03-backend-lap_phieu_dieu_chinh_ton_kho_co_phe_duyet`, tạo từ `origin/develop`.
+
+| Hạng mục | Backend | Frontend | Kết nối / phân quyền |
+|---|---|---|---|
+| Lập phiếu hàng hỏng/mất/hết hạn, ghi lý do và giá trị tổn thất | Có: lưu `PENDING_APPROVAL`, không đổi tồn; lưu giá trị tổn thất theo dòng và tổng | Có: form hiện có gửi API lập phiếu chờ duyệt | `WAREHOUSE_ADJUST`; Admin được phép |
+| Duyệt/từ chối, tách người lập và người duyệt | Có: khóa phiếu/kho/tồn, kiểm tra tồn khả dụng; cập nhật tồn và audit cùng transaction; từ chối phải có lý do | Có: nút duyệt/từ chối gọi API thật | `WAREHOUSE_APPROVE`; người lập không tự xử lý phiếu; mặc định ma trận cấp cho Quản lý kho |
+| Thẻ kho | Có: phiếu `APPROVED` tạo phát sinh âm; phiếu chờ/từ chối không xuất hiện | Có: liên kết Thẻ kho từ chi tiết phiếu | Dữ liệu kho vẫn theo phạm vi được giao và `WAREHOUSE_VIEW` |
+
+Đã cập nhật `backend/API_DOCUMENTATION.md`; vị trí giao diện S8-03 đã có trong `docs/FUNCTION_MAP.md`. Không chạy test theo chỉ thị vận hành; `mvn -q -DskipTests compile` thành công, `git diff --check` sạch.
