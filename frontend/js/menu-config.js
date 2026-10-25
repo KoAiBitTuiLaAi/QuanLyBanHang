@@ -1,4 +1,4 @@
-/**
+﻿/**
  * menu-config.js — Cấu hình menu theo vai trò (S1-06).
  *
  * Mục menu không thuộc quyền thì không hiển thị.
@@ -139,8 +139,8 @@ const MenuConfig = (() => {
       label: "Báo cáo doanh số",
       icon: '<path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 4-9"/>',
       href: "/reports/sales",
-      permission: "ORDER_VIEW",
-      roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER"],
+      permissions: ["REPORT_SALES", "ORDER_VIEW"],
+      roles: ALL_ROLES,
     },
     {
       id: "dealers",
