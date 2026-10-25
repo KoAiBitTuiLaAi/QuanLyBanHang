@@ -24,7 +24,7 @@
 
       <!-- Access / Error notices -->
       <div id="reconcile-access" class="reconcile-notice reconcile-notice--warning" hidden>
-        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem và lập biên bản đối chiếu công nợ. Quản trị viên luôn có toàn quyền.
+        Bạn cần quyền <strong>FINANCE_VIEW_DEBT</strong> để xem biên bản; lập biên bản cần thêm <strong>FINANCE_MANAGE</strong>. Quản trị viên luôn có toàn quyền.
       </div>
       <div id="reconcile-error" class="reconcile-notice reconcile-notice--error" role="alert" hidden></div>
 
@@ -33,7 +33,9 @@
         <form id="reconcile-filter-form" class="reconcile-filter-form">
           <div class="filter-group">
             <label for="filter-dealer">Đại lý đối chiếu <span style="color:#dc2626">*</span></label>
-            <select id="filter-dealer" required>
+            <input id="dealer-keyword" type="search" placeholder="Tìm mã hoặc tên đại lý" aria-label="Tìm đại lý">
+            <button id="btn-find-dealers" class="btn btn--secondary" type="button">Tìm đại lý</button>
+            <select id="filter-dealer">
               <option value="">-- Đang tải danh sách đại lý... --</option>
             </select>
           </div>
@@ -56,7 +58,8 @@
           </div>
 
           <div class="filter-actions">
-            <button id="btn-create-reconcile" class="btn btn--primary" type="submit">
+            <button id="btn-list-reconcile" class="btn btn--secondary" type="submit">Tải danh sách</button>
+            <button id="btn-create-reconcile" class="btn btn--primary" type="button">
               Lập biên bản đối chiếu
             </button>
             <button id="btn-export-pdf" class="btn btn-export-pdf" type="button" disabled>
@@ -67,6 +70,22 @@
             </button>
           </div>
         </form>
+      </section>
+
+      <section id="reconcile-history" class="reconcile-history" hidden>
+        <h2>Biên bản đã lưu</h2>
+        <p>Số liệu được giữ nguyên tại thời điểm lập. Chọn biên bản để xem, tải PDF hoặc phản hồi.</p>
+        <div class="doc-table-wrap">
+          <table class="doc-table">
+            <thead><tr><th>Số biên bản</th><th>Đại lý</th><th>Kỳ</th><th>Cuối kỳ</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+            <tbody id="reconcile-history-rows"></tbody>
+          </table>
+        </div>
+        <div class="filter-actions">
+          <button id="reconcile-prev" class="btn btn--secondary" type="button">Trang trước</button>
+          <span id="reconcile-page-number" aria-live="polite"></span>
+          <button id="reconcile-next" class="btn btn--secondary" type="button">Trang sau</button>
+        </div>
       </section>
 
       <!-- Initial / Empty Guidance State -->
@@ -115,9 +134,8 @@
           <!-- Header Grid -->
           <div class="doc-header-grid">
             <div class="doc-header-company">
-              <h3>CÔNG TY CỔ PHẦN SALESTOCK</h3>
-              <p>Địa chỉ: Tầng 6, Tòa nhà Công Nghệ, Hà Nội</p>
-              <p>Điện thoại: 024-3838-8888 | MST: 0108999999</p>
+              <h3>SALESTOCK</h3>
+              <p>Biên bản đối chiếu theo số liệu đã lưu</p>
             </div>
 
             <div class="doc-header-national">
@@ -141,12 +159,9 @@
 
             <!-- Bên A -->
             <div class="party-block">
-              <div class="party-title">BÊN A (BÊN BÁN): CÔNG TY CỔ PHẦN SALESTOCK</div>
+              <div class="party-title">BÊN A (ĐƠN VỊ LẬP BIÊN BẢN)</div>
               <div class="party-row">
-                <div><strong>Đại diện:</strong> Ông/Bà Nguyễn Văn An</div>
-                <div><strong>Chức vụ:</strong> Kế toán trưởng</div>
-                <div><strong>Điện thoại:</strong> 024-3838-8888</div>
-                <div><strong>Tài khoản:</strong> 19036888888888 tại Techcombank</div>
+                <div><strong>Tài khoản lập:</strong> <span id="doc-created-by">—</span></div>
               </div>
             </div>
 
@@ -171,11 +186,11 @@
               <span class="reconcile-kpi-item__value" id="kpi-opening">0 ₫</span>
             </div>
             <div class="reconcile-kpi-item">
-              <span class="reconcile-kpi-item__label">2. Phát sinh tăng (Mua hàng)</span>
+              <span class="reconcile-kpi-item__label">2. Phát sinh tăng</span>
               <span class="reconcile-kpi-item__value value--increase" id="kpi-increase">0 ₫</span>
             </div>
             <div class="reconcile-kpi-item">
-              <span class="reconcile-kpi-item__label">3. Phát sinh giảm (Thanh toán)</span>
+              <span class="reconcile-kpi-item__label">3. Phát sinh giảm</span>
               <span class="reconcile-kpi-item__value value--decrease" id="kpi-decrease">0 ₫</span>
             </div>
             <div class="reconcile-kpi-item">
@@ -209,8 +224,8 @@
 
           <!-- Conclusion -->
           <div style="font-size: 0.9375rem; margin-top: 10px;">
-            <p><strong>Kết luận:</strong> Tính đến hết ngày <span id="doc-end-date-text">...</span>, số dư nợ Bên B phải thanh toán cho Bên A là: <strong id="doc-closing-words" style="color: #1e3a8a;">0 ₫</strong>.</p>
-            <p style="font-style: italic; color: #475569;">Biên bản này được lập thành 02 (hai) bản có giá trị pháp lý như nhau, mỗi bên giữ 01 bản để làm căn cứ hạch toán kế toán và theo dõi thanh toán.</p>
+            <p><strong>Số dư cuối kỳ:</strong> Đến hết ngày <span id="doc-end-date-text">...</span>: <strong id="doc-closing-words" style="color: #1e3a8a;">0 ₫</strong>. Số dư âm thể hiện tiền đại lý thanh toán dư.</p>
+            <p style="font-style: italic; color: #475569;">Số liệu được giữ nguyên tại thời điểm lập. Phản hồi không tự điều chỉnh công nợ. Xác nhận trên cổng không phải chữ ký số.</p>
           </div>
 
           <!-- Signatures Block -->
@@ -219,7 +234,7 @@
               <h4>ĐẠI DIỆN BÊN A</h4>
               <p>(Ký, ghi rõ họ tên và đóng dấu)</p>
               <div class="sig-space"></div>
-              <div class="sig-name">Nguyễn Văn An</div>
+              <div class="sig-name">Đại diện đơn vị lập biên bản</div>
             </div>
 
             <div class="sig-col">
@@ -249,7 +264,7 @@
 
               <div class="filter-group">
                 <label for="modal-dealer-amount">Số dư nợ theo sổ sách của Quý đại lý (₫) <span style="color:#dc2626">*</span>:</label>
-                <input type="number" id="modal-dealer-amount" required placeholder="Nhập số tiền theo sổ sách đại lý">
+                <input type="text" inputmode="decimal" id="modal-dealer-amount" required placeholder="Ví dụ: 1250000.50 (dấu chấm phần lẻ)">
               </div>
 
               <div class="filter-group">

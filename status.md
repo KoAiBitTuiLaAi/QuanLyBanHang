@@ -1,5 +1,20 @@
 # Trạng thái sprint 1–8
 
+## S7-06 — Backend biên bản đối chiếu định kỳ và nối frontend — 25/10/2026
+
+Nhánh `feature/S7-06-backend-lap_bien_ban_doi_chieu_cong_no_dinh_ky`, từ `develop`. Phát hiện frontend cũ chỉ giả lập xác nhận/phản hồi trong bộ nhớ và xuất PDF sổ hiện thời; thay bằng biên bản lưu DB.
+
+| Yêu cầu | Backend | Frontend | Kết nối / phân quyền |
+|---|---|---|---|
+| Biên bản theo kỳ: đầu kỳ, phát sinh, cuối kỳ | Lưu snapshot bất biến, mã UUID, người/ngày lập; cùng sổ chứng từ S8-10 | Lập biên bản và danh sách đã lưu, lọc kỳ/đại lý, phân trang, xem lại | FINANCE_VIEW_DEBT để xem; cần thêm FINANCE_MANAGE để lập; Admin được phép |
+| PDF gửi đại lý ký | PDF từ đúng snapshot, tiếng Việt, mã/kỳ/số dư, trạng thái, 2 ô chữ ký | Nút PDF và in bản đã lưu; bỏ thông tin công ty/người ký/tài khoản ngân hàng giả lập cũ | PDF kiểm quyền/phạm vi, không tính lại sổ khi xuất |
+| Đại lý xác nhận hoặc phản hồi lệch | API portal, DB lưu số dư đại lý, lý do, chênh lệch do server tính, người/thời gian phản hồi | Gửi API thật, hiển thị lại phản hồi sau reload; không ghi trạng thái lạc quan | Chỉ đại lý liên kết có FINANCE_VIEW_DEBT; kế toán/Admin không xác nhận thay |
+| Dữ liệu và đồng thời | Version, khóa hàng, requestKey chống lặp, audit cùng transaction | Chuỗi thập phân/BigInt, chặn kết quả trễ sau thu hồi quyền; lỗi POST không tự gửi lại | Cùng JWT có hiệu lực cấp/thu hồi quyền; không role fallback, không browser storage nghiệp vụ |
+
+Giới hạn: snapshot là số liệu tại thời điểm lập; chứng từ backdate sau đó cần biên bản mới. Phản hồi lệch không tự sửa công nợ. Xác nhận cổng không phải chữ ký số; không bổ sung email. S6-08/S8-09 ngoài phạm vi không thay đổi.
+
+Kiểm thử đạt: **42 backend** (17 S7-06, 10 sổ công nợ S8-10, 14 ma trận quyền, 1 thu hồi quyền), **278 Node**, **13 route Python**; Chrome kiểm tra lưu/xem lại, PDF, phản hồi DB theo fixture, chênh lệch chính xác, POST mất kết nối, thu hồi/cấp lại quyền và 5 kích thước 1440/1024/768/390/320. Backend thử bằng H2 cách ly; Chrome chặn toàn bộ API bằng HTTP fixture, không thay đổi dữ liệu thật. Đã phối hợp Antigravity Opus rà thiết kế/rủi ro và đối chiếu các ca kiểm thử; Codex kiểm tra lại code và kết quả.
+
 ## S6-06 — Phân tuyến giao hàng và gán tài xế — 25/10/2026
 
 Triển khai đầy đủ cả Backend và Frontend tuân thủ 3 tiêu chí nghiệp vụ theo yêu cầu:

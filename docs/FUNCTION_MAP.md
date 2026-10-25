@@ -85,7 +85,7 @@
 - S7-02: Tài chính → Ghi nhận thanh toán → Ghi số tiền, hình thức thu, đối trừ tự động FIFO hoặc chọn hoá đơn cụ thể, thu một phần, tra cứu nợ và lập bút toán điều chỉnh.
 - S7-04: Tự đánh giá rủi ro nợ định kỳ và sau thu tiền; chỉ backend → `/api/finance/debt/config` (cấu hình), `/api/finance/debt/flagged-dealers` (cảnh báo).
 - S7-05: Tài chính → Thu tiền theo tuyến → Ghi khoản thu kèm biên lai, xem chi tiết, xác nhận nhận tiền, đối chiếu theo nhân viên/ngày thu.
-- S7-06: Tài chính → Đối chiếu công nợ → Lập biên bản đối chiếu định kỳ (đầu kỳ, phát sinh, cuối kỳ), xuất PDF, gửi đại lý xác nhận hoặc phản hồi lệch.
+- S7-06: Tài chính → Đối chiếu công nợ → Lập/lưu biên bản theo kỳ, xem lịch sử và PDF; đại lý vào cùng mục → Mở biên bản → Xác nhận khớp hoặc phản hồi lệch, lưu DB.
 - S7-07: Kinh doanh → Công nợ của tôi → Xem tổng còn nợ, hạn mức còn lại, danh sách hoá đơn kèm hạn thanh toán, xem và tải PDF hoá đơn đã phát hành.
 - S7-08: Tự động chạy hàng ngày lúc 7h; Kinh doanh → Thông báo của tôi → Xem nhắc hạn thanh toán trước 3 ngày, quá hạn, lọc chưa đọc, đánh dấu đã đọc.
 - S7-09: Tài chính → Ghi nhận thanh toán → In phiếu thu tiền công nợ (mã duy nhất, thông tin đại lý, số tiền bằng số/chữ, hình thức, người thu), in hoặc tải file PDF.
