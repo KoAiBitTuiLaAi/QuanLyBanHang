@@ -1156,6 +1156,20 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
 
+
+## S6-08 — Backend xác nhận giao hàng kèm chứng từ (25/10/2026)
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Người nhận thực tế, thời điểm giao, ảnh biên bản ký nhận | Đã bổ sung API multipart, lưu DB, tải ảnh có kiểm tra quyền | Chưa làm theo phạm vi yêu cầu | Chưa nối UI |
+| Giao thất bại và nhập hàng trả kho | Bắt buộc lý do; giữ API nhập trả kho tường minh S6-07; chặn sửa sau trả kho | Không sửa | Backend dùng lại luồng hiện có |
+| Hóa đơn Sprint 7 | DELIVERED và thực giao chỉ ghi sau xác nhận hợp lệ cho đơn thuộc chuyến | Không sửa | Nối dữ liệu S7-01; phát hành hóa đơn là thao tác riêng |
+| Ma trận quyền DB | WAREHOUSE_EXPORT cho xác nhận, VIEW/EXPORT cho ảnh; ADMIN toàn quyền; phạm vi kho; token đọc lại quyền mỗi request | Chưa có action S6-08 | BE có kiểm tra; chưa xác minh UI ẩn/hiện S6-08 |
+
+Chi tiết hợp đồng và giới hạn: `backend/API_DOCUMENTATION.md`, mục S6-08. Không commit/push tự động.
+
+Kiểm chứng S6-08: 92 tests thuộc 10 lớp service/controller/security/integration đều đạt (0 failures, 0 errors, 0 skipped), gồm lưu/tải ảnh qua DB H2, token cũ sau thu hồi quyền trả 403, chặn bỏ qua chứng từ và dữ liệu thực giao cho hóa đơn. Chưa chạy với MySQL triển khai thực tế; chưa kiểm thử UI S6-08.
+
 ## S8-08 — Xuất báo cáo tồn kho ra tệp Excel (2026-10-23)
 
 Branch `feature/S8-08/xuat-bao-cao-ton-kho-ra-tep-excel` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend, không commit/push.
@@ -1260,3 +1274,28 @@ Nhánh `feature/S8-01-frontend-nhap_phieu_tra_hang_tu_dai_ly_va_nhap_lai_kho`. P
 | Giao diện và tài liệu | Không chỉnh backend/API docs | Dùng chung shell/gutter, hỗ trợ desktop/tablet/mobile; cập nhật FUNCTION_MAP và FRONTEND_ROUTES | 190 test Node, 11 test route, 14 kịch bản Chrome và 204 kiểm tra bố cục / 34 trang qua; HTTP fixtures cách ly, không ghi DB nghiệp vụ, chưa nghiệm thu MySQL thật |
 
 **Lưu ý bàn giao backend:** bộ `DealerReturnSecurityTest` hiện có chạy 6 ca, 3 qua/3 thất bại. Các ca `admin_AlwaysAllowed`, `createReturn_WithOrderCreatePermission_Returns200`, `createReturn_WithoutOrderCreatePermission_Returns403` nhận HTTP 400 (`HttpMessageNotReadableException`) thay vì 200/403 khi gửi JSON do test dựng từ DTO. Không sửa backend hoặc bộ test để ép xanh; cần thành viên backend kiểm tra. Không tuyên bố toàn bộ S8-01 đã nghiệm thu end-to-end.
+
+
+## S6-08 — Giải quyết xung đột với develop (25/10/2026)
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Xác nhận giao hàng S6-08 | Giữ xác nhận ảnh, khóa đơn và kiểm tra đủ hàng; giữ kiểm tra backordered từ develop | Không sửa mã frontend | Nối luồng xuất kho S6-05 và dữ liệu hóa đơn S7-01 |
+| Ma trận quyền | Giữ WAREHOUSE_EXPORT, quyền xem ảnh và phạm vi kho | Không bổ sung UI S6-08 | Giữ kiểm tra quyền DB; chưa xác minh UI S6-08 |
+
+Giữ toàn bộ phần tài liệu của cả hai nhánh; chưa commit hoặc push bản giải quyết xung đột.
+
+Kiểm chứng sau giải quyết xung đột: 110 tests thuộc 11 lớp đều đạt (0 failures, 0 errors, 0 skipped), gồm DeliveryTripIntegrationTest, OrderShipmentIntegrationTest, InvoiceIntegrationTest và thu hồi quyền với token cũ. Không còn file unmerged hoặc dấu conflict trong 4 file đã xử lý; diff riêng S6-08 so với origin/develop qua kiểm tra whitespace.
+
+
+## S6-08 — Hòa nhập S6-06 mới trên develop (25/10/2026)
+
+Nguyên nhân xung đột mới: develop tiếp nhận PR #172 sau lần hòa nhập trước. Giữ cả confirmDelivery/getDeliveryProof của S6-08 và updateTrip của S6-06.
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Xác nhận ảnh và cập nhật tuyến/tài xế | Giữ đầy đủ hai luồng và kiểm tra quyền DB | Không sửa | Giữ backend S6-06/S6-08; UI lưu S6-08 chưa nối |
+
+Bản giải quyết để người dùng tự hoàn tất merge commit và push.
+
+Kiểm chứng lần hòa nhập này: 123 tests / 11 lớp đều đạt, 0 failures/errors/skipped. Đã fetch lại và xác nhận MERGE_HEAD trùng origin/develop tại 3d10ced8d22ccee811de935358f017e6bfe61b70. Không còn file unmerged; diff S6-08 so với develop qua kiểm tra whitespace. Chưa commit/push.

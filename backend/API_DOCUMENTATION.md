@@ -3743,6 +3743,26 @@ Response:
 }
 ```
 
+
+## S6-08 — Xác nhận giao hàng có chứng từ
+
+- `POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/confirm-delivery`
+  - Bearer token; `WAREHOUSE_EXPORT` từ ma trận DB hoặc `ROLE_ADMIN`; kiểm tra kho được giao.
+  - `multipart/form-data`: `receiverName` (bắt buộc, tối đa 100 ký tự), `deliveredAt` (ISO local datetime theo múi giờ ứng dụng, ví dụ `2026-10-25T14:00:00`), `proof` (file ảnh biên bản có chữ ký).
+  - Thời điểm giao nằm trong khoảng xuất phát đến hiện tại. File PNG/JPEG được kiểm tra nội dung thực, không chỉ MIME/tên file; tối đa 5 MB, 20 triệu pixel.
+  - 200: `ApiResponse<DeliveryTripResponse>`. Điểm giao có `receiverName`, `deliveredAt`, `confirmedBy`, `hasSignedProof=true`.
+  - 400: thiếu/sai dữ liệu, chuyến không đang chạy, điểm đã giao/đã trả kho, đơn chưa xuất hoặc chi tiết hàng không khớp. 401: chưa đăng nhập. 403: thiếu quyền hoặc ngoài phạm vi kho.
+  - Lưu ảnh nhị phân và thông tin xác nhận trong DB cùng giao dịch với trạng thái điểm/đơn; khóa chuyến và đơn khi cập nhật. Không ghi file public hay lưu localStorage. Không tự kiểm chứng nội dung chữ ký trong ảnh.
+- `GET /api/warehouse/delivery-trips/{id}/stops/{stopId}/proof`
+  - `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` từ DB hoặc `ROLE_ADMIN`, cùng phạm vi kho.
+  - Trả ảnh dưới dạng attachment, MIME do backend nhận diện, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`; 404 khi điểm chưa có chứng từ. Không trả bytes ảnh trong JSON danh sách.
+- `PUT .../stops/{stopId}/status` không thể chuyển `DELIVERED` nếu chưa có xác nhận ảnh. Điểm đã giao hoặc đã trả kho không được sửa trạng thái.
+- Giao thất bại: `status=FAILED`, bắt buộc `failedReason` tối đa 500 ký tự; ghi nhận hàng đang trên chuyến. Khi thực nhận hàng về kho, gọi `POST .../stops/{stopId}/return-to-warehouse` với `returnReason` để ghi nhận hoàn kho một lần. Giữ quy tắc S6-07: FAILED không tự tăng tồn kho.
+- Đơn liên kết chuyến phải dùng confirm-delivery, không được đi tắt qua `PUT /api/orders/{id}/delivery` hoặc chuyển trạng thái đơn sang DELIVERED. Đơn chưa thuộc chuyến giữ luồng S5-01 hiện có.
+- Kết nối Sprint 7: chỉ sau xác nhận hợp lệ mới đặt đơn EXPORTED/SHIPPED thành DELIVERED, ghi ngày giao thực tế và số lượng thực giao/quy đổi cơ sở. S6-08 xác nhận giao đủ đơn, đối chiếu sản phẩm, đơn vị và số lượng với chi tiết chuyến. API hóa đơn S7-01 hiện có sẽ đọc các dữ liệu này; phát hành hóa đơn vẫn là thao tác riêng có quyền INVOICE_CREATE.
+- Schema: Hibernate `ddl-auto=update` hiện có bổ sung `delivery_trip_stops.signed_proof MEDIUMBLOB`, `proof_content_type VARCHAR(30)`, `confirmed_by VARCHAR(100)` (nullable cho dữ liệu cũ). Không backfill ảnh hay tự coi các xác nhận cũ là có chứng từ.
+- Frontend cần gửi FormData bằng token, thêm người nhận/thời gian/file, gọi proof có xác thực, đồng bộ quyền và ẩn/vô hiệu hóa nút khi thiếu WAREHOUSE_EXPORT. Branch này chỉ triển khai backend, chưa có UI S6-08.
+
 ## S8-08 — Xuất báo cáo tồn kho ra Excel
 
 ### Endpoint
