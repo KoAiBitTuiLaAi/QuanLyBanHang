@@ -25,6 +25,11 @@ import org.springframework.web.context.WebApplicationContext;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import com.quanlybanhang.dto.response.DealerDeliveryTrackingItemResponse;
+import com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse;
+import com.quanlybanhang.dto.response.DealerDeliveryTripResponse;
+import com.quanlybanhang.dto.response.DeliveryMilestoneResponse;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -227,6 +232,97 @@ class DealerOrderTrackingControllerTest {
     @DisplayName("GET /api/portal/orders - Nhân viên SALES không có vai trò DEALER bị chặn 403")
     void getMyOrders_SalesRole_Returns403() throws Exception {
         mockMvc.perform(get("/api/portal/orders"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(username = "dealer_user", authorities = {"ROLE_DEALER", "ORDER_VIEW"})
+    @DisplayName("[S6-09] GET /api/portal/orders/{id}/tracking - Trả về 5 mốc thời gian, thông tin chuyến xe và thực giao từng dòng")
+    void getOrderDeliveryTracking_Dealer_Returns200WithFiveMilestonesAndTrip() throws Exception {
+        List<DeliveryMilestoneResponse> milestones = List.of(
+                DeliveryMilestoneResponse.builder().milestoneKey("approved").label("Đã duyệt").status("COMPLETED").timestamp(LocalDateTime.now().minusHours(5)).build(),
+                DeliveryMilestoneResponse.builder().milestoneKey("picking").label("Đang soạn").status("COMPLETED").timestamp(LocalDateTime.now().minusHours(3)).build(),
+                DeliveryMilestoneResponse.builder().milestoneKey("exported").label("Đã xuất").status("COMPLETED").timestamp(LocalDateTime.now().minusHours(2)).build(),
+                DeliveryMilestoneResponse.builder().milestoneKey("shipping").label("Đang giao").status("CURRENT").timestamp(LocalDateTime.now().minusHours(1)).build(),
+                DeliveryMilestoneResponse.builder().milestoneKey("delivered").label("Đã giao").status("PENDING").build()
+        );
+
+        DealerDeliveryTripResponse trip = DealerDeliveryTripResponse.builder()
+                .tripCode("CX-20261025-001")
+                .driverName("Nguyễn Văn Tài")
+                .driverPhone("0909123456")
+                .vehiclePlate("29C-12345")
+                .tripStatus("IN_PROGRESS")
+                .departureTime(LocalDateTime.now().minusHours(1))
+                .receiverName("Nguyễn Văn Nhận")
+                .receiverPhone("0912345678")
+                .deliveryAddress("123 Nguyễn Huệ, Q.1, TP.HCM")
+                .build();
+
+        DealerDeliveryTrackingItemResponse item = DealerDeliveryTrackingItemResponse.builder()
+                .orderItemId(1L)
+                .productCode("SP-KEN330")
+                .productName("Bia Heineken lon 330ml")
+                .unit("thùng")
+                .quantity(new BigDecimal("10.0000"))
+                .exportedQuantity(new BigDecimal("8.0000"))
+                .deliveredQuantity(new BigDecimal("8.0000"))
+                .shortageQuantity(new BigDecimal("2.0000"))
+                .isShortage(true)
+                .deliveryNote("Thiếu 2 thùng")
+                .build();
+
+        DealerDeliveryTrackingResponse response = DealerDeliveryTrackingResponse.builder()
+                .orderId(101L)
+                .orderCode("DH-MINHPHAT-001")
+                .status("SHIPPING")
+                .statusDisplayName("Đang giao")
+                .approvedAt(LocalDateTime.now().minusHours(5))
+                .pickingAt(LocalDateTime.now().minusHours(3))
+                .exportedAt(LocalDateTime.now().minusHours(2))
+                .shippingAt(LocalDateTime.now().minusHours(1))
+                .milestones(milestones)
+                .deliveryTrip(trip)
+                .items(List.of(item))
+                .build();
+
+        when(orderService.getDealerOrderDeliveryTracking(101L, 1L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/portal/orders/101/tracking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.orderCode").value("DH-MINHPHAT-001"))
+                .andExpect(jsonPath("$.data.status").value("SHIPPING"))
+                .andExpect(jsonPath("$.data.milestones.length()").value(5))
+                .andExpect(jsonPath("$.data.milestones[0].milestoneKey").value("approved"))
+                .andExpect(jsonPath("$.data.milestones[1].milestoneKey").value("picking"))
+                .andExpect(jsonPath("$.data.milestones[2].milestoneKey").value("exported"))
+                .andExpect(jsonPath("$.data.milestones[3].milestoneKey").value("shipping"))
+                .andExpect(jsonPath("$.data.milestones[4].milestoneKey").value("delivered"))
+                .andExpect(jsonPath("$.data.deliveryTrip.driverName").value("Nguyễn Văn Tài"))
+                .andExpect(jsonPath("$.data.deliveryTrip.vehiclePlate").value("29C-12345"))
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].productCode").value("SP-KEN330"))
+                .andExpect(jsonPath("$.data.items[0].deliveredQuantity").value(8.0))
+                .andExpect(jsonPath("$.data.items[0].shortageQuantity").value(2.0));
+    }
+
+    @Test
+    @WithMockUser(username = "dealer_user", authorities = {"ROLE_DEALER"})
+    @DisplayName("[S6-09] GET /api/portal/orders/{id}/tracking - Thu hồi quyền ORDER_VIEW bị chặn 403 Forbidden")
+    void getOrderDeliveryTracking_WithoutOrderViewPermission_Returns403() throws Exception {
+        mockMvc.perform(get("/api/portal/orders/101/tracking"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(username = "dealer_user", authorities = {"ROLE_DEALER", "ORDER_VIEW"})
+    @DisplayName("[S6-09] GET /api/portal/orders/{id}/tracking - Xem đơn của đại lý khác bị chặn 403 Forbidden")
+    void getOrderDeliveryTracking_OtherDealer_Returns403() throws Exception {
+        when(orderService.getDealerOrderDeliveryTracking(999L, 1L))
+                .thenThrow(new AccessDeniedException("Bạn không có quyền xem thông tin giao hàng của đơn hàng này"));
+
+        mockMvc.perform(get("/api/portal/orders/999/tracking"))
                 .andExpect(status().isForbidden());
     }
 }

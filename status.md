@@ -1,5 +1,23 @@
 # Trạng thái sprint 1–8
 
+## S6-09 — Theo dõi trạng thái giao hàng của đơn (Backend) — 25/10/2026
+
+User Story S6-09: *"Là Đại lý, tôi muốn theo dõi trạng thái giao hàng của đơn, để chủ động bố trí người nhận hàng đúng lúc xe tới."*
+Phạm vi: **Chỉ làm Backend (BE)** theo yêu cầu của người dùng ("Đọc agents.md, làm theo yêu cầu trong ảnh, chỉ làm BE"), tuân thủ nghiêm ngặt ma trận phân quyền database-backed, không dùng role-based fallback, `ROLE_ADMIN` luôn có toàn quyền, thu hồi `ORDER_VIEW` trả về 403 Forbidden.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **Hiển thị mốc thời gian: đã duyệt, đang soạn, đã xuất, đang giao, đã giao (5 mốc)** | Có (`GET /api/portal/orders/{id}/tracking`, `GET /api/portal/orders/{id}/delivery-tracking`, `GET /api/orders/{id}/delivery-tracking`, và trường mở rộng trong `GET /api/portal/orders/{id}`) | Có | Có | Backend tự động xác định 5 mốc theo thứ tự nghiệp vụ: `approved` (ngày duyệt), `picking` (thời điểm tạo đợt soạn hàng S6-03), `exported` (thời điểm xác nhận xuất kho S6-05), `shipping` (thời điểm gán vào chuyến xe xuất bến S6-06), `delivered` (thời điểm hoàn thành giao tại điểm dừng S6-07/S6-08). Mỗi mốc trả về `milestoneKey`, nhãn tiếng Việt `label`, trạng thái (`COMPLETED`, `CURRENT`, `PENDING`), thời gian `timestamp` và mô tả chi tiết `description`. Đồng thời trả về thông tin chuyến xe `deliveryTrip` (biển số xe, tên & SĐT tài xế, thời gian khởi hành & dự kiến tới) để đại lý chủ động bố trí người nhận. |
+| **Xem được số lượng thực giao từng dòng hàng** | Có | Có | Có | Danh sách dòng hàng `items` trả về đầy đủ: `orderItemId`, `productId`, `productCode`, `productName`, `unit`, `quantity` (số lượng đặt ban đầu), `exportedQuantity` (số lượng thực xuất từ kho), `deliveredQuantity` (số lượng thực giao), `shortageQuantity` (số lượng thiếu nếu có), `isShortage` (cảnh báo giao thiếu) và `deliveryNote` (ghi chú giao nhận từng dòng sản phẩm). |
+| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Bắt buộc quyền `ORDER_VIEW` từ ma trận DB (hoặc `ROLE_ADMIN`). Thu hồi quyền `ORDER_VIEW` khỏi vai trò `ROLE_DEALER` hoặc `ROLE_SALES` khiến API lập tức trả về `403 Forbidden` ngay trên phiên hiện tại. Phân quyền cấp dòng (Row-Level Security): Đại lý chỉ xem được đơn hàng của chính mình; cố truy cập đơn của đại lý khác bị chặn `403 Forbidden`. Quản trị viên `ROLE_ADMIN` luôn có toàn quyền và có thể truyền `?dealerId=...` để tra cứu theo ngữ cảnh đại lý. |
+
+Kiểm thử:
+- Đơn vị & dịch vụ: `DealerOrderTrackingServiceTest` (8/8 tests PASS), `DeliveryTripServiceTest` (13/13 tests PASS).
+- Controller & Ma trận phân quyền: `DealerOrderTrackingControllerTest` (8/8 tests PASS, kiểm thử trả về 5 mốc, chuyến xe, thực giao, chặn 403 khi thiếu quyền `ORDER_VIEW`, chặn 403 khi đại lý truy cập đơn của đại lý khác, chặn 401 khi chưa đăng nhập).
+- Nhân viên nội bộ: `OrderControllerTest` (37/37 tests PASS, kiểm thử `GET /api/orders/{id}/delivery-tracking` 200 OK với `ORDER_VIEW` và 403 khi thiếu quyền).
+- Thu hồi động: `PermissionRevocationTest` (PASS) và `RolePermissionConfigTest` (14/14 tests PASS).
+- Tài liệu hóa: Đã cập nhật `docs/FUNCTION_MAP.md` và `backend/API_DOCUMENTATION.md`.
+
 ## S7-06 — Backend biên bản đối chiếu định kỳ và nối frontend — 25/10/2026
 
 Nhánh `feature/S7-06-backend-lap_bien_ban_doi_chieu_cong_no_dinh_ky`, từ `develop`. Phát hiện frontend cũ chỉ giả lập xác nhận/phản hồi trong bộ nhớ và xuất PDF sổ hiện thời; thay bằng biên bản lưu DB.

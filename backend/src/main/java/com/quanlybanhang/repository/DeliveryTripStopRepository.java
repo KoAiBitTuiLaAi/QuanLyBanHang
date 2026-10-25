@@ -19,5 +19,7 @@ public interface DeliveryTripStopRepository extends JpaRepository<DeliveryTripSt
 
     List<DeliveryTripStop> findByOrderId(Long orderId);
 
+    List<DeliveryTripStop> findByOrderIdOrderByIdDesc(Long orderId);
+
     boolean existsByOrderIdAndTrip_Status(Long orderId, DeliveryTripStatus status);
 }
