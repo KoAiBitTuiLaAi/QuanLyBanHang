@@ -495,8 +495,9 @@
           </header>
 
           <div class="dp-modal-body" style="background: #f1f5f9; padding: 20px;">
+            <p id="dp-receipt-message" role="status" aria-live="polite"></p>
             <div id="dp-receipt-print-area" class="dp-receipt-paper">
-              <!-- Điền động bằng JS (renderReceiptHtml) -->
+              <!-- Bản in được tải từ backend trong iframe sandbox. -->
             </div>
           </div>
 
@@ -515,6 +516,7 @@
   <script src="/js/app-shell.js"></script>
   <script src="/js/app-navigation.js"></script>
   <script src="/js/debt-payments-utils.js"></script>
+  <script src="/js/debt-receipt-client.js"></script>
   <script src="/js/debt-payments.js"></script>
 </body>
 </html>

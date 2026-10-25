@@ -253,8 +253,8 @@ test('S7-02: Cấu hình Menu và Route cho chức năng Ghi nhận thanh toán'
   // User có FINANCE_VIEW_DEBT có menu
   assert.ok(ids({ roles: ['ROLE_USER'], permissions: ['FINANCE_VIEW_DEBT'] }).includes('debt-payments'));
 
-  // User có FINANCE_MANAGE có menu
-  assert.ok(ids({ roles: ['ROLE_USER'], permissions: ['FINANCE_MANAGE'] }).includes('debt-payments'));
+  // Quyền ghi đơn lẻ không thay thế quyền xem danh sách/phiếu thu.
+  assert.ok(!ids({ roles: ['ROLE_USER'], permissions: ['FINANCE_MANAGE'] }).includes('debt-payments'));
 
   // User thiếu cả hai quyền KHÔNG CÓ menu
   assert.ok(!ids({ roles: ['ROLE_ACCOUNTANT'], permissions: ['ORDER_VIEW'] }).includes('debt-payments'));
@@ -389,8 +389,8 @@ test('S7-09: Phân quyền in và tải PDF theo Permission Matrix (không role 
   // 2. FINANCE_VIEW_DEBT có quyền
   assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_USER'], permissions: ['FINANCE_VIEW_DEBT'] }), true);
 
-  // 3. FINANCE_MANAGE có quyền
-  assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_USER'], permissions: ['FINANCE_MANAGE'] }), true);
+  // 3. Quyền ghi đơn lẻ không cấp quyền đọc/in.
+  assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_USER'], permissions: ['FINANCE_MANAGE'] }), false);
 
   // 4. ROLE_ACCOUNTANT bị thu hồi quyền trong DB -> BỊ CHẶN (không role fallback)
   assert.equal(Utils.canPrintReceipt({ roles: ['ROLE_ACCOUNTANT'], permissions: ['ORDER_VIEW'] }), false);
@@ -423,6 +423,6 @@ test('S7-09: Giao diện và Style hỗ trợ Modal xem trước, nút In, tải
   assert.match(js, /data-action="print-receipt"/);
   assert.match(js, /openReceiptPrintModal/);
   assert.match(js, /downloadReceiptPdf/);
-  assert.match(js, /window\.print\(\)/);
+  assert.match(js, /receiptClient\.print\(\)/);
 });
 
