@@ -4775,3 +4775,96 @@ Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và
 | `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
 | `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
 | `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
+
+
+## S8-09 - Báo cáo công nợ quá hạn theo tuổi nợ (Backend - 25/10/2026)
+
+Hỗ trợ Kế toán công nợ xem báo cáo công nợ quá hạn theo tuổi nợ, phân tích tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách, chỉ ra đại lý có mức độ rủi ro cao nhất để ưu tiên xử lý trước, và xuất toàn bộ dữ liệu ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-09)
+
+1. **Tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách**:
+   - Tuổi nợ quá hạn tính từ hạn thanh toán (`dueDate` của hóa đơn hoặc ngày ghi nhận đơn hàng + `maxDebtDays` của đại lý) đến ngày chốt báo cáo (`asOfDate`).
+   - Mặc định 3 nhóm tuổi nợ chuẩn:
+     - Nhóm 1 (`recent`): Quá hạn 1–14 ngày (`minDays = 1, maxDays = 14`).
+     - Nhóm 2 (`middle`): Quá hạn 15–44 ngày (`minDays = 15, maxDays = 44`).
+     - Nhóm 3 (`old`): Quá hạn từ 45 ngày (`minDays = 45, maxDays = null`).
+   - Đối trừ thu tiền theo nguyên tắc FIFO (hóa đơn/chứng từ cũ nhất thanh toán trước) để xác định chính xác số tiền còn nợ quá hạn của từng khoản nợ.
+   - Tổng hợp số liệu theo từng nhóm tuổi nợ (`bucketTotals`) và theo từng nhân viên phụ trách (`employeeTotals`). Đại lý chưa gán nhân viên phụ trách được gom vào nhóm `Chưa phân công` (`employeeId = null`).
+   - Tính nhất quán số liệu toán học: Tổng tiền toàn báo cáo = Tổng tiền các nhóm tuổi nợ = Tổng tiền các nhân viên = Tổng tiền chi tiết các đại lý quá hạn.
+2. **Chỉ ra đại lý có rủi ro cao nhất để xử lý trước**:
+   - Tiêu chí xếp hạng rủi ro (`riskRank`, `riskLabel`, `riskBasis`):
+     - Thứ tự ưu tiên giảm dần: Số ngày quá hạn lớn nhất (`maxOverdueDays`) giảm dần $\rightarrow$ Tổng tiền nợ quá hạn (`overdueAmount`) giảm dần $\rightarrow$ ID đại lý tăng dần để ổn định thứ tự.
+     - Hạng rủi ro (`riskRank`): Bắt đầu từ 1, tăng dần. Đại lý có số ngày quá hạn dài nhất và tiền nợ lớn nhất luôn đứng đầu (`riskRank = 1`). Đại lý có cùng số ngày quá hạn và cùng số tiền được đồng hạng.
+     - Nhãn mức độ rủi ro (`riskLabel`):
+       - `Ưu tiên cao`: Đại lý đứng đầu rank 1, hoặc quá hạn từ 45 ngày trở lên, hoặc nợ quá hạn từ 50.000.000 VND trở lên.
+       - `Cần theo dõi`: Quá hạn từ 15–44 ngày, hoặc nợ quá hạn từ 20.000.000 VND trở lên.
+       - `Theo dõi`: Các trường hợp còn lại.
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Thông tin chung` (Thông tin ngày chốt, thời điểm tạo, múi giờ, tiêu chí rủi ro và thẻ KPI tổng hợp).
+     - Sheet 2: `Nhóm tuổi nợ` (Bảng tổng hợp tiền và số lượng đại lý theo 3 nhóm tuổi nợ).
+     - Sheet 3: `Theo nhân viên` (Bảng tổng hợp tiền theo từng nhóm tuổi nợ của từng nhân viên phụ trách).
+     - Sheet 4: `Chi tiết đại lý rủi ro` (Danh sách chi tiết toàn bộ đại lý quá hạn theo thứ tự ưu tiên rủi ro).
+   - Tự động làm sạch/escape các ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+   - Giữ nguyên độ chính xác tiền tệ thập phân, chống tràn số 15 chữ số của Excel.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu**:
+   - Bắt buộc có quyền `REPORT_FINANCE` (hoặc `ROLE_ADMIN`) trong ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: thu hồi `REPORT_FINANCE` khỏi vai trò của user lập tức trả `403 Forbidden` trên cùng JWT token.
+   - Tài khoản đại lý (`ROLE_DEALER`) bị chặn hoàn toàn (`403 Forbidden`) đối với báo cáo tài chính nội bộ.
+   - Tài khoản nhân viên kinh doanh thuần túy (`ROLE_SALES`) chỉ được phép xem dữ liệu của các đại lý do mình phụ trách; chặn 403 nếu cố tình lọc nhân viên khác hoặc lọc chưa phân công.
+
+### 2. Danh sách Endpoints (`/api/reports/debt-aging`, `/api/finance/reports/debt-aging`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/debt-aging/options` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Lấy ngày chốt tối đa, múi giờ, định nghĩa các nhóm tuổi nợ và danh sách nhân viên phụ trách |
+| `GET` | `/api/reports/debt-aging` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp công nợ quá hạn theo tuổi nợ, theo nhân viên và bảng đại lý xếp hạng rủi ro |
+| `GET` | `/api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Xuất toàn bộ báo cáo công nợ quá hạn theo tuổi nợ ra file Excel (`.xlsx`) |
+
+
+## S8-09 - Báo cáo công nợ quá hạn theo tuổi nợ (Backend - 25/10/2026)
+
+Hỗ trợ Kế toán công nợ xem báo cáo công nợ quá hạn theo tuổi nợ, phân tích tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách, chỉ ra đại lý có mức độ rủi ro cao nhất để ưu tiên xử lý trước, và xuất toàn bộ dữ liệu ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-09)
+
+1. **Tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách**:
+   - Tuổi nợ quá hạn tính từ hạn thanh toán (`dueDate` của hóa đơn hoặc ngày ghi nhận đơn hàng + `maxDebtDays` của đại lý) đến ngày chốt báo cáo (`asOfDate`).
+   - Mặc định 3 nhóm tuổi nợ chuẩn:
+     - Nhóm 1 (`recent`): Quá hạn 1–14 ngày (`minDays = 1, maxDays = 14`).
+     - Nhóm 2 (`middle`): Quá hạn 15–44 ngày (`minDays = 15, maxDays = 44`).
+     - Nhóm 3 (`old`): Quá hạn từ 45 ngày (`minDays = 45, maxDays = null`).
+   - Đối trừ thu tiền theo nguyên tắc FIFO (hóa đơn/chứng từ cũ nhất thanh toán trước) để xác định chính xác số tiền còn nợ quá hạn của từng khoản nợ.
+   - Tổng hợp số liệu theo từng nhóm tuổi nợ (`bucketTotals`) và theo từng nhân viên phụ trách (`employeeTotals`). Đại lý chưa gán nhân viên phụ trách được gom vào nhóm `Chưa phân công` (`employeeId = null`).
+   - Tính nhất quán số liệu toán học: Tổng tiền toàn báo cáo = Tổng tiền các nhóm tuổi nợ = Tổng tiền các nhân viên = Tổng tiền chi tiết các đại lý quá hạn.
+2. **Chỉ ra đại lý có rủi ro cao nhất để xử lý trước**:
+   - Tiêu chí xếp hạng rủi ro (`riskRank`, `riskLabel`, `riskBasis`):
+     - Thứ tự ưu tiên giảm dần: Số ngày quá hạn lớn nhất (`maxOverdueDays`) giảm dần $\rightarrow$ Tổng tiền nợ quá hạn (`overdueAmount`) giảm dần $\rightarrow$ ID đại lý tăng dần để ổn định thứ tự.
+     - Hạng rủi ro (`riskRank`): Bắt đầu từ 1, tăng dần. Đại lý có số ngày quá hạn dài nhất và tiền nợ lớn nhất luôn đứng đầu (`riskRank = 1`). Đại lý có cùng số ngày quá hạn và cùng số tiền được đồng hạng.
+     - Nhãn mức độ rủi ro (`riskLabel`):
+       - `Ưu tiên cao`: Đại lý đứng đầu rank 1, hoặc quá hạn từ 45 ngày trở lên, hoặc nợ quá hạn từ 50.000.000 VND trở lên.
+       - `Cần theo dõi`: Quá hạn từ 15–44 ngày, hoặc nợ quá hạn từ 20.000.000 VND trở lên.
+       - `Theo dõi`: Các trường hợp còn lại.
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Thông tin chung` (Thông tin ngày chốt, thời điểm tạo, múi giờ, tiêu chí rủi ro và thẻ KPI tổng hợp).
+     - Sheet 2: `Nhóm tuổi nợ` (Bảng tổng hợp tiền và số lượng đại lý theo 3 nhóm tuổi nợ).
+     - Sheet 3: `Theo nhân viên` (Bảng tổng hợp tiền theo từng nhóm tuổi nợ của từng nhân viên phụ trách).
+     - Sheet 4: `Chi tiết đại lý rủi ro` (Danh sách chi tiết toàn bộ đại lý quá hạn theo thứ tự ưu tiên rủi ro).
+   - Tự động làm sạch/escape các ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+   - Giữ nguyên độ chính xác tiền tệ thập phân, chống tràn số 15 chữ số của Excel.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu**:
+   - Bắt buộc có quyền `REPORT_FINANCE` (hoặc `ROLE_ADMIN`) trong ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: thu hồi `REPORT_FINANCE` khỏi vai trò của user lập tức trả `403 Forbidden` trên cùng JWT token.
+   - Tài khoản đại lý (`ROLE_DEALER`) bị chặn hoàn toàn (`403 Forbidden`) đối với báo cáo tài chính nội bộ.
+   - Tài khoản nhân viên kinh doanh thuần túy (`ROLE_SALES`) chỉ được phép xem dữ liệu của các đại lý do mình phụ trách; chặn 403 nếu cố tình lọc nhân viên khác hoặc lọc chưa phân công.
+
+### 2. Danh sách Endpoints (`/api/reports/debt-aging`, `/api/finance/reports/debt-aging`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/debt-aging/options` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Lấy ngày chốt tối đa, múi giờ, định nghĩa các nhóm tuổi nợ và danh sách nhân viên phụ trách |
+| `GET` | `/api/reports/debt-aging` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp công nợ quá hạn theo tuổi nợ, theo nhân viên và bảng đại lý xếp hạng rủi ro |
+| `GET` | `/api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Xuất toàn bộ báo cáo công nợ quá hạn theo tuổi nợ ra file Excel (`.xlsx`) |
+
