@@ -908,6 +908,141 @@ public class WarehouseServiceImpl implements WarehouseService {
         return recordVoucher(request, WarehouseVoucherType.ADJUSTMENT, username);
     }
 
+    /** S8-03: persist a loss voucher without changing physical stock until a distinct approver accepts it. */
+    @Override
+    @Transactional
+    public WarehouseVoucherResponse createLossAdjustment(WarehouseVoucherRequest request, String username) {
+        requireGrant("WAREHOUSE_ADJUST");
+        if (request == null) throw new IllegalArgumentException("Thiếu dữ liệu phiếu điều chỉnh");
+        String reason = request.getAdjustmentReason() == null ? "" : request.getAdjustmentReason().trim();
+        if (reason.isBlank()) throw new IllegalArgumentException("Bắt buộc nhập lý do điều chỉnh");
+        String upperReason = reason.toUpperCase(Locale.ROOT);
+        if (!(upperReason.startsWith("[DAMAGED]") || upperReason.startsWith("[LOST]")
+                || upperReason.startsWith("[EXPIRED]") || upperReason.startsWith("[OTHER]"))) {
+            throw new IllegalArgumentException("Lý do phải thuộc hàng hỏng, hàng mất, hết hạn hoặc lý do khác");
+        }
+        List<WarehouseVoucherItemRequest> lines = normalizeItemRequests(request, WarehouseVoucherType.ADJUSTMENT);
+        if (lines.isEmpty()) throw new IllegalArgumentException("Phiếu điều chỉnh phải có ít nhất một mặt hàng");
+
+        Warehouse warehouse = resolveWarehouse(request.getWarehouseId());
+        requireWarehouse(warehouse.getId());
+        String code = request.getVoucherCode();
+        if (code == null || code.isBlank()) code = "PDC-" + UUID.randomUUID();
+        code = code.trim();
+        if (code.length() > 50 || voucherRepository.existsByVoucherCode(code))
+            throw new IllegalArgumentException("Mã phiếu quá dài hoặc đã tồn tại");
+
+        WarehouseVoucher voucher = WarehouseVoucher.builder()
+                .voucherCode(code).type(WarehouseVoucherType.ADJUSTMENT).warehouse(warehouse)
+                .status("PENDING_APPROVAL").createdBy(username).adjustmentReason(reason)
+                .note(request.getNote()).voucherDate(request.getVoucherDate() == null ? LocalDateTime.now() : request.getVoucherDate())
+                // Keep the document timestamp non-null for legacy DB schemas; PENDING_APPROVAL is excluded from stock ledgers.
+                .recordedAt(LocalDateTime.now()).items(new ArrayList<>()).build();
+        BigDecimal totalLoss = BigDecimal.ZERO;
+        Set<String> distinctItems = new HashSet<>();
+        for (WarehouseVoucherItemRequest line : lines) {
+            if (line == null || line.getQuantity() == null || line.getQuantity().signum() <= 0)
+                throw new IllegalArgumentException("Số lượng tổn thất từng dòng phải lớn hơn 0");
+            if (line.getLossValue() == null || line.getLossValue().signum() <= 0)
+                throw new IllegalArgumentException("Bắt buộc khai báo giá trị tổn thất cho từng dòng hàng");
+            Product product = resolveProduct(line);
+            if (!Boolean.TRUE.equals(product.getActive())) throw new IllegalArgumentException("Sản phẩm đã ngừng kinh doanh");
+            String lot = line.getLotNumber() == null ? "" : line.getLotNumber().trim();
+            if (!distinctItems.add(product.getId() + ":" + lot)) throw new IllegalArgumentException("Không lặp cùng mặt hàng/lô trong phiếu");
+            String unit = line.getUnit() == null || line.getUnit().isBlank() ? product.getUnit() : line.getUnit().trim();
+            BigDecimal factor = unitConversionService.getConversionFactor(product, unit);
+            BigDecimal baseQty = line.getQuantity().multiply(factor).negate();
+            WarehouseVoucherItem item = WarehouseVoucherItem.builder().voucher(voucher).product(product)
+                    .unit(unit).quantity(line.getQuantity()).conversionFactor(factor).baseUnit(product.getUnit())
+                    .baseQuantity(baseQty).price(line.getPrice()).totalAmount(line.getLossValue())
+                    .lossValue(line.getLossValue()).lotNumber(lot.isBlank() ? null : lot)
+                    .expiryDate(line.getExpiryDate()).manufacturingDate(line.getManufacturingDate())
+                    .note(line.getNote()).build();
+            voucher.addItem(item);
+            totalLoss = totalLoss.add(line.getLossValue());
+        }
+        voucher.setAdjustmentLossValue(totalLoss);
+        WarehouseVoucher saved = voucherRepository.save(voucher);
+        auditLogService.logAction("WAREHOUSE_ADJUSTMENT", saved.getVoucherCode(), "CREATE_PENDING",
+                null, totalLoss.toPlainString(), username);
+        return mapToVoucherResponse(saved);
+    }
+
+    /** S8-03 approval is idempotence-safe and updates aggregate/lot stock in one transaction. */
+    @Override
+    @Transactional
+    public WarehouseVoucherResponse approveLossAdjustment(Long id, String username) {
+        requireGrant("WAREHOUSE_APPROVE");
+        WarehouseVoucher voucher = voucherRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu điều chỉnh"));
+        requireWarehouse(voucher.getWarehouse().getId());
+        if (voucher.getType() != WarehouseVoucherType.ADJUSTMENT || !"PENDING_APPROVAL".equalsIgnoreCase(voucher.getStatus()))
+            throw new IllegalStateException("Phiếu không ở trạng thái chờ phê duyệt");
+        String actor = username == null ? "" : username.trim();
+        if (actor.isBlank() || actor.equalsIgnoreCase(Objects.toString(voucher.getCreatedBy(), "")))
+            throw new AccessDeniedException("Người lập phiếu không được tự phê duyệt phiếu của mình");
+
+        Warehouse warehouse = lockVoucherWarehouse(voucher.getWarehouse());
+        List<WarehouseVoucherItem> items = voucher.getItems().stream()
+                .sorted(Comparator.comparing(i -> i.getProduct().getId())).toList();
+        for (WarehouseVoucherItem item : items) {
+            Product product = item.getProduct();
+            WarehouseInventory inventory = inventoryRepository.findByWarehouseIdAndProductIdForUpdate(warehouse.getId(), product.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Không có tồn kho cho " + product.getName()));
+            BigDecimal movement = item.getBaseQuantity();
+            BigDecimal before = Objects.requireNonNullElse(inventory.getBaseQuantity(), BigDecimal.ZERO);
+            BigDecimal after = before.add(movement);
+            BigDecimal reserved = Objects.requireNonNullElse(inventory.getReservedQuantity(), BigDecimal.ZERO);
+            if (movement.signum() >= 0 || after.signum() < 0 || after.compareTo(reserved) < 0)
+                throw new IllegalArgumentException("Tồn kho khả dụng không đủ để ghi nhận tổn thất của " + product.getName());
+
+            if (item.getLotNumber() != null && !item.getLotNumber().isBlank()) {
+                WarehouseLotInventory lot = lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(
+                                warehouse.getId(), product.getId(), item.getLotNumber())
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lô " + item.getLotNumber()));
+                BigDecimal lotAfter = Objects.requireNonNullElse(lot.getBaseQuantity(), BigDecimal.ZERO).add(movement);
+                if (lotAfter.signum() < 0) throw new IllegalArgumentException("Tồn lô không đủ để ghi nhận tổn thất");
+                lot.setBaseQuantity(lotAfter);
+                lotInventoryRepository.save(lot);
+            }
+            inventory.setBaseQuantity(after);
+            inventoryRepository.save(inventory);
+            auditLogService.logAction("INVENTORY", warehouse.getCode() + ":" + product.getCode(),
+                    "S8_03_APPROVED_LOSS", before.toPlainString(), after.toPlainString(), actor);
+        }
+        voucher.setStatus("APPROVED");
+        voucher.setApprovedBy(actor);
+        voucher.setApprovedAt(LocalDateTime.now());
+        voucher.setRecordedAt(voucher.getApprovedAt());
+        WarehouseVoucher saved = voucherRepository.save(voucher);
+        auditLogService.logAction("WAREHOUSE_ADJUSTMENT", saved.getVoucherCode(), "APPROVE",
+                "PENDING_APPROVAL", "APPROVED; loss=" + saved.getAdjustmentLossValue(), actor);
+        return mapToVoucherResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public WarehouseVoucherResponse rejectLossAdjustment(Long id, String username, String reason) {
+        requireGrant("WAREHOUSE_APPROVE");
+        WarehouseVoucher voucher = voucherRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phiếu điều chỉnh"));
+        requireWarehouse(voucher.getWarehouse().getId());
+        if (voucher.getType() != WarehouseVoucherType.ADJUSTMENT || !"PENDING_APPROVAL".equalsIgnoreCase(voucher.getStatus()))
+            throw new IllegalStateException("Phiếu không ở trạng thái chờ phê duyệt");
+        String actor = username == null ? "" : username.trim();
+        if (actor.isBlank() || actor.equalsIgnoreCase(Objects.toString(voucher.getCreatedBy(), "")))
+            throw new AccessDeniedException("Người lập phiếu không được tự xử lý phiếu của mình");
+        if (reason == null || reason.isBlank() || reason.trim().length() > 500)
+            throw new IllegalArgumentException("Bắt buộc nhập lý do từ chối (tối đa 500 ký tự)");
+        voucher.setStatus("REJECTED");
+        voucher.setRejectedBy(actor);
+        voucher.setRejectionReason(reason.trim());
+        WarehouseVoucher saved = voucherRepository.save(voucher);
+        auditLogService.logAction("WAREHOUSE_ADJUSTMENT", voucher.getVoucherCode(), "REJECT",
+                "PENDING_APPROVAL", reason.trim(), actor);
+        return mapToVoucherResponse(saved);
+    }
+
     @Transactional
     private boolean canOverrideExpiredLot() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -2405,6 +2540,11 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .referenceVoucherId(voucher.getReferenceVoucherId())
                 .referenceVoucherCode(voucher.getReferenceVoucherCode())
                 .adjustmentReason(voucher.getAdjustmentReason())
+                .adjustmentLossValue(voucher.getAdjustmentLossValue())
+                .approvedBy(voucher.getApprovedBy())
+                .approvedAt(voucher.getApprovedAt())
+                .rejectedBy(voucher.getRejectedBy())
+                .rejectionReason(voucher.getRejectionReason())
                 .overrideExpiredLot(voucher.getOverrideExpiredLot())
                 .expiredLotOverrideReason(voucher.getExpiredLotOverrideReason())
                 .note(voucher.getNote())
@@ -2428,6 +2568,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .baseQuantity(item.getBaseQuantity())
                 .price(item.getPrice())
                 .totalAmount(item.getTotalAmount())
+                .lossValue(item.getLossValue())
                 .lotNumber(item.getLotNumber())
                 .expiryDate(item.getExpiryDate())
                 .manufacturingDate(item.getManufacturingDate())

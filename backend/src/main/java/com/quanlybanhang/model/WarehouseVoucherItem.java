@@ -76,6 +76,10 @@ public class WarehouseVoucherItem {
     @Column(name = "total_amount", precision = 15, scale = 2)
     private BigDecimal totalAmount;
 
+    /** S8-03: declared loss for this damaged/lost/expired line. */
+    @Column(name = "loss_value", precision = 15, scale = 2)
+    private BigDecimal lossValue;
+
     /**
      * Số lô hàng (S5-04).
      */

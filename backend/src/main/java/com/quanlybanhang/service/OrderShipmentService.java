@@ -30,7 +30,7 @@ public class OrderShipmentService {
     private final WarehouseVoucherRepository vouchers;
     private final OrderStatusHistoryRepository histories;
     private final AuditLogService audit;
-    private static final Set<String> READY = Set.of("APPROVED", "RECORDED", "PICKING", "PROCESSING", "EXPORTED");
+    private static final Set<String> READY = Set.of("APPROVED", "RECORDED", "PICKING", "PROCESSING", "EXPORTED", "SHIPPING");
 
     private record Access(boolean admin, boolean write, Set<Long> ids, String username) {
         boolean contains(Long id) { return id != null && (admin || ids.contains(id)); }
@@ -184,10 +184,10 @@ public class OrderShipmentService {
                     .overrideReason(clean(input.reason())).note(clean(input.reason())).build());
         }
         boolean remaining=o.getItems().stream().anyMatch(i->i.remainingExportQuantity().signum()>0);
-        String old=o.getStatus();o.setStatus("EXPORTED");o.setBackordered(remaining);o.setInventoryReserved(remaining);o.setReservationExpiresAt(null);
+        String old=o.getStatus();o.setStatus("SHIPPING".equals(old)?"SHIPPING":"EXPORTED");o.setBackordered(remaining);o.setInventoryReserved(remaining);o.setReservationExpiresAt(null);
         o.setShipmentSequence((o.getShipmentSequence()==null?0:o.getShipmentSequence())+1);
         vouchers.saveAndFlush(v);orders.saveAndFlush(o);
-        histories.save(OrderStatusHistory.builder().order(o).previousStatus(old).newStatus("EXPORTED").statusDisplayName(label(o))
+        histories.save(OrderStatusHistory.builder().order(o).previousStatus(old).newStatus(o.getStatus()).statusDisplayName(label(o))
                 .changedBy(a.username()).changedAt(v.getRecordedAt()).note(v.getVoucherCode()+(remaining?": còn nợ hàng":": đã xuất đủ")).build());
         audit.logAction("ORDER",o.getOrderCode(),"CONFIRM_SHIPMENT",old,v.getVoucherCode()+(remaining?" · Còn nợ hàng":" · Đã xuất đủ"),a.username());
         return detail(o,a);

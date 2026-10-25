@@ -117,4 +117,26 @@ public class OrderResponse {
 
     /** Tổng số dòng hàng trong đơn (S5-01). */
     private Integer totalLineItems;
+
+    /** Thời điểm bắt đầu soạn hàng (S6-09). */
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private LocalDateTime pickingAt;
+
+    /** Thời điểm xuất kho (S6-09). */
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private LocalDateTime exportedAt;
+
+    /** Thời điểm bắt đầu giao hàng / xe xuất phát (S6-09). */
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private LocalDateTime shippingAt;
+
+    /** Thời điểm đã giao hàng thực tế (S6-09). */
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private LocalDateTime deliveredAt;
+
+    /** 5 mốc giao hàng theo thứ tự: đã duyệt, đang soạn, đã xuất, đang giao, đã giao (S6-09). */
+    private List<DeliveryMilestoneResponse> deliveryMilestones;
+
+    /** Thông tin xe/tài xế/chuyến giao hàng (S6-09). */
+    private DealerDeliveryTripResponse deliveryTrip;
 }

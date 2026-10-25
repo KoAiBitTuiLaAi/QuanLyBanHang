@@ -69,6 +69,14 @@
 - Mốc chưa có dữ liệu lịch sử/thời gian xác nhận hiện **Chưa có dữ liệu**, không đồng nghĩa chưa diễn ra. Chưa có vị trí xe, giờ xe tới hoặc lịch sử giao theo chuyến; cần backend S6-09 sau này để hoàn thiện dữ liệu, không tuyên bố đã hoàn tất end-to-end.
 - Thử nghiệm Chrome dùng API fixture cách ly, không phải minh chứng giao dịch trên DB thật; luồng đặt lại đơn S5-02 giữ nguyên.
 
+## S6-06 — Phân tuyến giao hàng và gán tài xế (25/10/2026)
+
+- **Kho hàng → Phân tuyến giao hàng**, `/warehouse/delivery-routes`. Dùng app-shell/sidebar/topbar/gutters chung; tuân thủ hướng dẫn thiết kế trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`.
+- **Gom nhiều phiếu xuất vào một chuyến theo khu vực**: Tải danh sách đơn đã xuất kho từ `GET /api/warehouse/delivery-trips/eligible-orders?warehouseId=...`. Trích xuất và gom nhóm theo khu vực (Quận/Huyện/Thành phố), hỗ trợ chip lọc nhanh và nút "Gom tất cả đơn khu vực này" để xe chạy vòng khép kín thay vì đi lẻ.
+- **Sắp xếp lộ trình & gán tài xế**: Quản lý kho sắp xếp thứ tự các điểm dừng (Điểm 1, Điểm 2, Điểm 3...) bằng nút lên/xuống; gán họ tên tài xế, số điện thoại tài xế, biển số xe/phương tiện, thời điểm khởi hành, thời gian dự kiến hoàn thành và ghi chú lộ trình. Gửi tạo chuyến qua `POST /api/warehouse/delivery-trips`.
+- **In danh sách điểm giao của chuyến**: Bản in chuẩn hóa chứng từ kho vận & giao nhận thể hiện đầy đủ: mã chuyến, kho xuất phát, ngày giờ, thông tin tài xế và biển số xe; bảng kê điểm giao theo thứ tự dừng có **mã đơn, người nhận/đại lý, địa chỉ giao hàng, số điện thoại người nhận**, tiền hàng, ghi chú và ô ký nhận của khách; ô ký tên Quản lý kho, Tài xế và Thủ kho. Tự động mở xem trước khi tạo chuyến thành công và hỗ trợ in lại trên danh sách chuyến gần đây.
+- **Ma trận phân quyền DB**: Yêu cầu `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` để xem màn hình; yêu cầu `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`) để thực hiện phân tuyến tạo chuyến. Đồng bộ động qua sự kiện `auth:permissions-changed`. Không dùng role fallback. Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage/sessionStorage.
+
 ## S6-07 — Theo dõi chuyến giao (23/10/2026)
 
 - **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`; mở thẳng chi tiết bằng `?tripId=...`. Dùng shell/sidebar/topbar/gutters chung; không thay token layout hoặc font của dự án.

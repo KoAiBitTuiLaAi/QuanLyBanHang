@@ -88,6 +88,23 @@ public class WarehouseVoucher {
     @Column(name = "adjustment_reason", length = 500)
     private String adjustmentReason;
 
+    /** S8-03: server-calculated/validated declared inventory loss. */
+    @Column(name = "adjustment_loss_value", precision = 15, scale = 2)
+    private java.math.BigDecimal adjustmentLossValue;
+
+    /** S8-03 approval audit. */
+    @Column(name = "approved_by", length = 100)
+    private String approvedBy;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "rejected_by", length = 100)
+    private String rejectedBy;
+
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
     /**
      * Xác nhận ghi đè xuất lô đã quá hạn bởi Quản lý kho (S6-01).
      */

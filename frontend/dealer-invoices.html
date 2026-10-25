@@ -28,7 +28,7 @@
             <select id="dp-dealer-select" aria-label="Chọn đại lý hỗ trợ"></select>
           </div>
           <button id="btn-reload" class="btn btn--secondary" type="button">Tải lại</button>
-          <button id="btn-export" class="btn btn--secondary" type="button" disabled>Xuất Excel</button>
+          <button id="btn-export" class="btn btn--secondary" type="button" disabled>Xuất Excel trang này</button>
         </div>
       </header>
 
@@ -97,7 +97,7 @@
         </section>
 
         <!-- Section 2: Invoices Panel (S7-07: Danh sách hoá đơn kèm số tiền, hạn thanh toán, trạng thái) -->
-        <section class="di-panel" aria-labelledby="di-invoices-heading">
+        <section class="di-panel" id="di-invoices-panel" aria-labelledby="di-invoices-heading">
           <div class="di-panel__header">
             <div>
               <h2 class="di-panel__title" id="di-invoices-heading">Danh sách hóa đơn bán hàng</h2>
@@ -152,7 +152,7 @@
                   <th scope="col">Số hóa đơn</th>
                   <th scope="col">Ngày phát hành</th>
                   <th scope="col">Hạn thanh toán</th>
-                  <th scope="col" class="num">Tổng tiền</th>
+                  <th scope="col" class="num">Giá trị phải thu</th>
                   <th scope="col" class="num">Đã trả</th>
                   <th scope="col" class="num">Còn nợ</th>
                   <th scope="col">TT thanh toán</th>
@@ -225,7 +225,7 @@
             </button>
           </header>
           <div class="di-modal__body" style="padding: 12px;">
-            <iframe id="di-print-frame" class="di-print-frame" title="Bản in hóa đơn"></iframe>
+            <iframe id="di-print-frame" class="di-print-frame" sandbox="allow-same-origin allow-modals" title="Bản in hóa đơn"></iframe>
           </div>
           <footer class="di-modal__footer">
             <button type="button" class="btn btn--primary" id="btn-print-frame-now">In bản này</button>

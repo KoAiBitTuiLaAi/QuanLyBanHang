@@ -33,6 +33,7 @@ ROUTES = {
     "/product-units": "product-units.html",
     "/warehouse/units": "warehouse/units.html",
     "/warehouse/delivery": "warehouse/delivery.html",
+    "/warehouse/delivery-routes": "warehouse/delivery-routes.html",
     "/warehouse/delivery-trips": "warehouse/delivery-trips.html",
     "/delivery-confirmation": "warehouse/delivery.html",
     "/warehouse/inventory": "warehouse/inventory.html",

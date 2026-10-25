@@ -43,6 +43,7 @@ public class WarehouseVoucherItemResponse {
 
     private BigDecimal price;
     private BigDecimal totalAmount;
+    private BigDecimal lossValue;
     private String lotNumber;
     private java.time.LocalDate expiryDate;
     private java.time.LocalDate manufacturingDate;

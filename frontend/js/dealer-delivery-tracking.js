@@ -13,23 +13,30 @@ const DealerDeliveryTracking = (() => {
   }
   function model(order) {
     order=order || {};
-    const status=String(order.status || '').toUpperCase();
+    const status=String(order.status || '').toUpperCase(), delivered=['DELIVERED','CLOSED','COMPLETED'].includes(status);
+    const stopped=['CANCELLED','REJECTED','EXPIRED','RETURNED'].includes(status);
     const approval=(Array.isArray(order.approvalHistory)?order.approvalHistory:[])
       .filter(h=>h && String(h.action).toUpperCase()==='APPROVED' && timestamp(h.timestamp || h.createdAt)).at(-1);
-    // Legacy approvedAt is also set on rejection; only trust it in approved lifecycle states.
     const approvedAt=approval?.timestamp || approval?.createdAt ||
       (['APPROVED','RECORDED','PICKING','PROCESSING','EXPORTED','SHIPPED','SHIPPING','DELIVERED','CLOSED','COMPLETED','EXPIRED'].includes(status)?order.approvedAt:null);
-    // OrderStatus.getDisplayName maps legacy SHIPPED to Đã xuất, NOT Đang giao.
-    const steps=[
-      {key:'approved',label:'Đã duyệt',current:['APPROVED','RECORDED'].includes(status),at:timestamp(approvedAt)},
-      {key:'picking',label:'Đang soạn',current:['PICKING','PROCESSING'].includes(status),at:null},
-      {key:'exported',label:'Đã xuất',current:['EXPORTED','SHIPPED'].includes(status),at:null},
-      {key:'shipping',label:'Đang giao',current:status==='SHIPPING',at:null},
-      {key:'delivered',label:'Đã giao',current:['DELIVERED','CLOSED','COMPLETED'].includes(status),at:['DELIVERED','CLOSED','COMPLETED'].includes(status)?timestamp(order.actualDeliveryDate):null},
-    ].map(s=>({...s,state:s.current?'current':s.at?'recorded':'unknown'}));
-    return {steps,backordered:order.backordered===true,
-      stopped:['CANCELLED','REJECTED','EXPIRED','RETURNED'].includes(status),
-      note:'Lịch sử giao hàng chưa đầy đủ. Chỉ hiển thị mốc đã được hệ thống xác nhận; “Chưa có dữ liệu” không có nghĩa là bước đó chưa diễn ra.'};
+    const candidates=Array.isArray(order.deliveryMilestones)?order.deliveryMilestones:[];
+    const definitions=[
+      {key:'approved',label:'Đã duyệt',current:['APPROVED','RECORDED'].includes(status),value:approvedAt},
+      {key:'picking',label:'Đang soạn',current:['PICKING','PROCESSING'].includes(status),value:order.pickingAt},
+      {key:'exported',label:'Đã xuất',current:['EXPORTED','SHIPPED'].includes(status),value:order.exportedAt},
+      {key:'shipping',label:'Đang giao',current:status==='SHIPPING',value:order.shippingAt},
+      {key:'delivered',label:'Đã giao',current:delivered,value:delivered?(order.deliveredAt || order.actualDeliveryDate):null},
+    ];
+    const steps=definitions.map(s=>{
+      const matching=candidates.filter(m=>m?.milestoneKey===s.key), source=matching.length===1?matching[0]:null;
+      // A delivered shipment is not necessarily a fully delivered order.
+      const at=s.key==='delivered'&&!delivered?null:timestamp(source?.timestamp)||timestamp(s.value);
+      const serverCurrent=source?.status==='CURRENT' && !stopped && (s.key!=='delivered'||delivered);
+      return {...s,at,current:!stopped&&(serverCurrent||s.current),state:!stopped&&(serverCurrent||s.current)?'current':at?'recorded':'unknown'};
+    });
+    return {steps,backordered:order.backordered===true,stopped,
+      note:steps.some(s=>!s.at)?'Mốc chưa có thời gian xác nhận được ghi rõ là chưa có dữ liệu; không tự suy đoán lịch sử giao hàng.'
+        :'Các mốc thời gian theo chứng từ giao nhận đã ghi nhận.'};
   }
   function render(order) {
     const data=model(order);

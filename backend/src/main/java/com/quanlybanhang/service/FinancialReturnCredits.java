@@ -18,9 +18,10 @@ public final class FinancialReturnCredits {
         return result;
     }
     public static BigDecimal netInvoice(Invoice invoice, Map<Long, BigDecimal> credits) {
-        if (invoice.getStatus() == InvoiceStatus.CANCELLED) return BigDecimal.ZERO;
-        BigDecimal original = invoice.getAdjustedTotalAmount() != null ? invoice.getAdjustedTotalAmount() : invoice.getTotalAmount();
-        return (original == null ? BigDecimal.ZERO : original)
-                .subtract(credits.getOrDefault(invoice.getId(), BigDecimal.ZERO)).max(BigDecimal.ZERO);
+        if (invoice == null || invoice.getStatus() == InvoiceStatus.CANCELLED) return BigDecimal.ZERO;
+        BigDecimal original = (invoice.getAdjustedTotalAmount() != null && invoice.getAdjustedTotalAmount().compareTo(BigDecimal.ZERO) > 0)
+                ? invoice.getAdjustedTotalAmount()
+                : (invoice.getTotalAmount() != null ? invoice.getTotalAmount() : BigDecimal.ZERO);
+        return original.subtract(credits != null ? credits.getOrDefault(invoice.getId(), BigDecimal.ZERO) : BigDecimal.ZERO).max(BigDecimal.ZERO);
     }
 }

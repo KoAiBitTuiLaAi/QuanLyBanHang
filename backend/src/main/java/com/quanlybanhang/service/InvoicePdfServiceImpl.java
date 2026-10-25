@@ -49,7 +49,7 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
         DecimalFormatSymbols symbols = new DecimalFormatSymbols(new Locale("vi", "VN"));
         symbols.setGroupingSeparator('.');
         symbols.setDecimalSeparator(',');
-        MONEY_FORMAT = new DecimalFormat("#,##0 đ", symbols);
+        MONEY_FORMAT = new DecimalFormat("#,##0.## đ", symbols);
         QTY_FORMAT = new DecimalFormat("#,##0.##", symbols);
     }
 
@@ -184,9 +184,9 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
                 addCellBody(table, item.getProductCode(), fontTableBody, Element.ALIGN_LEFT, bg);
                 addCellBody(table, item.getProductName(), fontTableBody, Element.ALIGN_LEFT, bg);
                 addCellBody(table, item.getUnit(), fontTableBody, Element.ALIGN_CENTER, bg);
-                addCellBody(table, QTY_FORMAT.format(item.getInvoicedQuantity()), fontTableBodyBold, Element.ALIGN_RIGHT, bg);
-                addCellBody(table, MONEY_FORMAT.format(item.getUnitPrice()), fontTableBody, Element.ALIGN_RIGHT, bg);
-                addCellBody(table, MONEY_FORMAT.format(item.getTotalAmount()), fontTableBodyBold, Element.ALIGN_RIGHT, bg);
+                addCellBody(table, quantity(item.getInvoicedQuantity()), fontTableBodyBold, Element.ALIGN_RIGHT, bg);
+                addCellBody(table, money(item.getUnitPrice()), fontTableBody, Element.ALIGN_RIGHT, bg);
+                addCellBody(table, money(item.getTotalAmount()), fontTableBodyBold, Element.ALIGN_RIGHT, bg);
             }
 
             document.add(table);
@@ -204,7 +204,7 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
             wordsCell.setBackgroundColor(HEADER_BG);
 
             BigDecimal finalTotal = invoice.getAdjustedTotalAmount() != null ? invoice.getAdjustedTotalAmount() : invoice.getTotalAmount();
-            String words = VietnameseNumberToWords.convertToWords(finalTotal);
+            String words = moneyInWords(finalTotal);
             wordsCell.addElement(new Paragraph("Số tiền viết bằng chữ:", fontLabel));
             wordsCell.addElement(new Paragraph(words, fontTableBodyBold));
             if (invoice.getStatus() == InvoiceStatus.ADJUSTED) {
@@ -218,11 +218,11 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
             amountCell.setPadding(8);
             amountCell.setBackgroundColor(HEADER_BG);
 
-            amountCell.addElement(createSummaryRow("Cộng tiền hàng:", MONEY_FORMAT.format(invoice.getSubtotalAmount()), fontTableBody, fontTableBodyBold));
+            amountCell.addElement(createSummaryRow("Cộng tiền hàng:", money(invoice.getSubtotalAmount()), fontTableBody, fontTableBodyBold));
             if (invoice.getDiscountAmount() != null && invoice.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
-                amountCell.addElement(createSummaryRow("Chiết khấu:", "-" + MONEY_FORMAT.format(invoice.getDiscountAmount()), fontTableBody, fontTableBodyBold));
+                amountCell.addElement(createSummaryRow("Chiết khấu:", "-" + money(invoice.getDiscountAmount()), fontTableBody, fontTableBodyBold));
             }
-            amountCell.addElement(createSummaryRow("Tổng cộng thanh toán:", MONEY_FORMAT.format(finalTotal), fontTotalLabel, fontTotalValue));
+            amountCell.addElement(createSummaryRow("Tổng cộng thanh toán:", money(finalTotal), fontTotalLabel, fontTotalValue));
             totalTable.addCell(amountCell);
 
             document.add(totalTable);
@@ -329,7 +329,7 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
             c2.addElement(new Paragraph("Lý do điều chỉnh (bắt buộc):", fontLabel));
             c2.addElement(new Paragraph(adj.getAdjustmentReason(), fontTableBodyBold));
             if (adj.getAdjustmentAmount() != null) {
-                c2.addElement(new Paragraph("Số tiền điều chỉnh: " + MONEY_FORMAT.format(adj.getAdjustmentAmount()), fontTotalValue));
+                c2.addElement(new Paragraph("Số tiền điều chỉnh: " + money(adj.getAdjustmentAmount()), fontTotalValue));
             }
             infoTable.addCell(c2);
             document.add(infoTable);
@@ -354,9 +354,9 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
                     addCellBody(table, String.valueOf(stt++), fontTableBody, Element.ALIGN_CENTER, bg);
                     addCellBody(table, it.getProductCode() != null ? it.getProductCode() : "-", fontTableBody, Element.ALIGN_LEFT, bg);
                     addCellBody(table, it.getProductName() != null ? it.getProductName() : "-", fontTableBody, Element.ALIGN_LEFT, bg);
-                    addCellBody(table, it.getAdjustedQuantity() != null ? QTY_FORMAT.format(it.getAdjustedQuantity()) : "-", fontTableBody, Element.ALIGN_RIGHT, bg);
-                    addCellBody(table, it.getAdjustedPrice() != null ? MONEY_FORMAT.format(it.getAdjustedPrice()) : "-", fontTableBody, Element.ALIGN_RIGHT, bg);
-                    addCellBody(table, MONEY_FORMAT.format(it.getAdjustmentAmount()), fontTableBodyBold, Element.ALIGN_RIGHT, bg);
+                    addCellBody(table, it.getAdjustedQuantity() != null ? quantity(it.getAdjustedQuantity()) : "-", fontTableBody, Element.ALIGN_RIGHT, bg);
+                    addCellBody(table, it.getAdjustedPrice() != null ? money(it.getAdjustedPrice()) : "-", fontTableBody, Element.ALIGN_RIGHT, bg);
+                    addCellBody(table, money(it.getAdjustmentAmount()), fontTableBodyBold, Element.ALIGN_RIGHT, bg);
                 }
                 document.add(table);
             }
@@ -386,7 +386,7 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hóa đơn với ID: " + invoiceId));
 
         BigDecimal finalTotal = invoice.getAdjustedTotalAmount() != null ? invoice.getAdjustedTotalAmount() : invoice.getTotalAmount();
-        String words = VietnameseNumberToWords.convertToWords(finalTotal);
+        String words = moneyInWords(finalTotal);
 
         StringBuilder itemsHtml = new StringBuilder();
         int stt = 1;
@@ -404,13 +404,13 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
                 </tr>
                 """,
                     stt++,
-                    item.getOrderCode() != null ? item.getOrderCode() : "-",
-                    item.getProductCode(),
-                    item.getProductName(),
-                    item.getUnit(),
-                    QTY_FORMAT.format(item.getInvoicedQuantity()),
-                    MONEY_FORMAT.format(item.getUnitPrice()),
-                    MONEY_FORMAT.format(item.getTotalAmount())
+                    html(item.getOrderCode() != null ? item.getOrderCode() : "-"),
+                    html(item.getProductCode()),
+                    html(item.getProductName()),
+                    html(item.getUnit()),
+                    quantity(item.getInvoicedQuantity()),
+                    money(item.getUnitPrice()),
+                    money(item.getTotalAmount())
             ));
         }
 
@@ -418,7 +418,7 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
         if (invoice.getOrders() != null) {
             for (Order o : invoice.getOrders()) {
                 if (ordersList.length() > 0) ordersList.append(", ");
-                ordersList.append(o.getOrderCode());
+                ordersList.append(html(o.getOrderCode()));
             }
         }
 
@@ -527,29 +527,35 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
             </body>
             </html>
             """,
-                invoice.getInvoiceCode(),
-                invoice.getInvoiceNumber(),
-                invoice.getInvoiceCode(),
+                html(invoice.getInvoiceCode()),
+                html(invoice.getInvoiceNumber()),
+                html(invoice.getInvoiceCode()),
                 invoice.getInvoiceDate() != null ? invoice.getInvoiceDate().format(DATE_TIME_FORMATTER) : "",
-                invoice.getDealerName(),
-                invoice.getDealerCode(),
-                invoice.getDealerTaxCode() != null ? invoice.getDealerTaxCode() : "---",
-                invoice.getDealerAddress() != null ? invoice.getDealerAddress() : "---",
-                invoice.getDealerPhone() != null ? invoice.getDealerPhone() : "---",
+                html(invoice.getDealerName()),
+                html(invoice.getDealerCode()),
+                html(invoice.getDealerTaxCode() != null ? invoice.getDealerTaxCode() : "---"),
+                html(invoice.getDealerAddress() != null ? invoice.getDealerAddress() : "---"),
+                html(invoice.getDealerPhone() != null ? invoice.getDealerPhone() : "---"),
                 ordersList.length() > 0 ? ordersList.toString() : "Theo thỏa thuận",
                 invoice.getStatus() != null ? invoice.getStatus().getDisplayName() : "Đã phát hành",
-                invoice.getCreatedBy() != null ? invoice.getCreatedBy() : "Kế toán",
-                invoice.getNote() != null ? invoice.getNote() : "Không",
+                html(invoice.getCreatedBy() != null ? invoice.getCreatedBy() : "Kế toán"),
+                html(invoice.getNote() != null ? invoice.getNote() : "Không"),
                 itemsHtml.toString(),
                 words,
-                MONEY_FORMAT.format(invoice.getSubtotalAmount()),
+                money(invoice.getSubtotalAmount()),
                 (invoice.getDiscountAmount() != null && invoice.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0)
-                        ? "<div>Chiết khấu: <strong>-" + MONEY_FORMAT.format(invoice.getDiscountAmount()) + "</strong></div>" : "",
-                MONEY_FORMAT.format(finalTotal)
+                        ? "<div>Chiết khấu: <strong>-" + money(invoice.getDiscountAmount()) + "</strong></div>" : "",
+                money(finalTotal)
         );
     }
 
     private BaseFont getBaseFont(boolean bold) {
+        String file = bold ? "arialbd.ttf" : "arial.ttf";
+        try (var input = new org.springframework.core.io.ClassPathResource("fonts/" + file).getInputStream()) {
+            return BaseFont.createFont(file, BaseFont.IDENTITY_H, BaseFont.EMBEDDED, false, input.readAllBytes(), null);
+        } catch (Exception ex) {
+            log.debug("Không tải được font đóng gói, thử font hệ thống", ex);
+        }
         String[] fontPaths = bold
                 ? new String[]{"C:/Windows/Fonts/arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"}
                 : new String[]{"C:/Windows/Fonts/arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"};
@@ -568,6 +574,28 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
         } catch (Exception e) {
             throw new IllegalStateException("Không thể khởi tạo font", e);
         }
+    }
+
+    private static String money(BigDecimal value) {
+        return ((DecimalFormat) MONEY_FORMAT.clone()).format(value == null ? BigDecimal.ZERO : value);
+    }
+    private static String moneyInWords(BigDecimal value) {
+        if (value == null || value.stripTrailingZeros().scale() <= 0)
+            return VietnameseNumberToWords.convertToWords(value);
+        String whole = VietnameseNumberToWords.convertToWords(value.abs().setScale(0, java.math.RoundingMode.DOWN))
+                .replaceFirst(" đồng.*$", "");
+        String fraction = value.abs().remainder(BigDecimal.ONE).stripTrailingZeros().toPlainString().substring(2);
+        String[] digits = {"không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín"};
+        StringBuilder result = new StringBuilder(value.signum() < 0 ? "Âm " + whole.toLowerCase(new Locale("vi", "VN")) : whole);
+        result.append(" phẩy");
+        for (char digit : fraction.toCharArray()) result.append(' ').append(digits[digit - '0']);
+        return result.append(" đồng.").toString();
+    }
+    private static String quantity(BigDecimal value) {
+        return ((DecimalFormat) QTY_FORMAT.clone()).format(value == null ? BigDecimal.ZERO : value);
+    }
+    private static String html(String value) {
+        return org.springframework.web.util.HtmlUtils.htmlEscape(value == null ? "" : value);
     }
 
     private Paragraph createDivider() {

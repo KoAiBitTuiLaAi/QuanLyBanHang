@@ -213,4 +213,64 @@ class DeliveryTripSecurityTest {
         mockMvc.perform(post("/api/warehouse/delivery-trips/1/complete").with(adminUser))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    @DisplayName("S6-06: Chỉ có quyền WAREHOUSE_VIEW: Được xem manifest, tải PDF bảng kê nhưng KHÔNG ĐƯỢC gán/cập nhật tài xế -> 403")
+    void viewer_CanReadManifest_CannotUpdateTrip_Returns403() throws Exception {
+        var viewer = user("viewer").authorities(
+                new SimpleGrantedAuthority("ROLE_VIEWER"),
+                new SimpleGrantedAuthority("WAREHOUSE_VIEW")
+        );
+
+        when(deliveryTripService.getManifest(eq(1L), any()))
+                .thenReturn(com.quanlybanhang.dto.response.DeliveryTripManifestResponse.builder().tripId(1L).build());
+        when(deliveryTripService.generateManifestPdf(eq(1L), any()))
+                .thenReturn("%PDF-mock".getBytes());
+        when(deliveryTripService.getTripById(1L))
+                .thenReturn(DeliveryTripResponse.builder().id(1L).tripCode("CG-01").build());
+
+        // Được xem manifest
+        mockMvc.perform(get("/api/warehouse/delivery-trips/1/manifest").with(viewer))
+                .andExpect(status().isOk());
+
+        // Được tải PDF manifest
+        mockMvc.perform(get("/api/warehouse/delivery-trips/1/manifest/pdf").with(viewer))
+                .andExpect(status().isOk());
+
+        // Nhưng KHÔNG được cập nhật tài xế / xe / tuyến -> 403
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("Tài xế Mới")
+                .vehiclePlate("51D-123.45")
+                .build();
+
+        mockMvc.perform(put("/api/warehouse/delivery-trips/1")
+                        .with(viewer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("S6-06: Có quyền WAREHOUSE_EXPORT: Được gán/cập nhật tài xế, phương tiện cho chuyến -> 200 OK")
+    void staff_WithWarehouseExport_CanUpdateTrip_Returns200() throws Exception {
+        var staff = user("staff").authorities(
+                new SimpleGrantedAuthority("ROLE_WAREHOUSE_STAFF"),
+                new SimpleGrantedAuthority("WAREHOUSE_EXPORT")
+        );
+
+        com.quanlybanhang.dto.request.UpdateDeliveryTripRequest req = com.quanlybanhang.dto.request.UpdateDeliveryTripRequest.builder()
+                .driverName("Tài xế Mới")
+                .vehiclePlate("51D-123.45")
+                .routeName("Tuyến Miền Tây")
+                .build();
+
+        when(deliveryTripService.updateTrip(eq(1L), any(), any()))
+                .thenReturn(DeliveryTripResponse.builder().id(1L).driverName("Tài xế Mới").vehiclePlate("51D-123.45").build());
+
+        mockMvc.perform(put("/api/warehouse/delivery-trips/1")
+                        .with(staff)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk());
+    }
 }

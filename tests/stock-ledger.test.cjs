@@ -201,4 +201,3 @@ test('S8-08: CSS tuân thủ khung giao diện chung, không gây tràn ngang ha
   // Bảng có thanh cuộn riêng biệt
   assert.match(css, /\.stock-table-scroll\s*\{[^}]*overflow-x\s*:\s*auto/);
 });
-

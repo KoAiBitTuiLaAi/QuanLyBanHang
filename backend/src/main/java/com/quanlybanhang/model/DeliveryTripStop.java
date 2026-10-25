@@ -35,6 +35,14 @@ public class DeliveryTripStop {
     @Column(name = "order_code", length = 50)
     private String orderCode;
 
+    @Column(name = "voucher_code", length = 50)
+    private String voucherCode;
+
+    /** One immutable shipment may belong to only one delivery stop. Legacy stops have no voucher. */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shipment_voucher_id", unique = true)
+    private WarehouseVoucher shipmentVoucher;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dealer_id")
     private Dealer dealer;
@@ -71,6 +79,17 @@ public class DeliveryTripStop {
     @Builder.Default
     private BigDecimal deliveryAmount = BigDecimal.ZERO;
 
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    @Column(name = "signed_proof", columnDefinition = "MEDIUMBLOB")
+    private byte[] signedProof;
+
+    @Column(name = "proof_content_type", length = 30)
+    private String proofContentType;
+
+    @Column(name = "confirmed_by", length = 100)
+    private String confirmedBy;
+
     @Column(name = "delivered_at")
     private LocalDateTime deliveredAt;
 
@@ -93,6 +112,9 @@ public class DeliveryTripStop {
 
     @Column(name = "returned_at")
     private LocalDateTime returnedAt;
+
+    @Column(name = "return_reason", length = 500)
+    private String returnReason;
 
     @Column(name = "note", length = 500)
     private String note;

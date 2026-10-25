@@ -25,5 +25,10 @@ public class DeliveryEligibleOrderResponse {
     private LocalDate expectedDeliveryDate;
     private BigDecimal totalAmount;
     private String status;
+    private Long territoryId;
+    private String territoryCode;
+    private String territoryName;
+    private Long shipmentVoucherId;
+    private String shipmentVoucherCode;
 }
 

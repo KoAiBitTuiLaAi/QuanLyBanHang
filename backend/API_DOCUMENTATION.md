@@ -4,6 +4,82 @@ Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
+## S7-03 — Sổ công nợ theo đại lý với phân tích tuổi nợ (25/10/2026)
+
+API Sổ công nợ theo đại lý với phân tích tuổi nợ phục vụ kế toán công nợ theo dõi các khoản phải thu, đã thu, còn nợ và phân bổ theo 4 nhóm tuổi nợ (0–30, 31–60, 61–90 và trên 90 ngày) để tập trung đòi những khoản nợ lâu nhất trước.
+
+| Method | Endpoint (sau `/api`) | Quyền / hành vi |
+|---|---|---|
+| GET | `/finance/debt-aging-ledger` (alias `/finance/dealer-debt-aging`) | Quyền `FINANCE_VIEW_DEBT` hoặc `ROLE_ADMIN`. Lấy sổ công nợ theo đại lý kèm phân tích 4 nhóm tuổi nợ, nợ trong hạn, nợ quá hạn, tổng cộng chân bảng |
+| GET | `/finance/debt-aging-ledger/export` (alias `/finance/debt-aging-ledger/export/excel`, `/finance/dealer-debt-aging/export`) | Quyền `FINANCE_VIEW_DEBT` hoặc `ROLE_ADMIN`. Xuất sổ công nợ ra file Excel `.xlsx` với đầy đủ tiêu đề, khối bộ lọc, 19 cột chi tiết, dòng tổng cộng chân bảng và định dạng tiền tệ VND |
+
+### Query Parameters
+
+| Tham số | Kiểu | Mặc định | Ý nghĩa |
+|---|---|---|---|
+| `asOfDate` | `LocalDate` (`YYYY-MM-DD`) | Ngày hiện tại (`today`) | Ngày chốt sổ tính tuổi nợ (không được chọn ngày trong tương lai) |
+| `overdueOnly` | `Boolean` | `false` | Lọc riêng nhóm đại lý có nợ quá hạn (`true`: chỉ trả về đại lý có `isOverdue = true`) |
+| `dealerId` | `Long` | `null` | Lọc theo ID đại lý cụ thể |
+| `search` | `String` | `null` | Tìm kiếm theo mã đại lý, tên đại lý hoặc số điện thoại |
+
+### Đặc tả nghiệp vụ
+1. **Đối trừ FIFO**: Tiền đã thu/thanh toán của đại lý được trừ tuần tự cho các hóa đơn/đơn hàng ghi sổ cũ nhất trước (theo ngày chứng từ tăng dần).
+2. **Phân tích 4 nhóm tuổi nợ**: Khoản nợ còn lại chưa thanh toán được tính tuổi nợ `debtAge = asOfDate - documentDate` và phân bổ vào 4 nhóm:
+   - `0–30 ngày` (`bucket0To30`)
+   - `31–60 ngày` (`bucket31To60`)
+   - `61–90 ngày` (`bucket61To90`)
+   - `Trên 90 ngày` (`bucketOver90`)
+3. **Phân loại nợ**:
+   - `inTermDebt`: Nợ trong hạn (chưa quá `dueDate`).
+   - `overdueDebt`: Nợ quá hạn (ngày chốt `asOfDate > dueDate`), kèm `maxOverdueDays`.
+4. **Sắp xếp ưu tiên đòi nợ**: Đại lý có nợ trên 90 ngày lớn nhất đứng đầu (`bucketOver90` desc) -> `bucket61To90` desc -> `bucket31To60` desc -> tuổi nợ tối đa `maxDebtAgeDays` desc -> tổng còn nợ `remainingDebt` desc -> ID đại lý.
+5. **Tổng cộng ở chân bảng (Summary)**: Khớp chính xác tổng toán học các cột tiền của từng đại lý, đếm `dealerCount` và `overdueDealerCount`.
+6. **Bảo toàn độ chính xác tài chính**: Bên cạnh các trường số `BigDecimal`, trả về đầy đủ các trường chuỗi formatted định dạng chuẩn 2 chữ số lẻ (`totalReceivableFormatted`, `totalPaidFormatted`, `remainingDebtFormatted`, `bucket0To30Formatted`,...).
+7. **Phân quyền và bảo mật**:
+   - Ma trận phân quyền database-backed: Yêu cầu quyền `FINANCE_VIEW_DEBT` hoặc `ROLE_ADMIN`. Thu hồi quyền ngay lập tức trả về `403 Forbidden` trên token JWT hiện tại. Tuyệt đối không dùng role-based fallback.
+   - Row-level security: `ROLE_SALES` chỉ xem được các đại lý mình được phân công phụ trách. `ROLE_DEALER` chỉ xem được dữ liệu công nợ của chính đại lý mình.
+   - Chống Formula Injection trên file Excel: Tự động escape các ký tự khởi đầu nguy hiểm (`=`, `+`, `-`, `@`).
+
+## S7-06 — Biên bản đối chiếu công nợ đã lưu và phản hồi đại lý (25/10/2026)
+
+Trang `/finance/debt-reconciliation`, menu **Tài chính → Đối chiếu công nợ**, dùng cho kế toán và đại lý theo quyền. Tạo biên bản chụp số liệu đầu kỳ, tăng/giảm, cuối kỳ và từng chứng từ trong một transaction `REPEATABLE_READ`; toàn bộ bản số liệu và thông tin đại lý được lưu tại `debt_reconciliations.snapshot_json`. Không sửa/xóa bản đã lưu, không tính lại khi xem/PDF. Có thể lập một biên bản mới cho cùng kỳ để đối chiếu lại sau khi xử lý phản hồi.
+
+| Method | Endpoint (sau `/api`) | Quyền / hành vi |
+|---|---|---|
+| GET | `/finance/debt-reconciliations/options?keyword=&page=0` | `FINANCE_VIEW_DEBT`; tìm đại lý trong phạm vi, 50 dòng/trang |
+| POST | `/finance/debt-reconciliations` | `FINANCE_VIEW_DEBT` **và** `FINANCE_MANAGE`; Admin được phép; tài khoản có scope đại lý không được lập thay kế toán |
+| GET | `/finance/debt-reconciliations?dealerId=&from=&to=&page=0` | Danh sách biên bản đã lưu, 20 dòng/trang; ngày lọc chọn các kỳ nằm trọn trong khoảng; bỏ cả `from`/`to` để xem mọi kỳ |
+| GET | `/finance/debt-reconciliations/{id}` | Chi tiết bản số liệu và phản hồi đã lưu |
+| GET | `/finance/debt-reconciliations/{id}/pdf` | PDF tiếng Việt, mã biên bản, kỳ, đầu kỳ/phát sinh/cuối kỳ, trạng thái và hai ô ký xác nhận; `Cache-Control: no-store` |
+| GET | `/portal/debt-reconciliations/options` | Chỉ đại lý liên kết tài khoản; Admin có thể tra cứu |
+| GET | `/portal/debt-reconciliations` và `/{id}`, `/{id}/pdf` | `FINANCE_VIEW_DEBT`, scope chính đại lý từ DB; không tin `dealerId` từ client |
+| POST | `/portal/debt-reconciliations/{id}/response` | Chỉ tài khoản đại lý liên kết có `FINANCE_VIEW_DEBT`; kế toán/Admin không xác nhận thay |
+
+Tạo biên bản:
+
+```json
+{"dealerId":10,"from":"2026-10-01","to":"2026-10-25","requestKey":"bed44420-bb8c-4a2b-af14-209d98b545de"}
+```
+
+`requestKey` là UUID do client cấp. Gửi lại cùng khóa, người lập, đại lý và kỳ trả biên bản cũ; tái dùng cho dữ liệu khác trả `409`. Unique constraint ngăn tạo trùng đồng thời; yêu cầu thua cuộc có thể nhận `409`, phải tải lại danh sách trước khi thao tác tiếp. Chỉ POST chủ động mới tạo bản ghi; mở trang/lọc/tải PDF không tự lập biên bản.
+
+Xác nhận hoặc phản hồi:
+
+```json
+{"version":0,"status":"CONFIRMED"}
+```
+
+```json
+{"version":0,"status":"DISPUTED","claimedBalance":"950000.25","reason":"Chưa ghi nhận phiếu thu PT-002"}
+```
+
+Chỉ cho chuyển `PENDING → CONFIRMED` hoặc `PENDING → DISPUTED` một lần. Bắt buộc version hiện tại; số dư phản hồi lệch phải khác cuối kỳ, tối đa 22 chữ số nguyên/2 chữ số lẻ; lý do sau trim không trống, tối đa 500 ký tự. Số chênh do server tính `cuối kỳ hệ thống - số dư đại lý`. Xác nhận khớp dùng số dư đã lưu. Pessimistic row lock + `@Version` bảo vệ phản hồi đồng thời; bản đã phản hồi/version cũ trả `409`. Lưu người/thời gian phản hồi và audit log trong cùng transaction, không tự sinh bút toán điều chỉnh công nợ.
+
+Các trường tiền trả bằng **chuỗi thập phân** (`"950000.25"`), cả snapshot và chênh lệch. Trình duyệt dùng số nguyên BigInt theo xu để không mất độ chính xác. Frontend không tự ghi trạng thái xác nhận khi chưa có kết quả server; khi mất kết nối lúc POST, khóa ghi tiếp và yêu cầu tải lại danh sách. Thu hồi quyền làm ẩn/khóa màn hình và hủy/loại phản hồi trễ; JWT hiện tại nhận `403` ở request sau. Vai trò chỉ giới hạn phạm vi; SALES chỉ thấy đại lý phụ trách, DEALER chỉ đại lý liên kết, không có role fallback thay quyền DB.
+
+Nguồn số liệu dùng cùng sổ công nợ S8-10: đơn ghi sổ theo `recorded_at/created_at`, phiếu thu theo `payment_date`, điều chỉnh hóa đơn có dấu theo `adjustment_date` (bao gồm chứng từ giảm nợ trả hàng); không cộng lặp hóa đơn và đơn hàng. Đây là số liệu từ chứng từ/trạng thái hiện có tại **thời điểm lập**, không phải cơ chế tái dựng lịch sử thay đổi đã bị xóa; giữ số dư âm. Phiếu phát sinh/backdate sau đó không sửa snapshot cũ: cần lập bản mới khi muốn cập nhật. Áp dụng `app.debt-statement.max-rows`; vượt giới hạn trả `400`, không lưu/PDF một phần. Phản hồi trên cổng là xác nhận ứng dụng, không phải chữ ký số. Chưa có luồng gửi email; đại lý truy cập biên bản qua cổng.
+
+
 ## S6-07 — Frontend theo dõi chuyến giao và sửa số liệu đọc (23/10/2026)
 
 Menu **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`. VIEW hoặc EXPORT theo ma trận DB; ADMIN luôn có quyền. Các API theo dõi dùng scope kho sẵn có, không dùng vai trò thay grant.
@@ -152,7 +228,7 @@ có vai trò đại lý trả 400. Thông tin tài khoản trả lại có `deal
 | GET | `/portal/dealers` | Chỉ ADMIN; danh sách lựa chọn `{id, code, name}` từ DB, gồm cả đại lý ngừng hoạt động để tra đơn cũ |
 | GET | `/portal/profile` | DEALER + ORDER_VIEW, hoặc ADMIN chọn đại lý |
 | GET | `/portal/catalog` (alias `/portal/products`) | DEALER + PRODUCT_VIEW, hoặc ADMIN chọn đại lý |
-| GET | `/portal/debt` | DEALER + ORDER_VIEW, hoặc ADMIN chọn đại lý |
+| GET | `/portal/debt` | DEALER + FINANCE_VIEW_DEBT, hoặc ADMIN chọn đại lý |
 | GET | `/portal/delivery-points` | DEALER + ORDER_VIEW, hoặc ADMIN chọn đại lý |
 | GET | `/portal/orders` | DEALER + ORDER_VIEW, hoặc ADMIN; danh sách giới hạn theo đại lý trong ngữ cảnh |
 | GET | `/portal/orders/{id}` | DEALER + ORDER_VIEW, hoặc ADMIN; đơn ngoài đại lý trong ngữ cảnh trả 403 |
@@ -2438,6 +2514,151 @@ Authorization: Bearer <access-token>
 ```
 
 
+
+
+---
+
+## S6-09 — Theo dõi trạng thái giao hàng của đơn (Đại lý & Nhân viên) — 25/10/2026
+
+Cho phép Đại lý (`ROLE_DEALER`) và Nhân viên nội bộ (`ROLE_SALES`, `ROLE_WAREHOUSE_STAFF`, `ROLE_ADMIN`,...) theo dõi tiến trình giao hàng theo thời gian thực để chủ động bố trí người nhận hàng đúng lúc xe tới:
+1. **Hiển thị 5 mốc thời gian rõ ràng**:
+   - `approved`: Đã duyệt
+   - `picking`: Đang soạn hàng (lấy từ phiếu soạn hàng S6-03 hoặc lịch sử trạng thái)
+   - `exported`: Đã xuất kho (lấy từ phiếu xuất kho S6-05)
+   - `shipping`: Đang giao hàng (lấy từ thời điểm gán chuyến xe S6-06 hoặc cập nhật trạng thái)
+   - `delivered`: Đã giao hàng thành công (lấy từ điểm dừng hoàn thành S6-07/S6-08)
+   Mỗi mốc có `milestoneKey`, `label`, `status` (`COMPLETED`, `CURRENT`, `PENDING`, `UNKNOWN`), `timestamp` và `description`.
+2. **Xem được số lượng thực giao từng dòng hàng**:
+   - `quantity`: Số lượng đặt
+   - `exportedQuantity`: Số lượng thực xuất từ kho
+   - `deliveredQuantity`: Số lượng thực giao đến tay đại lý
+   - `shortageQuantity`: Số lượng thiếu hụt nếu có giao thiếu
+   - `isShortage`: Cờ cảnh báo thiếu
+   - `deliveryNote`: Ghi chú giao hàng từng dòng
+3. **Thông tin phương tiện và tài xế vận chuyển**:
+   - `tripCode`: Mã chuyến giao hàng
+   - `driverName`, `driverPhone`: Tên và số điện thoại tài xế
+   - `vehiclePlate`: Biển số xe giao hàng
+   - `departureTime`: Thời điểm xe bắt đầu xuất phát
+   - `expectedCompletionTime`: Thời gian dự kiến xe tới giao
+
+### Danh sách Endpoint S6-09:
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/portal/orders/{id}/tracking` (alias `/api/portal/orders/{id}/delivery-tracking`) | `ORDER_VIEW` hoặc `ROLE_ADMIN` | Dành cho Đại lý (hoặc Admin chọn `dealerId`): Xem 5 mốc giao hàng, thông tin chuyến xe và thực giao từng dòng |
+| `GET` | `/api/orders/{id}/delivery-tracking` | `ORDER_VIEW` hoặc `ROLE_ADMIN` | Dành cho Nhân viên nội bộ: Xem 5 mốc giao hàng, thông tin chuyến xe và thực giao từng dòng |
+
+#### Request mẫu (Đại lý):
+```text
+GET /api/portal/orders/101/tracking
+Authorization: Bearer <access-token>
+```
+
+#### Response thành công (HTTP 200 OK):
+```json
+{
+  "success": true,
+  "message": "Theo dõi giao hàng của đơn",
+  "data": {
+    "orderId": 101,
+    "orderCode": "DH-MINHPHAT-001",
+    "dealerId": 1,
+    "dealerName": "Đại lý Minh Phát",
+    "deliveryAddress": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+    "contactPerson": "Nguyễn Văn Nhận",
+    "contactPhone": "0912345678",
+    "status": "SHIPPING",
+    "statusDisplayName": "Đang giao",
+    "createdAt": "2026-10-25T08:00:00",
+    "approvedAt": "2026-10-25T09:00:00",
+    "pickingAt": "2026-10-25T10:15:00",
+    "exportedAt": "2026-10-25T11:30:00",
+    "shippingAt": "2026-10-25T13:00:00",
+    "deliveredAt": null,
+    "hasShortage": true,
+    "milestones": [
+      {
+        "milestoneKey": "approved",
+        "label": "Đã duyệt",
+        "status": "COMPLETED",
+        "timestamp": "2026-10-25T09:00:00",
+        "description": "Đơn hàng đã được duyệt kinh doanh"
+      },
+      {
+        "milestoneKey": "picking",
+        "label": "Đang soạn",
+        "status": "COMPLETED",
+        "timestamp": "2026-10-25T10:15:00",
+        "description": "Thủ kho đã tạo lượt soạn hàng"
+      },
+      {
+        "milestoneKey": "exported",
+        "label": "Đã xuất",
+        "status": "COMPLETED",
+        "timestamp": "2026-10-25T11:30:00",
+        "description": "Đã xuất kho theo phiếu xuất PX-20261025-001"
+      },
+      {
+        "milestoneKey": "shipping",
+        "label": "Đang giao",
+        "status": "CURRENT",
+        "timestamp": "2026-10-25T13:00:00",
+        "description": "Đang vận chuyển bởi tài xế Nguyễn Văn Tài - Biển số 29C-12345"
+      },
+      {
+        "milestoneKey": "delivered",
+        "label": "Đã giao",
+        "status": "PENDING",
+        "timestamp": null,
+        "description": "Chưa hoàn tất giao hàng"
+      }
+    ],
+    "deliveryTrip": {
+      "tripId": 10,
+      "tripCode": "CX-20261025-001",
+      "driverName": "Nguyễn Văn Tài",
+      "driverPhone": "0909123456",
+      "vehiclePlate": "29C-12345",
+      "departureTime": "2026-10-25T13:00:00",
+      "expectedCompletionTime": "2026-10-25T15:30:00",
+      "actualCompletionTime": null,
+      "tripStatus": "IN_PROGRESS",
+      "stopStatus": "IN_TRANSIT",
+      "stopOrder": 1,
+      "receiverName": "Nguyễn Văn Nhận",
+      "receiverPhone": "0912345678",
+      "deliveryAddress": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+      "deliveredAt": null,
+      "note": "Giao cổng sau",
+      "failedReason": null
+    },
+    "items": [
+      {
+        "orderItemId": 201,
+        "productId": 10,
+        "productCode": "SP-KEN330",
+        "productName": "Bia Heineken lon 330ml",
+        "unit": "thùng",
+        "quantity": 10.0,
+        "exportedQuantity": 8.0,
+        "remainingExportQuantity": 2.0,
+        "deliveredQuantity": 8.0,
+        "shortageQuantity": 2.0,
+        "isShortage": true,
+        "deliveryNote": "Kho thiếu 2 thùng xuất sau"
+      }
+    ]
+  }
+}
+```
+
+#### Ràng buộc bảo mật & Ma trận phân quyền:
+- Đại lý bắt buộc phải có quyền `ORDER_VIEW` trong ma trận DB. Thu hồi quyền lập tức trả về `403 Forbidden`.
+- Row-Level Security: Đại lý chỉ được xem đơn hàng của chính mình. Truy cập đơn của đại lý khác bị chặn `403 Forbidden`.
+- `ROLE_ADMIN` luôn có toàn quyền và có thể truyền `?dealerId=...` để tra cứu theo ngữ cảnh đại lý.
+
+
 ## Cổng tự đặt hàng dành cho Đại lý (S4-10)
 
 Cổng tự đặt hàng trực tuyến dành riêng cho khách hàng đại lý (`ROLE_DEALER`), cho phép đại lý chủ động kiểm tra giá, xem công nợ còn lại và gửi đơn đặt hàng 24/7 trên cả máy tính và thiết bị di động.
@@ -3118,12 +3339,16 @@ Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến
 | `GET` | `` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tìm kiếm, lọc và phân trang danh sách chuyến giao hàng (`warehouseId`, `status`, `isOverdue`, `keyword`, `page`, `size`) |
 | `GET` | `/summary` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thống kê tổng hợp: số chuyến đang chạy, số chuyến quá hạn, tổng tiền hàng trên đường, tổng điểm đã giao/còn lại |
 | `GET` | `/{id}` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xem chi tiết chuyến giao hàng, danh sách điểm giao và các mặt hàng chi tiết |
-| `POST` | `` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tạo mới chuyến giao hàng (từ danh sách `orderIds` hoặc `stops` tùy chỉnh) |
+| `POST` | `` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tạo mới chuyến giao hàng (phân tuyến theo khu vực `territoryId`, `routeName`, gom theo `shipmentVoucherIds` hoặc `orderIds` hoặc `stops` tùy chỉnh) |
+| `PUT` | `/{id}` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Cập nhật thông tin chuyến đang giao (gán tài xế, SĐT, biển số xe, tên tuyến đường, khu vực `territoryId`, giờ dự kiến, ghi chú) |
 | `PUT` | `/{id}/stops/{stopId}/status` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Cập nhật trạng thái điểm giao (`DELIVERED` hoặc `FAILED` kèm lý do). Hàng FAILED không tự về kho |
 | `POST` | `/{id}/complete` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hoàn tất chuyến giao hàng. Cảnh báo nếu còn điểm chưa giao được |
 | `POST` | `/{id}/cancel` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hủy chuyến giao hàng (bắt buộc lý do; chặn hủy nếu đã có điểm giao thành công) |
 | `POST` | `/{id}/stops/{stopId}/return-to-warehouse` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thao tác tường minh: Nhập trả lại kho hàng chưa giao được của điểm giao thất bại |
-| `GET` | `/eligible-orders` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Danh sách đơn hàng đã xuất kho (`EXPORTED`) thuộc kho sẵn sàng gán chuyến |
+| `GET` | `/eligible-orders` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Danh sách đơn hàng/phiếu xuất đã xuất kho sẵn sàng gán chuyến, hỗ trợ lọc theo kho (`warehouseId`), khu vực (`territoryId`), và từ khóa (`keyword`) |
+| `GET` | `/{id}/manifest` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Bảng kê danh sách điểm giao của chuyến kèm tên, SĐT, địa chỉ người nhận, mã phiếu xuất, số tiền và hàng hóa chi tiết |
+| `GET` | `/{id}/manifest/pdf` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xuất file PDF bảng kê danh sách điểm giao chuyến (A4, OpenPDF) phục vụ tài xế giao hàng |
+| `GET` | `/{id}/manifest/print` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xuất HTML bảng kê điểm giao hỗ trợ xem trước và in trực tiếp (`window.print()`) |
 
 ### 3. Payload mẫu
 
@@ -3181,6 +3406,61 @@ Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến
   "note": "Biên bản hoàn trả số BB-0123"
 }
 ```
+
+#### Cập nhật chuyến giao hàng (`PUT /api/warehouse/delivery-trips/{id}`)
+
+```json
+{
+  "driverName": "Trần Văn Bình",
+  "driverPhone": "0912987654",
+  "vehiclePlate": "30A-999.88",
+  "routeName": "Tuyến Đông Anh - Mê Linh",
+  "territoryId": 2,
+  "expectedCompletionTime": "2026-10-25T17:30:00",
+  "note": "Ưu tiên giao điểm số 1 trước 10h sáng"
+}
+```
+
+#### Bảng kê điểm giao của chuyến (`GET /api/warehouse/delivery-trips/{id}/manifest`)
+
+```json
+{
+  "id": 1,
+  "tripCode": "CG-20261025-001",
+  "status": "IN_PROGRESS",
+  "driverName": "Trần Văn Bình",
+  "driverPhone": "0912987654",
+  "vehiclePlate": "30A-999.88",
+  "warehouseName": "Kho Tổng Hà Nội",
+  "routeName": "Tuyến Đông Anh - Mê Linh",
+  "territoryName": "Miền Bắc",
+  "totalStops": 2,
+  "totalAmount": 25000000.00,
+  "stops": [
+    {
+      "stopId": 10,
+      "stopOrder": 1,
+      "orderId": 101,
+      "orderCode": "DH-001",
+      "voucherCode": "PX-20261025-001",
+      "receiverName": "Đại lý Thành Đạt",
+      "receiverPhone": "0988776655",
+      "deliveryAddress": "Khu công nghiệp Thăng Long, Đông Anh, Hà Nội",
+      "deliveryAmount": 15000000.00,
+      "status": "PENDING",
+      "items": [
+        {
+          "productName": "Sữa chua Nếp Cẩm",
+          "unit": "thùng",
+          "quantity": 50,
+          "unitPrice": 300000.00
+        }
+      ]
+    }
+  ]
+}
+```
+
 
 ---
 
@@ -3684,6 +3964,26 @@ Response:
 }
 ```
 
+
+## S6-08 — Xác nhận giao hàng có chứng từ
+
+- `POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/confirm-delivery`
+  - Bearer token; `WAREHOUSE_EXPORT` từ ma trận DB hoặc `ROLE_ADMIN`; kiểm tra kho được giao.
+  - `multipart/form-data`: `receiverName` (bắt buộc, tối đa 100 ký tự), `deliveredAt` (ISO local datetime theo múi giờ ứng dụng, ví dụ `2026-10-25T14:00:00`), `proof` (file ảnh biên bản có chữ ký).
+  - Thời điểm giao nằm trong khoảng xuất phát đến hiện tại. File PNG/JPEG được kiểm tra nội dung thực, không chỉ MIME/tên file; tối đa 5 MB, 20 triệu pixel.
+  - 200: `ApiResponse<DeliveryTripResponse>`. Điểm giao có `receiverName`, `deliveredAt`, `confirmedBy`, `hasSignedProof=true`.
+  - 400: thiếu/sai dữ liệu, chuyến không đang chạy, điểm đã giao/đã trả kho, đơn chưa xuất hoặc chi tiết hàng không khớp. 401: chưa đăng nhập. 403: thiếu quyền hoặc ngoài phạm vi kho.
+  - Lưu ảnh nhị phân và thông tin xác nhận trong DB cùng giao dịch với trạng thái điểm/đơn; khóa chuyến và đơn khi cập nhật. Không ghi file public hay lưu localStorage. Không tự kiểm chứng nội dung chữ ký trong ảnh.
+- `GET /api/warehouse/delivery-trips/{id}/stops/{stopId}/proof`
+  - `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` từ DB hoặc `ROLE_ADMIN`, cùng phạm vi kho.
+  - Trả ảnh dưới dạng attachment, MIME do backend nhận diện, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`; 404 khi điểm chưa có chứng từ. Không trả bytes ảnh trong JSON danh sách.
+- `PUT .../stops/{stopId}/status` không thể chuyển `DELIVERED` nếu chưa có xác nhận ảnh. Điểm đã giao hoặc đã trả kho không được sửa trạng thái.
+- Giao thất bại: `status=FAILED`, bắt buộc `failedReason` tối đa 500 ký tự; ghi nhận hàng đang trên chuyến. Khi thực nhận hàng về kho, gọi `POST .../stops/{stopId}/return-to-warehouse` với `returnReason` để ghi nhận hoàn kho một lần. Giữ quy tắc S6-07: FAILED không tự tăng tồn kho.
+- Đơn liên kết chuyến phải dùng confirm-delivery, không được đi tắt qua `PUT /api/orders/{id}/delivery` hoặc chuyển trạng thái đơn sang DELIVERED. Đơn chưa thuộc chuyến giữ luồng S5-01 hiện có.
+- Kết nối Sprint 7: chỉ sau xác nhận hợp lệ mới đặt đơn EXPORTED/SHIPPED thành DELIVERED, ghi ngày giao thực tế và số lượng thực giao/quy đổi cơ sở. S6-08 xác nhận giao đủ đơn, đối chiếu sản phẩm, đơn vị và số lượng với chi tiết chuyến. API hóa đơn S7-01 hiện có sẽ đọc các dữ liệu này; phát hành hóa đơn vẫn là thao tác riêng có quyền INVOICE_CREATE.
+- Schema: Hibernate `ddl-auto=update` hiện có bổ sung `delivery_trip_stops.signed_proof MEDIUMBLOB`, `proof_content_type VARCHAR(30)`, `confirmed_by VARCHAR(100)` (nullable cho dữ liệu cũ). Không backfill ảnh hay tự coi các xác nhận cũ là có chứng từ.
+- Frontend cần gửi FormData bằng token, thêm người nhận/thời gian/file, gọi proof có xác thực, đồng bộ quyền và ẩn/vô hiệu hóa nút khi thiếu WAREHOUSE_EXPORT. Branch này chỉ triển khai backend, chưa có UI S6-08.
+
 ## S8-08 — Xuất báo cáo tồn kho ra Excel
 
 ### Endpoint
@@ -4016,6 +4316,17 @@ Kiểm thử: `mvn -q "-Dtest=CashCollectionIntegrationTest,RolePermissionConfig
 
 ## S7-07 — Đại lý tự xem công nợ, hạn mức còn lại và tải lại hóa đơn (23/10/2026)
 
+### Cập nhật backend và kết nối frontend — 25/10/2026
+
+- Màn hình `Kinh doanh → Công nợ của tôi` (`/dealer-invoices`) dùng `/portal/debt/summary` với `FINANCE_VIEW_DEBT` và `/portal/invoices/**` với `INVOICE_VIEW`, độc lập nhau; Admin luôn được phép. API lấy đại lý từ liên kết tài khoản DB; tài khoản nội bộ không có vai trò đại lý không được dùng portal. Admin chọn `dealerId` để hỗ trợ, đại lý không thể đổi sang hồ sơ khác.
+- Khi thiếu `INVOICE_VIEW`, cả `/portal/debt` và `/portal/debt/summary` trả `invoices: []`. `/portal/profile` không trả giá trị công nợ/hạn mức nếu thiếu `FINANCE_VIEW_DEBT` (các trường tiền là `null`). Cả endpoint cũ `/portal/debt` và endpoint summary đều yêu cầu `FINANCE_VIEW_DEBT`; `ORDER_VIEW` đơn lẻ không đọc được tổng nợ. Cổng tự đặt hàng S4-10 bỏ gọi API tổng nợ khi thiếu quyền, hiển thị thiếu quyền trên thẻ công nợ; giỏ hàng vẫn được kiểm tra bằng API preview đơn hàng hiện có. Trang S7-07 không tự chuyển sang endpoint khác khi bị từ chối quyền.
+- Phân trang danh sách: `page >= 0`, `1 <= size <= 100`; trang rất lớn trả nội dung rỗng, không tràn số. Khoảng ngày đảo ngược hoặc `paymentStatus` không hợp lệ trả `400`; trạng thái hợp lệ: `UNPAID`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`, `CANCELLED` (không phân biệt hoa/thường).
+- `InvoiceResponse.effectiveAmount` là giá trị phải thu sau điều chỉnh và các khoản trả hàng **đã xác nhận**. Trả hàng nháp không giảm nợ. Giữ nguyên `totalAmount` và `adjustedTotalAmount` trên hóa đơn gốc; `paidAmount`, `remainingAmount`, `paymentStatus`, `isPaid` cùng dựa vào phân bổ FIFO hiện có. Hóa đơn hủy vẫn được xem/tải như chứng từ lịch sử, có trạng thái `CANCELLED`, số còn nợ bằng `0`, `isPaid = false`.
+- Bổ sung `exactAmounts` song song với các trường số cũ trên `DealerDebtResponse`, `InvoiceResponse`, `InvoiceItemResponse`, `InvoiceAdjustmentResponse`. Giá trị là chuỗi thập phân từ `BigDecimal.toPlainString()` (hoặc `null`), ví dụ `"remainingAmount": "3499999.75"`; frontend ưu tiên chuỗi này để giữ phần lẻ và số lớn. Trường số cũ được giữ để tương thích client khác. Dòng hóa đơn dùng `invoicedQuantity`, `totalAmount`; điều chỉnh dùng `adjustmentTypeLabel`, `adjustmentReason`.
+- Frontend hiển thị `availableOrderLimit` do server tính, không tự chặn khi chính sách quá hạn vẫn cho lấy hàng. Tổng nợ không âm; tiền nộp thừa không làm hạn mức khả dụng vượt hạn mức cấp. Bảng/xuất Excel ghi rõ chỉ tổng/xuất trang hiện tại; giá trị phải thu hiện tại tách khỏi tổng hóa đơn gốc trong chi tiết.
+- PDF và HTML bản in trả `Cache-Control: no-store`. PDF giữ phần lẻ tiền, ưu tiên font tiếng Việt đóng gói; định dạng số an toàn khi nhiều yêu cầu đồng thời. HTML escape dữ liệu tên/địa chỉ/sản phẩm/ghi chú; iframe xem trước không cho chạy script. GET chỉ đọc và dựng tài liệu, không phát hành lại hoặc sửa chứng từ.
+- Thu hồi quyền trên JWT hiện tại có hiệu lực ở request kế tiếp; frontend hủy yêu cầu và xóa dữ liệu/modal/bản in cũ, bỏ kết quả trả muộn. Kiểm thử bằng H2 cách ly và Chrome với HTTP fixture; không ghi dữ liệu vào DB nghiệp vụ thật.
+
 Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứu công nợ của chính mình qua Cổng Đại lý (`/api/portal/**`), để biết còn nợ bao nhiêu, còn được lấy hàng bao nhiêu, xem danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái, và xem/tải lại hóa đơn đã phát hành.
 
 ### 1. Nguyên tắc nghiệp vụ cốt lõi
@@ -4050,7 +4361,7 @@ Tài liệu hợp đồng API cho phép Đại lý (`ROLE_DEALER`) tự tra cứ
 
 | Method | Endpoint | Quyền yêu cầu | Mô tả |
 |---|---|---|---|
-| `GET` | `/api/portal/debt` | `ORDER_VIEW` hoặc `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Tra cứu thông tin công nợ, hạn mức còn lại, hạn mức còn được lấy hàng và danh sách hóa đơn của đại lý |
+| `GET` | `/api/portal/debt` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Tra cứu công nợ/hạn mức; danh sách hóa đơn chỉ kèm khi có INVOICE_VIEW |
 | `GET` | `/api/portal/debt/summary` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem tổng quan công nợ, tổng còn nợ, hạn mức còn lại, hạn mức còn được lấy hàng, thống kê hóa đơn và lịch sử thanh toán |
 | `GET` | `/api/portal/debt/payments` | `FINANCE_VIEW_DEBT` hoặc `ADMIN` | Xem lịch sử các đợt thanh toán công nợ của chính đại lý |
 | `GET` | `/api/portal/invoices` (alias `/api/portal/debt/invoices`) | `INVOICE_VIEW` hoặc `ADMIN` | Danh sách hóa đơn phân trang kèm số tiền, hạn thanh toán, trạng thái (`status`, `paymentStatus`, `startDate`, `endDate`, `keyword`, `page`, `size`) |
@@ -4448,6 +4759,33 @@ Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và
 | `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
 | `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
 | `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
+
+## Sprint 6 — Hiệu chỉnh xuất từng phần, chuyến giao và nhập trả (25/10/2026)
+
+**Cập nhật từ kiểm tra MySQL thật:** `audit_logs.action` dùng `VARCHAR(100)` để lưu đầy đủ tên hành động như `ASSIGN_PRODUCT_LOCATION`/`REMOVE_PRODUCT_LOCATION`. Cột VARCHAR(20) cũ làm giao dịch gán vị trí thất bại. Đã mở rộng cột trên máy kiểm thử, giữ charset/collation và dữ liệu; mô hình JPA cập nhật cùng nhánh để các lần khởi động/schema migration tiếp theo giữ đúng kích thước. Không reset database. Bằng chứng web: `docs/SPRINT6_WEB_CHECK.md`.
+
+Mục này cập nhật hợp đồng S6-05/06/08/09; thay thế các mô tả cũ yêu cầu xuất đủ đơn mới gán chuyến hoặc frontend S6-08 chỉ xem trước.
+
+| API | Quyền DB | Hợp đồng hiện tại |
+|---|---|---|
+| `GET /api/warehouse/delivery-trips/options` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` | Kho trong phạm vi, trạng thái, `canManage`, `failureReasons[{value,label}]`, `proofMaxBytes`, `proofMaxPixels`, `proofContentTypes` |
+| `GET /api/warehouse/delivery-trips/eligible-orders?warehouseId=...` | Như trên | Một dòng cho mỗi phiếu EXPORT/CONFIRMED còn hàng và chưa gán chuyến; có `shipmentVoucherId`, `shipmentVoucherCode`. Một đơn có thể có nhiều dòng; đơn xuất thiếu được giao phần đã xuất |
+| `POST /api/warehouse/delivery-trips` | `WAREHOUSE_EXPORT` | Chỉ một trong ba danh sách: `shipmentVoucherIds`, `orderIds`, hoặc `stops`. Ưu tiên `stops[{orderId,shipmentVoucherId,note}]` theo thứ tự giao; hàng, quy đổi, lô và tiền lấy từ phiếu/đơn gốc, không tin dữ liệu hàng/tiền client. Phiếu phải cùng kho với đơn và chuyến, không dùng lặp |
+| `GET /api/warehouse/delivery-trips`, `/{id}` | VIEW hoặc EXPORT | Page chuyến có các `stops`; mỗi điểm có `shipmentVoucherId`, `voucherCode`, `orderStatus`, `orderStatusDisplayName`, `orderFullyDelivered`, `canConfirm`, `canReturn`, `returnReason`. Dòng hàng thêm `baseQuantity`, `baseUnit`, `lotNumber`, `expiryDate` |
+| `POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/confirm-delivery` | EXPORT | Multipart: `receiverName` (bắt buộc, tối đa 100), `deliveredAt` (ISO local datetime, từ lúc xuất phát tới hiện tại), `proof` (PNG/JPEG hợp lệ ≤5 MiB, ≤20 triệu điểm ảnh). Trả chi tiết chuyến. Lưu ảnh, cộng thực giao, lịch sử và audit trong cùng giao dịch |
+| `PUT /api/warehouse/delivery-trips/{id}/stops/{stopId}/status` | EXPORT | `status=FAILED`, `failedReason` bắt buộc; thêm `failureReasonCode` từ options (`CLOSED/ABSENT/REFUSED/ADDRESS/OTHER`). Không tự hoàn tồn. `DELIVERED` cần chứng từ qua endpoint multipart |
+| `POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/return-to-warehouse` | EXPORT | `returnReason` bắt buộc ≤500; `note` tùy chọn ≤500. Chỉ nhận điểm FAILED hoặc PENDING của chuyến đã đóng/hủy, chưa nhận trả. Người thao tác xác nhận đã thực nhận hàng. Khôi phục đúng số cơ sở và lô/NSX/HSD đóng băng, giữ chỗ lại cho đơn còn hiệu lực, giảm số đã xuất và mở nợ hàng để xuất lại; không nhận lặp |
+| `GET /api/warehouse/delivery-trips/{id}/stops/{stopId}/proof` | VIEW hoặc EXPORT | Ảnh được bảo vệ theo phạm vi kho; `Cache-Control: no-store`; không có ảnh trả 404 |
+| `POST /api/warehouse/order-shipments/{id}/confirm` | EXPORT | Đơn còn nợ hàng có thể xuất bù khi đang SHIPPING; giữ trạng thái SHIPPING trong khi còn chuyến giao |
+| `GET /api/portal/orders/{id}` | `ORDER_VIEW`, phạm vi đại lý của phiên | `deliveryMilestones`, `pickingAt/exportedAt/shippingAt/deliveredAt` và thực giao tích lũy. Giao một phiếu không tự hoàn tất đơn; chỉ ngày giao cũ không được đổi thành giờ 00:00 giả |
+
+`ROLE_ADMIN` luôn được phép. Quyền được đọc từ ma trận DB ở mỗi request, gồm JWT đã đăng nhập; bỏ quyền có hiệu lực ngay request tiếp theo. Vai trò chỉ giới hạn phạm vi dữ liệu. Frontend đọc VIEW hoặc EXPORT; ghi cần EXPORT cùng cờ nghiệp vụ server.
+
+**Giao từng phần:** mỗi điểm gắn một phiếu xuất bất biến và đóng băng dòng nguồn/đơn vị/lô. Thực giao cộng dồn, không vượt lượng đã xuất hoặc lượng đặt. Đơn chỉ DELIVERED khi mọi dòng đã giao đủ; trước đó không đủ điều kiện phát hành hóa đơn S7-01. Nhập trả là thao tác vật lý riêng, không tự xảy ra khi báo giao thất bại/hủy chuyến. Đơn CANCELLED/REJECTED nhận hàng về nhưng không được giữ chỗ/mở lại.
+
+**Khóa và hoàn tác:** tạo chuyến khóa đơn theo ID, khóa phiếu và ràng buộc unique `shipment_voucher_id`; xác nhận/nhập trả khóa chuyến và đơn trước khi làm bẩn dòng điểm giao. Nhập trả khóa tồn/lô theo thứ tự sản phẩm. Lỗi ghi audit cũng hoàn tác ảnh, số thực giao, tồn/lô, giữ chỗ và trạng thái; không tự gửi lại khi chưa rõ kết quả lưu.
+
+**Dữ liệu cũ:** các cột snapshot/nguồn mới cho phép null, không xóa/reset dữ liệu. Đơn xuất cũ không có phiếu chỉ dùng thông tin quy đổi đã chốt trên đơn khi xác định được duy nhất dòng hàng; hàng quản lý lô thiếu chứng từ phải đối soát, không suy đoán lô hay tự cộng tồn. Điểm thủ công không gắn đơn không được cộng tồn/phát sinh hóa đơn. Giao dịch nhập trả lịch sử thiếu snapshot vẫn được thẻ kho đọc theo cách ghi cũ, không tự viết lại lịch sử.
 ---
 
 ## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend — 24/10/2026)
@@ -4500,3 +4838,110 @@ Hỗ trợ Quản lý kho xem báo cáo giá trị tồn kho theo từng kho và
 | `GET` | `/api/reports/inventory-turnover/skus` (alias `/items`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách phân trang số ngày tồn bình quân và hệ số vòng quay của từng SKU |
 | `GET` | `/api/reports/inventory-turnover/slow-moving` | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Danh sách các SKU chậm luân chuyển đang chôn vốn (sắp xếp theo giá trị chôn vốn giảm dần) |
 | `GET` | `/api/reports/inventory-turnover/export` (alias `/export/excel`, `/excel`) | `REPORT_INVENTORY` hoặc `ROLE_ADMIN` | Xuất báo cáo tồn kho và vòng quay hàng ra file Excel (`.xlsx`) |
+
+
+## S8-09 - Báo cáo công nợ quá hạn theo tuổi nợ (Backend - 25/10/2026)
+
+Hỗ trợ Kế toán công nợ xem báo cáo công nợ quá hạn theo tuổi nợ, phân tích tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách, chỉ ra đại lý có mức độ rủi ro cao nhất để ưu tiên xử lý trước, và xuất toàn bộ dữ liệu ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-09)
+
+1. **Tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách**:
+   - Tuổi nợ quá hạn tính từ hạn thanh toán (`dueDate` của hóa đơn hoặc ngày ghi nhận đơn hàng + `maxDebtDays` của đại lý) đến ngày chốt báo cáo (`asOfDate`).
+   - Mặc định 3 nhóm tuổi nợ chuẩn:
+     - Nhóm 1 (`recent`): Quá hạn 1–14 ngày (`minDays = 1, maxDays = 14`).
+     - Nhóm 2 (`middle`): Quá hạn 15–44 ngày (`minDays = 15, maxDays = 44`).
+     - Nhóm 3 (`old`): Quá hạn từ 45 ngày (`minDays = 45, maxDays = null`).
+   - Đối trừ thu tiền theo nguyên tắc FIFO (hóa đơn/chứng từ cũ nhất thanh toán trước) để xác định chính xác số tiền còn nợ quá hạn của từng khoản nợ.
+   - Tổng hợp số liệu theo từng nhóm tuổi nợ (`bucketTotals`) và theo từng nhân viên phụ trách (`employeeTotals`). Đại lý chưa gán nhân viên phụ trách được gom vào nhóm `Chưa phân công` (`employeeId = null`).
+   - Tính nhất quán số liệu toán học: Tổng tiền toàn báo cáo = Tổng tiền các nhóm tuổi nợ = Tổng tiền các nhân viên = Tổng tiền chi tiết các đại lý quá hạn.
+2. **Chỉ ra đại lý có rủi ro cao nhất để xử lý trước**:
+   - Tiêu chí xếp hạng rủi ro (`riskRank`, `riskLabel`, `riskBasis`):
+     - Thứ tự ưu tiên giảm dần: Số ngày quá hạn lớn nhất (`maxOverdueDays`) giảm dần $\rightarrow$ Tổng tiền nợ quá hạn (`overdueAmount`) giảm dần $\rightarrow$ ID đại lý tăng dần để ổn định thứ tự.
+     - Hạng rủi ro (`riskRank`): Bắt đầu từ 1, tăng dần. Đại lý có số ngày quá hạn dài nhất và tiền nợ lớn nhất luôn đứng đầu (`riskRank = 1`). Đại lý có cùng số ngày quá hạn và cùng số tiền được đồng hạng.
+     - Nhãn mức độ rủi ro (`riskLabel`):
+       - `Ưu tiên cao`: Đại lý đứng đầu rank 1, hoặc quá hạn từ 45 ngày trở lên, hoặc nợ quá hạn từ 50.000.000 VND trở lên.
+       - `Cần theo dõi`: Quá hạn từ 15–44 ngày, hoặc nợ quá hạn từ 20.000.000 VND trở lên.
+       - `Theo dõi`: Các trường hợp còn lại.
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Thông tin chung` (Thông tin ngày chốt, thời điểm tạo, múi giờ, tiêu chí rủi ro và thẻ KPI tổng hợp).
+     - Sheet 2: `Nhóm tuổi nợ` (Bảng tổng hợp tiền và số lượng đại lý theo 3 nhóm tuổi nợ).
+     - Sheet 3: `Theo nhân viên` (Bảng tổng hợp tiền theo từng nhóm tuổi nợ của từng nhân viên phụ trách).
+     - Sheet 4: `Chi tiết đại lý rủi ro` (Danh sách chi tiết toàn bộ đại lý quá hạn theo thứ tự ưu tiên rủi ro).
+   - Tự động làm sạch/escape các ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+   - Giữ nguyên độ chính xác tiền tệ thập phân, chống tràn số 15 chữ số của Excel.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu**:
+   - Bắt buộc có quyền `REPORT_FINANCE` (hoặc `ROLE_ADMIN`) trong ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: thu hồi `REPORT_FINANCE` khỏi vai trò của user lập tức trả `403 Forbidden` trên cùng JWT token.
+   - Tài khoản đại lý (`ROLE_DEALER`) bị chặn hoàn toàn (`403 Forbidden`) đối với báo cáo tài chính nội bộ.
+   - Tài khoản nhân viên kinh doanh thuần túy (`ROLE_SALES`) chỉ được phép xem dữ liệu của các đại lý do mình phụ trách; chặn 403 nếu cố tình lọc nhân viên khác hoặc lọc chưa phân công.
+
+### 2. Danh sách Endpoints (`/api/reports/debt-aging`, `/api/finance/reports/debt-aging`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/debt-aging/options` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Lấy ngày chốt tối đa, múi giờ, định nghĩa các nhóm tuổi nợ và danh sách nhân viên phụ trách |
+| `GET` | `/api/reports/debt-aging` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp công nợ quá hạn theo tuổi nợ, theo nhân viên và bảng đại lý xếp hạng rủi ro |
+| `GET` | `/api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Xuất toàn bộ báo cáo công nợ quá hạn theo tuổi nợ ra file Excel (`.xlsx`) |
+
+
+## S8-09 - Báo cáo công nợ quá hạn theo tuổi nợ (Backend - 25/10/2026)
+
+Hỗ trợ Kế toán công nợ xem báo cáo công nợ quá hạn theo tuổi nợ, phân tích tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách, chỉ ra đại lý có mức độ rủi ro cao nhất để ưu tiên xử lý trước, và xuất toàn bộ dữ liệu ra file Excel (`.xlsx`).
+
+### 1. Quy tắc nghiệp vụ cốt lõi (Acceptance Criteria S8-09)
+
+1. **Tổng hợp theo nhóm tuổi nợ và theo nhân viên phụ trách**:
+   - Tuổi nợ quá hạn tính từ hạn thanh toán (`dueDate` của hóa đơn hoặc ngày ghi nhận đơn hàng + `maxDebtDays` của đại lý) đến ngày chốt báo cáo (`asOfDate`).
+   - Mặc định 3 nhóm tuổi nợ chuẩn:
+     - Nhóm 1 (`recent`): Quá hạn 1–14 ngày (`minDays = 1, maxDays = 14`).
+     - Nhóm 2 (`middle`): Quá hạn 15–44 ngày (`minDays = 15, maxDays = 44`).
+     - Nhóm 3 (`old`): Quá hạn từ 45 ngày (`minDays = 45, maxDays = null`).
+   - Đối trừ thu tiền theo nguyên tắc FIFO (hóa đơn/chứng từ cũ nhất thanh toán trước) để xác định chính xác số tiền còn nợ quá hạn của từng khoản nợ.
+   - Tổng hợp số liệu theo từng nhóm tuổi nợ (`bucketTotals`) và theo từng nhân viên phụ trách (`employeeTotals`). Đại lý chưa gán nhân viên phụ trách được gom vào nhóm `Chưa phân công` (`employeeId = null`).
+   - Tính nhất quán số liệu toán học: Tổng tiền toàn báo cáo = Tổng tiền các nhóm tuổi nợ = Tổng tiền các nhân viên = Tổng tiền chi tiết các đại lý quá hạn.
+2. **Chỉ ra đại lý có rủi ro cao nhất để xử lý trước**:
+   - Tiêu chí xếp hạng rủi ro (`riskRank`, `riskLabel`, `riskBasis`):
+     - Thứ tự ưu tiên giảm dần: Số ngày quá hạn lớn nhất (`maxOverdueDays`) giảm dần $\rightarrow$ Tổng tiền nợ quá hạn (`overdueAmount`) giảm dần $\rightarrow$ ID đại lý tăng dần để ổn định thứ tự.
+     - Hạng rủi ro (`riskRank`): Bắt đầu từ 1, tăng dần. Đại lý có số ngày quá hạn dài nhất và tiền nợ lớn nhất luôn đứng đầu (`riskRank = 1`). Đại lý có cùng số ngày quá hạn và cùng số tiền được đồng hạng.
+     - Nhãn mức độ rủi ro (`riskLabel`):
+       - `Ưu tiên cao`: Đại lý đứng đầu rank 1, hoặc quá hạn từ 45 ngày trở lên, hoặc nợ quá hạn từ 50.000.000 VND trở lên.
+       - `Cần theo dõi`: Quá hạn từ 15–44 ngày, hoặc nợ quá hạn từ 20.000.000 VND trở lên.
+       - `Theo dõi`: Các trường hợp còn lại.
+3. **Xuất Excel (`.xlsx`)**:
+   - Endpoint `GET /api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet:
+     - Sheet 1: `Thông tin chung` (Thông tin ngày chốt, thời điểm tạo, múi giờ, tiêu chí rủi ro và thẻ KPI tổng hợp).
+     - Sheet 2: `Nhóm tuổi nợ` (Bảng tổng hợp tiền và số lượng đại lý theo 3 nhóm tuổi nợ).
+     - Sheet 3: `Theo nhân viên` (Bảng tổng hợp tiền theo từng nhóm tuổi nợ của từng nhân viên phụ trách).
+     - Sheet 4: `Chi tiết đại lý rủi ro` (Danh sách chi tiết toàn bộ đại lý quá hạn theo thứ tự ưu tiên rủi ro).
+   - Tự động làm sạch/escape các ô văn bản mở đầu bằng `=`, `+`, `-`, `@` để chống Spreadsheet Formula Injection.
+   - Giữ nguyên độ chính xác tiền tệ thập phân, chống tràn số 15 chữ số của Excel.
+4. **Ma trận phân quyền DB & Phạm vi dữ liệu**:
+   - Bắt buộc có quyền `REPORT_FINANCE` (hoặc `ROLE_ADMIN`) trong ma trận phân quyền DB (`RolePermissionConfig`).
+   - Tuyệt đối không dùng role-based fallback: thu hồi `REPORT_FINANCE` khỏi vai trò của user lập tức trả `403 Forbidden` trên cùng JWT token.
+   - Tài khoản đại lý (`ROLE_DEALER`) bị chặn hoàn toàn (`403 Forbidden`) đối với báo cáo tài chính nội bộ.
+   - Tài khoản nhân viên kinh doanh thuần túy (`ROLE_SALES`) chỉ được phép xem dữ liệu của các đại lý do mình phụ trách; chặn 403 nếu cố tình lọc nhân viên khác hoặc lọc chưa phân công.
+
+### 2. Danh sách Endpoints (`/api/reports/debt-aging`, `/api/finance/reports/debt-aging`)
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/reports/debt-aging/options` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Lấy ngày chốt tối đa, múi giờ, định nghĩa các nhóm tuổi nợ và danh sách nhân viên phụ trách |
+| `GET` | `/api/reports/debt-aging` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp công nợ quá hạn theo tuổi nợ, theo nhân viên và bảng đại lý xếp hạng rủi ro |
+| `GET` | `/api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Xuất toàn bộ báo cáo công nợ quá hạn theo tuổi nợ ra file Excel (`.xlsx`) |
+
+# S8-03 — Phiếu điều chỉnh tồn kho có phê duyệt
+
+## Luồng và quyền
+
+| Method | Endpoint | Quyền DB | Tác dụng |
+|---|---|---|---|
+| `POST` | `/api/warehouse/adjustment-vouchers` | `WAREHOUSE_ADJUST` | Tạo phiếu `PENDING_APPROVAL`, ghi lý do thuộc `DAMAGED`, `LOST`, `EXPIRED` (hoặc `OTHER`), số lượng và giá trị tổn thất theo dòng. Không đổi tồn kho. |
+| `POST` | `/api/warehouse/adjustment-vouchers/{id}/approve` | `WAREHOUSE_APPROVE` | Chặn người lập tự duyệt; khóa phiếu, kho và tồn từng SKU; kiểm tra tồn khả dụng/giữ chỗ; cập nhật tồn và ghi sổ cùng transaction. Trạng thái thành `APPROVED`, có người duyệt và thời điểm duyệt. |
+| `POST` | `/api/warehouse/adjustment-vouchers/{id}/reject` | `WAREHOUSE_APPROVE` | Bắt buộc lý do; lưu người từ chối và lý do, không đổi tồn. |
+| `GET` | `/api/warehouse/vouchers?type=ADJUSTMENT` | `WAREHOUSE_VIEW` | Danh sách phiếu điều chỉnh cùng trạng thái, lập/duyệt/từ chối và giá trị tổn thất. |
+
+`ROLE_ADMIN` luôn được phép theo chính sách chung. Các quyền chức năng được lấy từ ma trận quyền DB; cấu hình mặc định cấp `WAREHOUSE_ADJUST` và `WAREHOUSE_APPROVE` cho Quản lý kho. Thu hồi quyền có hiệu lực theo cơ chế xác thực hiện hành ở request kế tiếp. Phiếu `APPROVED` được lấy vào thẻ kho với lượng cơ sở có dấu âm; `PENDING_APPROVAL` và `REJECTED` không tạo phát sinh tồn.
+
+Giá trị tổn thất mỗi dòng phải dương và được lưu riêng; tổng phiếu được tính từ các dòng. Duyệt thất bại nếu tồn vật lý sau điều chỉnh âm hoặc thấp hơn lượng đang giữ chỗ. Hệ thống dùng giao dịch và khóa hàng để tránh ghi sổ dở dang.

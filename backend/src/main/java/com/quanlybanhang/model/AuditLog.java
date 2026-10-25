@@ -22,7 +22,7 @@ public class AuditLog {
     @Column(nullable = false, length = 100)
     private String entityId;
 
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 100)
     private String action; // CREATE, UPDATE, DELETE
 
     @Column(columnDefinition = "TEXT")

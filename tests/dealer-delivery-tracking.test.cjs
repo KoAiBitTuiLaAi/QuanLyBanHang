@@ -2,6 +2,14 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const tracking = require('../frontend/js/dealer-delivery-tracking.js');
 
+test('S6-09 consumes real backend timestamps and keeps partial delivery in SHIPPING',()=>{
+ const times=['2026-10-21T08:00:00','2026-10-21T09:00:00','2026-10-21T10:00:00','2026-10-21T11:00:00','2026-10-21T12:00:00'];
+ const full=tracking.model({status:'DELIVERED',approvedAt:times[0],pickingAt:times[1],exportedAt:times[2],shippingAt:times[3],deliveredAt:times[4]});
+ assert.deepEqual(full.steps.map(s=>s.at?.value),times);
+ const partial=tracking.model({status:'SHIPPING',shippingAt:times[3],deliveredAt:times[4]});
+ assert.equal(partial.steps[4].at,null);assert.equal(partial.steps[3].state,'current');
+});
+
 test('S6-09: five milestones in order; export never implies shipping or preceding milestones', () => {
   const data = tracking.model({status:'EXPORTED',backordered:true});
   assert.deepEqual(data.steps.map(s=>s.label), ['Đã duyệt','Đang soạn','Đã xuất','Đang giao','Đã giao']);

@@ -1,4 +1,4 @@
-/** S8-06. Báo cáo doanh số đa chiều — chỉ frontend, gọi API backend khi có. */
+/** S8-06. Báo cáo doanh số đa chiều — gọi API backend chuẩn phân quyền ma trận DB. */
 (() => {
   if (!Auth.requireLogin()) return;
   const $ = id => document.getElementById(id);
@@ -16,10 +16,10 @@
     showMargin: false, showCompare: false
   };
 
-  /** Quyền xem báo cáo: ORDER_VIEW (doanh số nói chung). */
-  const allowed = () => Auth.hasPermission('ORDER_VIEW');
-  /** Quyền xem biên lợi nhuận: chỉ Quản lý kinh doanh (ROLE_SALES_MANAGER) hoặc ADMIN. */
-  const canSeeMargin = () => Auth.hasRole('ROLE_ADMIN') || Auth.hasRole('ROLE_SALES_MANAGER');
+  /** Quyền xem báo cáo: ORDER_VIEW hoặc REPORT_SALES từ ma trận phân quyền DB. */
+  const allowed = () => Auth.hasRole('ROLE_ADMIN') || Auth.hasPermission('REPORT_SALES') || Auth.hasPermission('ORDER_VIEW');
+  /** Quyền xem biên lợi nhuận: chỉ người có quyền FINANCE_VIEW_PROFIT_MARGIN hoặc ROLE_ADMIN từ ma trận phân quyền DB. */
+  const canSeeMargin = () => Auth.hasRole('ROLE_ADMIN') || Auth.hasPermission('FINANCE_VIEW_PROFIT_MARGIN');
 
   function error(text = '') { $('sr-error').textContent = text; $('sr-error').hidden = !text; }
   function empty(text) {
@@ -70,11 +70,18 @@
     return `/reports/sales?${params}`;
   }
 
+  function formatLocalYmd(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   function setDefaults() {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    $('sr-from-date').value = firstDay.toISOString().slice(0, 10);
-    $('sr-to-date').value = now.toISOString().slice(0, 10);
+    $('sr-from-date').value = formatLocalYmd(firstDay);
+    $('sr-to-date').value = formatLocalYmd(now);
   }
 
   function renderSummary(summary) {
@@ -193,7 +200,6 @@
       state.optionsReady = true;
       state.filters = filterValues();
       controls();
-      // Không tự động load mà đợi người dùng bấm Xem báo cáo
       empty('Chọn bộ lọc và bấm Xem báo cáo.');
     } catch (e) {
       if (e.name === 'AbortError' || version !== state.initVersion) return;
@@ -263,7 +269,6 @@
       state.rows = []; state.optionsReady = false; state.loading = false; controls(); empty('Bạn không còn quyền xem báo cáo doanh số.');
       location.href = '/error?status=403';
     }
-    // Nếu đang hiển thị dữ liệu và trạng thái margin thay đổi, cập nhật hiển thị
     if (state.rows.length) render();
   });
 
