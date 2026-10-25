@@ -85,7 +85,9 @@
 - S7-02: Tài chính → Ghi nhận thanh toán → Ghi số tiền, hình thức thu, đối trừ tự động FIFO hoặc chọn hoá đơn cụ thể, thu một phần, tra cứu nợ và lập bút toán điều chỉnh.
 - S7-04: Tự đánh giá rủi ro nợ định kỳ và sau thu tiền; chỉ backend → `/api/finance/debt/config` (cấu hình), `/api/finance/debt/flagged-dealers` (cảnh báo).
 - S7-05: Tài chính → Thu tiền theo tuyến → Ghi khoản thu kèm biên lai, xem chi tiết, xác nhận nhận tiền, đối chiếu theo nhân viên/ngày thu.
-- S7-07: Một phần: Kinh doanh → Cổng đại lý → Xem giỏ hàng → Tổng kết & Công nợ; chưa có danh sách/tải hoá đơn cho đại lý.
+- S7-06: Tài chính → Đối chiếu công nợ → Lập biên bản đối chiếu định kỳ (đầu kỳ, phát sinh, cuối kỳ), xuất PDF, gửi đại lý xác nhận hoặc phản hồi lệch.
+- S7-07: Kinh doanh → Công nợ của tôi → Xem tổng còn nợ, hạn mức còn lại, danh sách hoá đơn kèm hạn thanh toán, xem và tải PDF hoá đơn đã phát hành.
+- S7-08: Tự động chạy hàng ngày lúc 7h; Kinh doanh → Thông báo của tôi → Xem nhắc hạn thanh toán trước 3 ngày, quá hạn, lọc chưa đọc, đánh dấu đã đọc.
 - S7-09: Tài chính → Ghi nhận thanh toán → In phiếu thu tiền công nợ (mã duy nhất, thông tin đại lý, số tiền bằng số/chữ, hình thức, người thu), in hoặc tải file PDF.
 
 ## Sprint 8 — Trả hàng và báo cáo
@@ -95,8 +97,9 @@
 - S8-03: Kho hàng → Phiếu điều chỉnh → Lập phiếu điều chỉnh (chọn kho, lý do hàng hỏng/mất/hết hạn, ghi rõ giá trị tổn thất), xem chi tiết, liên kết Thẻ kho, Quản lý kho phê duyệt hoặc từ chối (ràng buộc người lập và người duyệt không được là một).
 - S8-04: Chỉ backend → `/api/sales-targets` (đặt/sửa/khóa chỉ tiêu tháng theo nhân viên và khu vực, sửa kỳ đã khóa kèm lý do và nhật ký), `/api/sales-targets/my-progress` (nhân viên xem tiến độ thực tế giữa tháng), `/api/sales-targets/summary` (tổng hợp tiến độ); tự động khóa chỉ tiêu đã qua kỳ.
 - S8-05: Báo cáo → Dashboard điều hành → Sáu chỉ số, doanh số theo ngày/khu vực, đại lý quá hạn và phân trang; lối tắt ở Tổng quan → Công việc.
+- S8-06: Một phần (frontend): Kinh doanh → Báo cáo doanh số → Chọn chiều nhóm, bộ lọc, so sánh cùng kỳ và xuất Excel; chờ API backend để tải/xuất dữ liệu thật.
 - S8-07: Báo cáo → Tồn kho & Vòng quay → Xem giá trị tồn theo kho và theo nhóm hàng, số ngày tồn bình quân SKU, phát hiện hàng chậm luân chuyển đang chôn vốn và xuất Excel.
-- S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel (ba cột tồn); tên tệp hiện là `So-ton-kho.xlsx`, chưa kèm mã kho/ngày.
+- S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel; đã có API `/api/warehouse/stock-ledger/export` xuất XLSX theo bộ lọc, nút giao diện vẫn xuất tại trình duyệt và chưa nối API.
 - S8-09: Một phần (frontend): Báo cáo → Công nợ theo tuổi nợ → Tổng hợp nhóm tuổi nợ/nhân viên, ưu tiên đại lý và Excel; chờ backend để tải dữ liệu/xuất file thật.
 - S8-10: Tài chính → Sổ chi tiết công nợ → Chọn đại lý và khoảng thời gian, xem phát sinh tăng giảm kèm số dư lũy kế, xuất PDF và Excel.
 

@@ -98,6 +98,24 @@ const MenuConfig = (() => {
       roles: ["ROLE_ADMIN", "ROLE_DEALER"],
     },
     {
+      id: "dealer-notifications",
+      section: "Kinh doanh",
+      label: "Thông báo của tôi",
+      icon: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+      href: "/dealer-notifications",
+      permission: "NOTIFICATION_VIEW",
+      roles: ["ROLE_ADMIN", "ROLE_DEALER"],
+    },
+    {
+      id: "dealer-invoices",
+      section: "Kinh doanh",
+      label: "Công nợ của tôi",
+      icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+      href: "/dealer-invoices",
+      permission: "INVOICE_VIEW",
+      roles: ["ROLE_ADMIN", "ROLE_DEALER"],
+    },
+    {
       id: "price-lists",
       section: "Kinh doanh",
       label: "Bảng giá",
@@ -113,6 +131,15 @@ const MenuConfig = (() => {
       icon: '<path d="M9 14l2 2 4-4"/><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7"/><circle cx="18" cy="18" r="4"/><path d="M15 18h6M18 15v6"/>',
       href: "/discount-policies",
       permission: "PRODUCT_EDIT",
+      roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER"],
+    },
+    {
+      id: "sales-report",
+      section: "Kinh doanh",
+      label: "Báo cáo doanh số",
+      icon: '<path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 4-9"/>',
+      href: "/reports/sales",
+      permission: "ORDER_VIEW",
       roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER"],
     },
     {
@@ -332,6 +359,15 @@ const MenuConfig = (() => {
       permissions: ["INVOICE_VIEW", "INVOICE_ADJUST"],
     },
     {
+      id: "debt-reconciliation",
+      section: "Tài chính",
+      label: "Đối chiếu công nợ",
+      icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+      href: "/finance/debt-reconciliation",
+      roles: ALL_ROLES,
+      permission: "FINANCE_VIEW_DEBT",
+    },
+    {
       id: "debt-statement",
       section: "Tài chính",
       label: "Sổ chi tiết công nợ",
@@ -421,8 +457,8 @@ const MenuConfig = (() => {
     return menuItems.filter((item) => {
       if (isAdmin) return true;
       // Tài khoản chỉ là đại lý truy cập dữ liệu của chính mình qua cổng.
-      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal"].includes(item.id)) return false;
-      if (["dealer-orders", "dealer-portal", "audit-logs"].includes(item.id)
+      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal", "dealer-invoices", "debt-reconciliation", "dealer-notifications"].includes(item.id)) return false;
+      if (["dealer-orders", "dealer-portal", "dealer-invoices", "dealer-notifications", "audit-logs"].includes(item.id)
           && !item.roles.some((role) => roles.includes(role))) return false;
       if (item.requiredPermissions && !item.requiredPermissions.every(permission => permissions.includes(permission))) return false;
       if (item.permission) return permissions.includes(item.permission);
