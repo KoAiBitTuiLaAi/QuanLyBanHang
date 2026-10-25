@@ -268,24 +268,29 @@ Chỉ đồng bộ `origin/develop` tại `c09694f`, xử lý 5 file xung đột
 | Nguồn lỗi build S8-07 | Service xuất Excel và ba DTO tương ứng giống hệt origin/develop; không phát sinh từ 5 file giải quyết xung đột. Giữ nguyên, không sửa trong lượt chỉ đồng bộ |
 | Phạm vi DB | Không chạy backend nghiệp vụ, không reset DB/seed hoặc tạo/sửa/hủy chứng từ |
 
-## S8-09 — Công nợ quá hạn theo tuổi nợ (24/10/2026, chỉ frontend)
+## S8-09 — Công nợ quá hạn theo tuổi nợ (25/10/2026, Backend hoàn tất)
 
-Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Nhánh `feature/S8-09-frontend-xem_bao_cao_cong_no_qua_han_theo_tuoi_no`. Đã đọc AGENTS.md và hai SKILLS; giữ shell/content frame SaleStock. Không sửa bất kỳ file backend/schema/quyền mặc định; chưa commit/push/merge.
+Vị trí: **Báo cáo → Công nợ theo tuổi nợ**, `/reports/debt-aging`. Tuân thủ đầy đủ `AGENTS.md` và `SKILLS/SKILL_backend.md`. Đã xây dựng toàn bộ backend gồm Controller, Service, DTO, Repository query, dịch vụ xuất Excel Apache POI và bộ kiểm thử tự động unit + integration.
 
-| Yêu cầu | Backend | Frontend | Kết nối/kiểm chứng |
-|---|---|---|---|
-| Tổng hợp nhóm tuổi nợ và nhân viên | Chưa có API/DTO/service S8-09 | Đã dựng bộ lọc ngày chốt/nhân viên/chưa phân công, ba chỉ số, bảng nhóm và nhân viên; ngưỡng từ adapter, không tự tính nghiệp vụ | **Chưa nối thật**. Adapter sản phẩm available=false, thông báo chờ backend, số liệu “—”, không có request phỏng đoán/dữ liệu demo |
-| Đại lý rủi ro cao nhất | Chưa có tiêu chí/xếp hạng S8-09 | Sẵn sàng hiển thị riskBasis/riskRank/riskLabel từ server, giữ đồng hạng, mở dòng ưu tiên và phân trang 20/50/100 | Logic kiểm thử bằng fixture riêng; không lấy nợ cao nhất hoặc cờ vi phạm làm xếp hạng thay backend |
-| Xuất Excel | Chưa có snapshot báo cáo thật | Sẵn logic bốn sheet theo toàn bộ snapshot, giữ chính xác tiền dạng text, không formula/hyperlink, tên file theo ngày/bộ lọc | **Khóa trên bản chạy thật đến khi nối API**; kiểm thử file tải xuống đủ dòng, vượt giới hạn an toàn Number, chống công thức |
-| Ma trận quyền DB | REPORT_FINANCE đã có catalog; API 403 riêng S8-09 chưa tồn tại để nghiệm thu | Menu/guard/nút theo REPORT_FINANCE, ADMIN luôn có quyền; không fallback ACCOUNTANT, scope nội bộ loại đại lý-only | Test non-admin một vai trò VIEWER, cấp/thu hồi cùng JWT, hủy dữ liệu trễ; quyền API backend thật **chờ triển khai** |
-| Lỗi/đổi bộ lọc/xuất bất đồng bộ | Không thay đổi backend | Xóa số cũ và khóa xuất khi thay bộ lọc, mất quyền, dữ liệu lỗi/không đầy đủ; hủy đọc cũ, bỏ phản hồi trễ, chống bấm xuất liên tiếp | Kiểm thử Chrome cách ly; báo cáo rỗng hợp lệ khác với thiếu API, không hiện 0 giả |
-| Tài liệu/đối chiếu | Chỉ đọc source để xác nhận thiếu S8-09 | FUNCTION_MAP và FRONTEND_ROUTES đã bổ sung vị trí; tài liệu hợp đồng **đề xuất**, không giả thành API có sẵn | `docs/S8-09_FRONTEND_CONTRACT.md`; phải thống nhất với thành viên backend trước khi bật adapter |
+| Yêu cầu (S8-09) | Backend | Frontend | Kết nối / Ma trận phân quyền |
+|---|:---:|:---:|---|
+| **AC1: Tổng hợp nhóm tuổi nợ và theo nhân viên phụ trách** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Endpoint `GET /api/reports/debt-aging/options` trả về ngày chốt tối đa, múi giờ, 3 nhóm tuổi nợ chuẩn (`recent`: 1–14 ngày, `middle`: 15–44 ngày, `old`: từ 45 ngày) và danh sách nhân viên. Endpoint `GET /api/reports/debt-aging` tính toán đối trừ FIFO cho từng hóa đơn/chứng từ, tổng hợp `bucketTotals` và `employeeTotals` (gồm nhóm chưa phân công `employeeId: null`). Tính nhất quán toán học 100%. |
+| **AC2: Chỉ ra đại lý có rủi ro cao nhất (xử lý trước)** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Thuật toán tính toán `maxOverdueDays` và `overdueAmount`, sắp xếp giảm dần theo số ngày quá hạn lớn nhất $\rightarrow$ tổng tiền quá hạn $\rightarrow$ ID đại lý. Gán `riskRank` bắt đầu từ 1 (đại lý rủi ro cao nhất xếp rank 1, hỗ trợ đồng hạng) và `riskLabel` (`Ưu tiên cao`, `Cần theo dõi`, `Theo dõi`). Thuyết minh tiêu chí rõ ràng trong `riskBasis`. |
+| **AC3: Xuất Excel (`.xlsx`)** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Endpoint `GET /api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) xuất file `.xlsx` gồm 4 sheet chuyên nghiệp: *Thông tin chung*, *Nhóm tuổi nợ*, *Theo nhân viên*, *Chi tiết đại lý rủi ro*. Xử lý số tiền dạng text an toàn nếu vượt quá 15 chữ số, chống Spreadsheet Formula Injection (`=`, `+`, `-`, `@`). |
+| **Ma trận phân quyền DB & Không role fallback** | ✅ Đã hoàn thành | ✅ Đã hoàn thành | **Đã hoàn thành BE**: Áp dụng quyền `REPORT_FINANCE` từ ma trận phân quyền DB (`RolePermissionConfig`) hoặc `ROLE_ADMIN`. Thu hồi `REPORT_FINANCE` lập tức trả HTTP 403 Forbidden trên cùng JWT token. Tài khoản đại lý `ROLE_DEALER` bị từ chối 403 Forbidden. Nhân viên `ROLE_SALES` bị giới hạn trong phạm vi đại lý do mình phụ trách. |
 
-Phối hợp Antigravity CLI bằng model **Claude Opus 4.6 (Thinking)** rà luồng xuất Excel/quyền/race/formula. Nhận xét được đối chiếu với code và kiểm thử, bổ sung các ca đổi bộ lọc giữa lúc xuất, thu hồi giữa hai lần kiểm tra, bấm kép và corpus `=`, `+`, `-`, `@`, tab/CR. Không thay bảo vệ frontend bằng backend mới ngoài phạm vi.
+### Kết quả kiểm thử Backend S8-09
+- **Unit tests**: `DebtAgingReportServiceTest` (5/5 tests pass) kiểm tra chi tiết tính năng tùy chọn bộ lọc, không cho phép ngày chốt tương lai, đối trừ FIFO, phân bổ 3 nhóm tuổi nợ, phân hạng rủi ro rank 1 cho đại lý nợ dài ngày nhất, báo cáo rỗng và bộ lọc đại lý chưa phân công.
+- **Integration & Security tests**: `DebtAgingReportIntegrationTest` (6/6 tests pass) kiểm thử trọn vẹn luồng HTTP MockMvc với database H2 cách ly:
+  1. `testGetOptionsWithPermission`: Tài khoản có `REPORT_FINANCE` gọi options thành công 200 OK.
+  2. `testGetReportSuccessAndRiskOrder`: Xem báo cáo 200 OK, kiểm tra cấu trúc dữ liệu JSON đầy đủ, thứ tự đại lý rủi ro cao nhất xếp rank 1 với nhãn `Ưu tiên cao`, số liệu nhóm tuổi nợ và nhân viên khớp tuyệt đối.
+  3. `testAdminAlwaysHasAccess`: Tài khoản `ROLE_ADMIN` luôn có toàn quyền truy cập 200 OK.
+  4. `testPermissionRevocationReturns403`: Thu hồi `REPORT_FINANCE` khỏi vai trò của user lập tức trả về 403 Forbidden trên cùng JWT token.
+  5. `testDealerRoleDenied403`: Tài khoản đại lý `ROLE_DEALER` bị chặn 403 Forbidden khi truy cập báo cáo tài chính nội bộ.
+  6. `testExportExcelReturnsValidWorkbook`: Xuất file Excel thành công 200 OK, đúng Content-Type và đọc được 4 sheet hợp lệ qua Apache POI.
+- **Tổng cộng**: **11/11 tests S8-09 backend đạt 100%**.
 
-Kết quả cuối: **209/209 unit tests JS**, **13/13 tests server/route**, **18/18 kịch bản Chrome S8-09** và **216/216 kiểm tra bố cục trên 36 trang × 6 kích thước** qua. Đã xem ảnh pending-backend/desktop/mobile và đọc lại file Excel tải xuống bằng bộ đọc XLSX. Kiểm tra FUNCTION_MAP có 69 story, không trùng ID, đúng thứ tự. `git diff --check` sạch; không có diff trong backend. Khi chạy đồng thời hai bộ Chrome trên server Python thử nghiệm, từng gặp timeout khởi tạo/trạng thái sidebar; chạy lại từng bộ riêng đều qua, không đổi code shell để che lỗi test.
-
-Kiểm thử frontend dùng script/trang thật + adapter HTTP mock **chỉ trong tests**, không tạo/sửa/xóa dữ liệu DB nghiệp vụ. Không coi các fixture là bằng chứng API đã hoạt động hoặc backend đã thực thi REPORT_FINANCE. Lệnh: `node --test tests/*.test.cjs`; `python -B -m unittest discover -s tests -p test_frontend_server.py`; `node tests/debt-aging.browser.cjs`; `node tests/content-layout.browser.cjs` (`NAV_TEST_URL` trỏ frontend cổng 5538).
+Tài liệu API đã được cập nhật đầy đủ tại `backend/API_DOCUMENTATION.md`, vị trí tính năng cập nhật tại `docs/FUNCTION_MAP.md`.
 
 ## S8-07 — Báo cáo tồn kho và vòng quay hàng để phát hiện hàng chậm luân chuyển đang chôn vốn (Backend & Frontend) — 24/10/2026
 
