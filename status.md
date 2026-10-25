@@ -18,19 +18,39 @@ Kiểm thử:
 - Thu hồi động: `PermissionRevocationTest` (PASS) và `RolePermissionConfigTest` (14/14 tests PASS).
 - Tài liệu hóa: Đã cập nhật `docs/FUNCTION_MAP.md` và `backend/API_DOCUMENTATION.md`.
 
+## S7-06 — Backend biên bản đối chiếu định kỳ và nối frontend — 25/10/2026
 
-## S6-06 — Phân tuyến giao hàng và gán tài xế (Frontend) — 25/10/2026
+Nhánh `feature/S7-06-backend-lap_bien_ban_doi_chieu_cong_no_dinh_ky`, từ `develop`. Phát hiện frontend cũ chỉ giả lập xác nhận/phản hồi trong bộ nhớ và xuất PDF sổ hiện thời; thay bằng biên bản lưu DB.
 
-Nhánh `FE/S6-06-Là-Quản-lý-kho,-tôi-muốn-phân-tuyến-giao-hàng`. Đã đọc `AGENTS.md` và hai skill trong `SKILLS/SKILL_frontend_design.md` và `SKILLS/SKILL_backend.md`. Triển khai Frontend tuân thủ đầy đủ 3 tiêu chí nghiệp vụ theo yêu cầu trong ảnh: **chỉ làm frontend**.
+| Yêu cầu | Backend | Frontend | Kết nối / phân quyền |
+|---|---|---|---|
+| Biên bản theo kỳ: đầu kỳ, phát sinh, cuối kỳ | Lưu snapshot bất biến, mã UUID, người/ngày lập; cùng sổ chứng từ S8-10 | Lập biên bản và danh sách đã lưu, lọc kỳ/đại lý, phân trang, xem lại | FINANCE_VIEW_DEBT để xem; cần thêm FINANCE_MANAGE để lập; Admin được phép |
+| PDF gửi đại lý ký | PDF từ đúng snapshot, tiếng Việt, mã/kỳ/số dư, trạng thái, 2 ô chữ ký | Nút PDF và in bản đã lưu; bỏ thông tin công ty/người ký/tài khoản ngân hàng giả lập cũ | PDF kiểm quyền/phạm vi, không tính lại sổ khi xuất |
+| Đại lý xác nhận hoặc phản hồi lệch | API portal, DB lưu số dư đại lý, lý do, chênh lệch do server tính, người/thời gian phản hồi | Gửi API thật, hiển thị lại phản hồi sau reload; không ghi trạng thái lạc quan | Chỉ đại lý liên kết có FINANCE_VIEW_DEBT; kế toán/Admin không xác nhận thay |
+| Dữ liệu và đồng thời | Version, khóa hàng, requestKey chống lặp, audit cùng transaction | Chuỗi thập phân/BigInt, chặn kết quả trễ sau thu hồi quyền; lỗi POST không tự gửi lại | Cùng JWT có hiệu lực cấp/thu hồi quyền; không role fallback, không browser storage nghiệp vụ |
 
-| Tiêu chí trong ảnh / hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+Giới hạn: snapshot là số liệu tại thời điểm lập; chứng từ backdate sau đó cần biên bản mới. Phản hồi lệch không tự sửa công nợ. Xác nhận cổng không phải chữ ký số; không bổ sung email. S6-08/S8-09 ngoài phạm vi không thay đổi.
+
+Kiểm thử đạt: **42 backend** (17 S7-06, 10 sổ công nợ S8-10, 14 ma trận quyền, 1 thu hồi quyền), **278 Node**, **13 route Python**; Chrome kiểm tra lưu/xem lại, PDF, phản hồi DB theo fixture, chênh lệch chính xác, POST mất kết nối, thu hồi/cấp lại quyền và 5 kích thước 1440/1024/768/390/320. Backend thử bằng H2 cách ly; Chrome chặn toàn bộ API bằng HTTP fixture, không thay đổi dữ liệu thật. Đã phối hợp Antigravity Opus rà thiết kế/rủi ro và đối chiếu các ca kiểm thử; Codex kiểm tra lại code và kết quả.
+
+## S6-06 — Phân tuyến giao hàng và gán tài xế — 25/10/2026
+
+Triển khai đầy đủ cả Backend và Frontend tuân thủ 3 tiêu chí nghiệp vụ theo yêu cầu:
+1. Gom nhiều phiếu xuất vào một chuyến giao theo khu vực để xe chạy một vòng giao được nhiều điểm thay vì đi lẻ.
+2. Gán tài xế và phương tiện cho chuyến giao.
+3. In danh sách điểm giao của chuyến kèm địa chỉ và số điện thoại người nhận.
+
+| Tiêu chí trong ảnh / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
 |---|:---:|:---:|:---:|---|
-| **Gom nhiều phiếu xuất vào một chuyến giao theo khu vực** | Có (`GET /api/warehouse/delivery-trips/eligible-orders?warehouseId=...`) | Có | Có | Màn hình `Kho hàng → Phân tuyến giao hàng` (`/warehouse/delivery-routes`): Quản lý chọn kho xuất phát, hệ thống tự động tải các đơn hàng đã xuất kho (`EXPORTED`, `SHIPPED`). Tự động trích xuất khu vực (Quận/Huyện/Thị xã/Thành phố) từ địa chỉ giao hàng, hiển thị chip lọc nhanh và nút "Gom tất cả đơn khu vực này", hỗ trợ tích chọn nhiều phiếu xuất để xe chạy một vòng giao liên tục thay vì đi lẻ. |
-| **Gán tài xế và phương tiện cho chuyến** | Có (`POST /api/warehouse/delivery-trips`) | Có | Có | Bảng lộ trình chuyến giao cho phép sắp xếp thứ tự các điểm dừng (Điểm 1, Điểm 2, Điểm 3...) bằng nút lên/xuống để tối ưu cung đường vòng chạy. Form gán thông tin bắt buộc: Tên tài xế, Biển số xe/Phương tiện, Thời gian dự kiến hoàn thành; trường mở rộng: Số điện thoại tài xế, Thời điểm xuất phát, Ghi chú lộ trình và ghi chú riêng từng điểm dừng. Gửi danh sách `stops` kèm `stopOrder` chính xác lên API. |
-| **In danh sách điểm giao của chuyến kèm địa chỉ và số điện thoại người nhận** | Có (`GET /api/warehouse/delivery-trips/{id}`) | Có | Có | Phiếu in chuẩn chứng từ kho vận & giao nhận thể hiện đầy đủ: Mã chuyến, Kho xuất phát, Ngày giờ khởi hành, Dự kiến hoàn thành, Họ tên tài xế, SĐT tài xế, Biển số xe; Bảng kê điểm giao theo thứ tự dừng có **Mã đơn/phiếu xuất, Người nhận/Đại lý, Địa chỉ giao hàng, Số điện thoại người nhận**, Tiền hàng/COD, Ghi chú và ô Ký nhận của khách; 3 ô chữ ký (Quản lý kho phân tuyến, Tài xế nhận hàng, Thủ kho). Nút "In danh sách" hỗ trợ in A4 sắc nét qua `window.print()` với `@media print`. Tự động mở xem trước sau khi tạo chuyến và cho phép in lại trên danh sách chuyến gần đây. |
-| **Ma trận phân quyền động (Database-backed Permission Matrix)** | Có | Có | Có | Tuân thủ nghiêm ngặt ma trận DB: Yêu cầu `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` để xem trang; yêu cầu `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`) để thao tác phân tuyến tạo chuyến. Tự động vô hiệu hóa nút submit và hiển thị cảnh báo khi thiếu quyền. Lắng nghe `auth:permissions-changed` để cập nhật tức thì khi quyền thay đổi. Không dùng role-based fallback. `ROLE_ADMIN` luôn có toàn quyền. Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage/sessionStorage. |
+| **Gom nhiều phiếu xuất vào một chuyến giao theo khu vực** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | **Backend**: Mở rộng `CreateDeliveryTripRequest` hỗ trợ `routeName`, `territoryId`, gom danh sách phiếu xuất theo `shipmentVoucherIds` hoặc `orderIds`. Mở rộng `GET /api/warehouse/delivery-trips/eligible-orders` lọc đơn hàng/phiếu xuất đã xuất kho theo kho (`warehouseId`), khu vực (`territoryId`) và từ khóa (`keyword`). Tự động liên kết và lưu `voucherCode` trên từng điểm giao (`DeliveryTripStop`). Loại bỏ đơn hàng đang thuộc chuyến khác hoặc đã chuyển backorder.<br>**Frontend**: Màn hình `Kho hàng → Phân tuyến giao hàng` (`/warehouse/delivery-routes`): Quản lý chọn kho xuất phát, hệ thống tự động tải các đơn hàng đã xuất kho (`EXPORTED`, `SHIPPED`). Tự động trích xuất khu vực (Quận/Huyện/Thị xã/Thành phố) từ địa chỉ giao hàng, hiển thị chip lọc nhanh và nút "Gom tất cả đơn khu vực này", hỗ trợ tích chọn nhiều phiếu xuất để xe chạy một vòng giao liên tục thay vì đi lẻ. Quyền: `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **Gán tài xế và phương tiện cho chuyến** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | **Backend**: API `POST /api/warehouse/delivery-trips` tạo chuyến và `PUT /api/warehouse/delivery-trips/{id}` cập nhật chuyến tiếp nhận `UpdateDeliveryTripRequest` (`driverName`, `driverPhone`, `vehiclePlate`, `routeName`, `territoryId`, `expectedCompletionTime`, `note`). Kiểm tra chặt chẽ chuyến đang ở trạng thái `IN_PROGRESS`, gán tài xế, xe và tuyến giao hàng; ghi log kiểm toán.<br>**Frontend**: Bảng lộ trình chuyến giao cho phép sắp xếp thứ tự các điểm dừng (Điểm 1, Điểm 2, Điểm 3...) bằng nút lên/xuống để tối ưu cung đường vòng chạy. Form gán thông tin bắt buộc: Tên tài xế, Biển số xe/Phương tiện, Thời gian dự kiến hoàn thành; trường mở rộng: Số điện thoại tài xế, Thời điểm xuất phát, Ghi chú lộ trình và ghi chú riêng từng điểm dừng. Gửi danh sách `stops` kèm `stopOrder` chính xác lên API. Quyền: `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **In danh sách điểm giao của chuyến kèm địa chỉ và số điện thoại người nhận** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | **Backend**: Bổ sung bộ 3 API: (1) `GET /api/warehouse/delivery-trips/{id}/manifest` trả JSON bảng kê điểm giao đầy đủ họ tên, SĐT, địa chỉ nhận hàng, mã phiếu xuất, mã đơn hàng, số tiền, danh sách mặt hàng; (2) `GET /api/warehouse/delivery-trips/{id}/manifest/pdf` xuất PDF chuẩn A4 OpenPDF có quốc hiệu, thông tin tài xế/xe/tuyến, bảng kê điểm giao, tổng tiền hàng và chữ ký các bên; (3) `GET /api/warehouse/delivery-trips/{id}/manifest/print` xuất HTML bản in hỗ trợ xem trước và in trực tiếp (`window.print()`).<br>**Frontend**: Phiếu in chuẩn chứng từ kho vận & giao nhận thể hiện đầy đủ: Mã chuyến, Kho xuất phát, Ngày giờ khởi hành, Dự kiến hoàn thành, Họ tên tài xế, SĐT tài xế, Biển số xe; Bảng kê điểm giao theo thứ tự dừng có **Mã đơn/phiếu xuất, Người nhận/Đại lý, Địa chỉ giao hàng, Số điện thoại người nhận**, Tiền hàng/COD, Ghi chú và ô Ký nhận của khách; 3 ô chữ ký (Quản lý kho phân tuyến, Tài xế nhận hàng, Thủ kho). Nút "In danh sách" hỗ trợ in A4 sắc nét qua `window.print()` với `@media print`. Tự động mở xem trước sau khi tạo chuyến và cho phép in lại trên danh sách chuyến gần đây. Quyền: `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` (hoặc `ROLE_ADMIN`). |
+| **Ma trận phân quyền động (Database-backed Permission Matrix) & Warehouse Scoping** | ✅ Có | ✅ Có | ✅ Đã kết nối đúng | Thực thi ma trận quyền DB nghiêm ngặt: Quyền xem/bảng kê/PDF/print/eligible-orders bắt buộc `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT`. Quyền tạo chuyến/cập nhật chuyến/đổi trạng thái điểm giao bắt buộc `WAREHOUSE_EXPORT`. `ROLE_ADMIN` luôn có toàn quyền. Không dùng role-based fallback. Thu hồi quyền trên phiên JWT hiện tại lập tức có hiệu lực trả về `403 Forbidden` trên API request kế tiếp và frontend tự động ẩn/khóa thao tác qua `auth:permissions-changed`. Phân vùng dữ liệu kho (Warehouse Scoping) bảo đảm nhân viên kho chỉ truy cập được các chuyến giao thuộc kho được phân công (`user.getWarehouses()`). Tuyệt đối không lưu dữ liệu kinh doanh vào browser storage. |
 
-Kiểm thử: Kiểm thử toàn diện trong `tests/delivery-routes.test.cjs` bao quát trích xuất gom nhóm khu vực, xác thực dữ liệu, sắp xếp thứ tự điểm dừng, tạo payload, sinh mẫu in chứa địa chỉ & SĐT người nhận, cấu hình menu DB và bảo mật lưu trữ. Đã cập nhật `frontend/js/menu-config.js`, `serve_frontend.py`, `docs/FUNCTION_MAP.md` và `docs/FRONTEND_ROUTES.md`.
+Kiểm thử:
+- **Backend**: **47/47 tests Backend DeliveryTrip qua 100%** (`DeliveryTripControllerTest`, `DeliveryTripSecurityTest`, `DeliveryTripServiceTest`, `DeliveryTripIntegrationTest`).
+- **Frontend**: Toàn diện trong `tests/delivery-routes.test.cjs` bao quát trích xuất gom nhóm khu vực, xác thực dữ liệu, sắp xếp thứ tự điểm dừng, tạo payload, sinh mẫu in chứa địa chỉ & SĐT người nhận, cấu hình menu DB và bảo mật lưu trữ.
+- Đã cập nhật đầy đủ `docs/FUNCTION_MAP.md`, `backend/API_DOCUMENTATION.md`, `docs/FRONTEND_ROUTES.md`, `frontend/js/menu-config.js` và `serve_frontend.py`.
 
 ## S8-04 — Quản lý chỉ tiêu doanh số (Frontend) — 24/10/2026
 
@@ -1169,6 +1189,20 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
 
+
+## S6-08 — Backend xác nhận giao hàng kèm chứng từ (25/10/2026)
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Người nhận thực tế, thời điểm giao, ảnh biên bản ký nhận | Đã bổ sung API multipart, lưu DB, tải ảnh có kiểm tra quyền | Chưa làm theo phạm vi yêu cầu | Chưa nối UI |
+| Giao thất bại và nhập hàng trả kho | Bắt buộc lý do; giữ API nhập trả kho tường minh S6-07; chặn sửa sau trả kho | Không sửa | Backend dùng lại luồng hiện có |
+| Hóa đơn Sprint 7 | DELIVERED và thực giao chỉ ghi sau xác nhận hợp lệ cho đơn thuộc chuyến | Không sửa | Nối dữ liệu S7-01; phát hành hóa đơn là thao tác riêng |
+| Ma trận quyền DB | WAREHOUSE_EXPORT cho xác nhận, VIEW/EXPORT cho ảnh; ADMIN toàn quyền; phạm vi kho; token đọc lại quyền mỗi request | Chưa có action S6-08 | BE có kiểm tra; chưa xác minh UI ẩn/hiện S6-08 |
+
+Chi tiết hợp đồng và giới hạn: `backend/API_DOCUMENTATION.md`, mục S6-08. Không commit/push tự động.
+
+Kiểm chứng S6-08: 92 tests thuộc 10 lớp service/controller/security/integration đều đạt (0 failures, 0 errors, 0 skipped), gồm lưu/tải ảnh qua DB H2, token cũ sau thu hồi quyền trả 403, chặn bỏ qua chứng từ và dữ liệu thực giao cho hóa đơn. Chưa chạy với MySQL triển khai thực tế; chưa kiểm thử UI S6-08.
+
 ## S8-08 — Xuất báo cáo tồn kho ra tệp Excel (2026-10-23)
 
 Branch `feature/S8-08/xuat-bao-cao-ton-kho-ra-tep-excel` trong repo GitHub Desktop `C:\Users\Admin\Documents\DUANgITHUB\QuanLyBanHang`. Chỉ backend, không commit/push.
@@ -1273,3 +1307,28 @@ Nhánh `feature/S8-01-frontend-nhap_phieu_tra_hang_tu_dai_ly_va_nhap_lai_kho`. P
 | Giao diện và tài liệu | Không chỉnh backend/API docs | Dùng chung shell/gutter, hỗ trợ desktop/tablet/mobile; cập nhật FUNCTION_MAP và FRONTEND_ROUTES | 190 test Node, 11 test route, 14 kịch bản Chrome và 204 kiểm tra bố cục / 34 trang qua; HTTP fixtures cách ly, không ghi DB nghiệp vụ, chưa nghiệm thu MySQL thật |
 
 **Lưu ý bàn giao backend:** bộ `DealerReturnSecurityTest` hiện có chạy 6 ca, 3 qua/3 thất bại. Các ca `admin_AlwaysAllowed`, `createReturn_WithOrderCreatePermission_Returns200`, `createReturn_WithoutOrderCreatePermission_Returns403` nhận HTTP 400 (`HttpMessageNotReadableException`) thay vì 200/403 khi gửi JSON do test dựng từ DTO. Không sửa backend hoặc bộ test để ép xanh; cần thành viên backend kiểm tra. Không tuyên bố toàn bộ S8-01 đã nghiệm thu end-to-end.
+
+
+## S6-08 — Giải quyết xung đột với develop (25/10/2026)
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Xác nhận giao hàng S6-08 | Giữ xác nhận ảnh, khóa đơn và kiểm tra đủ hàng; giữ kiểm tra backordered từ develop | Không sửa mã frontend | Nối luồng xuất kho S6-05 và dữ liệu hóa đơn S7-01 |
+| Ma trận quyền | Giữ WAREHOUSE_EXPORT, quyền xem ảnh và phạm vi kho | Không bổ sung UI S6-08 | Giữ kiểm tra quyền DB; chưa xác minh UI S6-08 |
+
+Giữ toàn bộ phần tài liệu của cả hai nhánh; chưa commit hoặc push bản giải quyết xung đột.
+
+Kiểm chứng sau giải quyết xung đột: 110 tests thuộc 11 lớp đều đạt (0 failures, 0 errors, 0 skipped), gồm DeliveryTripIntegrationTest, OrderShipmentIntegrationTest, InvoiceIntegrationTest và thu hồi quyền với token cũ. Không còn file unmerged hoặc dấu conflict trong 4 file đã xử lý; diff riêng S6-08 so với origin/develop qua kiểm tra whitespace.
+
+
+## S6-08 — Hòa nhập S6-06 mới trên develop (25/10/2026)
+
+Nguyên nhân xung đột mới: develop tiếp nhận PR #172 sau lần hòa nhập trước. Giữ cả confirmDelivery/getDeliveryProof của S6-08 và updateTrip của S6-06.
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Xác nhận ảnh và cập nhật tuyến/tài xế | Giữ đầy đủ hai luồng và kiểm tra quyền DB | Không sửa | Giữ backend S6-06/S6-08; UI lưu S6-08 chưa nối |
+
+Bản giải quyết để người dùng tự hoàn tất merge commit và push.
+
+Kiểm chứng lần hòa nhập này: 123 tests / 11 lớp đều đạt, 0 failures/errors/skipped. Đã fetch lại và xác nhận MERGE_HEAD trùng origin/develop tại 3d10ced8d22ccee811de935358f017e6bfe61b70. Không còn file unmerged; diff S6-08 so với develop qua kiểm tra whitespace. Chưa commit/push.

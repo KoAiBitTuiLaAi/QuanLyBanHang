@@ -522,6 +522,14 @@
 }
 
 /* Print Styles */
+.reconcile-history { margin-block: 20px; min-width: 0; }
+.reconcile-history .doc-table-wrap { overflow-x: auto; }
+.reconcile-history .doc-table { min-width: 650px; }
+.reconcile-history td:first-child { overflow-wrap: anywhere; }
+.reconcile-history .filter-actions { flex-wrap: wrap; }
+.reconcile-history h2 { font-size: 1.1rem; }
+.reconcile-history p { color: #64748b; }
+
 @media print {
   body {
     background: #ffffff !important;
@@ -529,6 +537,7 @@
   .app-shell__sidebar,
   .app-shell__topbar,
   .reconcile-filter-card,
+  .reconcile-history,
   .action-status-card,
   .reconcile-header,
   .filter-actions,

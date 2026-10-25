@@ -4,6 +4,46 @@ Base URL: `http://localhost:8080/api`
 
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
+## S7-06 — Biên bản đối chiếu công nợ đã lưu và phản hồi đại lý (25/10/2026)
+
+Trang `/finance/debt-reconciliation`, menu **Tài chính → Đối chiếu công nợ**, dùng cho kế toán và đại lý theo quyền. Tạo biên bản chụp số liệu đầu kỳ, tăng/giảm, cuối kỳ và từng chứng từ trong một transaction `REPEATABLE_READ`; toàn bộ bản số liệu và thông tin đại lý được lưu tại `debt_reconciliations.snapshot_json`. Không sửa/xóa bản đã lưu, không tính lại khi xem/PDF. Có thể lập một biên bản mới cho cùng kỳ để đối chiếu lại sau khi xử lý phản hồi.
+
+| Method | Endpoint (sau `/api`) | Quyền / hành vi |
+|---|---|---|
+| GET | `/finance/debt-reconciliations/options?keyword=&page=0` | `FINANCE_VIEW_DEBT`; tìm đại lý trong phạm vi, 50 dòng/trang |
+| POST | `/finance/debt-reconciliations` | `FINANCE_VIEW_DEBT` **và** `FINANCE_MANAGE`; Admin được phép; tài khoản có scope đại lý không được lập thay kế toán |
+| GET | `/finance/debt-reconciliations?dealerId=&from=&to=&page=0` | Danh sách biên bản đã lưu, 20 dòng/trang; ngày lọc chọn các kỳ nằm trọn trong khoảng; bỏ cả `from`/`to` để xem mọi kỳ |
+| GET | `/finance/debt-reconciliations/{id}` | Chi tiết bản số liệu và phản hồi đã lưu |
+| GET | `/finance/debt-reconciliations/{id}/pdf` | PDF tiếng Việt, mã biên bản, kỳ, đầu kỳ/phát sinh/cuối kỳ, trạng thái và hai ô ký xác nhận; `Cache-Control: no-store` |
+| GET | `/portal/debt-reconciliations/options` | Chỉ đại lý liên kết tài khoản; Admin có thể tra cứu |
+| GET | `/portal/debt-reconciliations` và `/{id}`, `/{id}/pdf` | `FINANCE_VIEW_DEBT`, scope chính đại lý từ DB; không tin `dealerId` từ client |
+| POST | `/portal/debt-reconciliations/{id}/response` | Chỉ tài khoản đại lý liên kết có `FINANCE_VIEW_DEBT`; kế toán/Admin không xác nhận thay |
+
+Tạo biên bản:
+
+```json
+{"dealerId":10,"from":"2026-10-01","to":"2026-10-25","requestKey":"bed44420-bb8c-4a2b-af14-209d98b545de"}
+```
+
+`requestKey` là UUID do client cấp. Gửi lại cùng khóa, người lập, đại lý và kỳ trả biên bản cũ; tái dùng cho dữ liệu khác trả `409`. Unique constraint ngăn tạo trùng đồng thời; yêu cầu thua cuộc có thể nhận `409`, phải tải lại danh sách trước khi thao tác tiếp. Chỉ POST chủ động mới tạo bản ghi; mở trang/lọc/tải PDF không tự lập biên bản.
+
+Xác nhận hoặc phản hồi:
+
+```json
+{"version":0,"status":"CONFIRMED"}
+```
+
+```json
+{"version":0,"status":"DISPUTED","claimedBalance":"950000.25","reason":"Chưa ghi nhận phiếu thu PT-002"}
+```
+
+Chỉ cho chuyển `PENDING → CONFIRMED` hoặc `PENDING → DISPUTED` một lần. Bắt buộc version hiện tại; số dư phản hồi lệch phải khác cuối kỳ, tối đa 22 chữ số nguyên/2 chữ số lẻ; lý do sau trim không trống, tối đa 500 ký tự. Số chênh do server tính `cuối kỳ hệ thống - số dư đại lý`. Xác nhận khớp dùng số dư đã lưu. Pessimistic row lock + `@Version` bảo vệ phản hồi đồng thời; bản đã phản hồi/version cũ trả `409`. Lưu người/thời gian phản hồi và audit log trong cùng transaction, không tự sinh bút toán điều chỉnh công nợ.
+
+Các trường tiền trả bằng **chuỗi thập phân** (`"950000.25"`), cả snapshot và chênh lệch. Trình duyệt dùng số nguyên BigInt theo xu để không mất độ chính xác. Frontend không tự ghi trạng thái xác nhận khi chưa có kết quả server; khi mất kết nối lúc POST, khóa ghi tiếp và yêu cầu tải lại danh sách. Thu hồi quyền làm ẩn/khóa màn hình và hủy/loại phản hồi trễ; JWT hiện tại nhận `403` ở request sau. Vai trò chỉ giới hạn phạm vi; SALES chỉ thấy đại lý phụ trách, DEALER chỉ đại lý liên kết, không có role fallback thay quyền DB.
+
+Nguồn số liệu dùng cùng sổ công nợ S8-10: đơn ghi sổ theo `recorded_at/created_at`, phiếu thu theo `payment_date`, điều chỉnh hóa đơn có dấu theo `adjustment_date` (bao gồm chứng từ giảm nợ trả hàng); không cộng lặp hóa đơn và đơn hàng. Đây là số liệu từ chứng từ/trạng thái hiện có tại **thời điểm lập**, không phải cơ chế tái dựng lịch sử thay đổi đã bị xóa; giữ số dư âm. Phiếu phát sinh/backdate sau đó không sửa snapshot cũ: cần lập bản mới khi muốn cập nhật. Áp dụng `app.debt-statement.max-rows`; vượt giới hạn trả `400`, không lưu/PDF một phần. Phản hồi trên cổng là xác nhận ứng dụng, không phải chữ ký số. Chưa có luồng gửi email; đại lý truy cập biên bản qua cổng.
+
+
 ## S6-07 — Frontend theo dõi chuyến giao và sửa số liệu đọc (23/10/2026)
 
 Menu **Kho hàng → Theo dõi chuyến giao**, `/warehouse/delivery-trips`. VIEW hoặc EXPORT theo ma trận DB; ADMIN luôn có quyền. Các API theo dõi dùng scope kho sẵn có, không dùng vai trò thay grant.
@@ -3263,12 +3303,16 @@ Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến
 | `GET` | `` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tìm kiếm, lọc và phân trang danh sách chuyến giao hàng (`warehouseId`, `status`, `isOverdue`, `keyword`, `page`, `size`) |
 | `GET` | `/summary` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thống kê tổng hợp: số chuyến đang chạy, số chuyến quá hạn, tổng tiền hàng trên đường, tổng điểm đã giao/còn lại |
 | `GET` | `/{id}` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xem chi tiết chuyến giao hàng, danh sách điểm giao và các mặt hàng chi tiết |
-| `POST` | `` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tạo mới chuyến giao hàng (từ danh sách `orderIds` hoặc `stops` tùy chỉnh) |
+| `POST` | `` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Tạo mới chuyến giao hàng (phân tuyến theo khu vực `territoryId`, `routeName`, gom theo `shipmentVoucherIds` hoặc `orderIds` hoặc `stops` tùy chỉnh) |
+| `PUT` | `/{id}` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Cập nhật thông tin chuyến đang giao (gán tài xế, SĐT, biển số xe, tên tuyến đường, khu vực `territoryId`, giờ dự kiến, ghi chú) |
 | `PUT` | `/{id}/stops/{stopId}/status` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Cập nhật trạng thái điểm giao (`DELIVERED` hoặc `FAILED` kèm lý do). Hàng FAILED không tự về kho |
 | `POST` | `/{id}/complete` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hoàn tất chuyến giao hàng. Cảnh báo nếu còn điểm chưa giao được |
 | `POST` | `/{id}/cancel` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Hủy chuyến giao hàng (bắt buộc lý do; chặn hủy nếu đã có điểm giao thành công) |
 | `POST` | `/{id}/stops/{stopId}/return-to-warehouse` | `WAREHOUSE_EXPORT` hoặc `ADMIN` | Thao tác tường minh: Nhập trả lại kho hàng chưa giao được của điểm giao thất bại |
-| `GET` | `/eligible-orders` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Danh sách đơn hàng đã xuất kho (`EXPORTED`) thuộc kho sẵn sàng gán chuyến |
+| `GET` | `/eligible-orders` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Danh sách đơn hàng/phiếu xuất đã xuất kho sẵn sàng gán chuyến, hỗ trợ lọc theo kho (`warehouseId`), khu vực (`territoryId`), và từ khóa (`keyword`) |
+| `GET` | `/{id}/manifest` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Bảng kê danh sách điểm giao của chuyến kèm tên, SĐT, địa chỉ người nhận, mã phiếu xuất, số tiền và hàng hóa chi tiết |
+| `GET` | `/{id}/manifest/pdf` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xuất file PDF bảng kê danh sách điểm giao chuyến (A4, OpenPDF) phục vụ tài xế giao hàng |
+| `GET` | `/{id}/manifest/print` | `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` hoặc `ADMIN` | Xuất HTML bảng kê điểm giao hỗ trợ xem trước và in trực tiếp (`window.print()`) |
 
 ### 3. Payload mẫu
 
@@ -3326,6 +3370,61 @@ Tài liệu hợp đồng API phục vụ Quản lý kho theo dõi các chuyến
   "note": "Biên bản hoàn trả số BB-0123"
 }
 ```
+
+#### Cập nhật chuyến giao hàng (`PUT /api/warehouse/delivery-trips/{id}`)
+
+```json
+{
+  "driverName": "Trần Văn Bình",
+  "driverPhone": "0912987654",
+  "vehiclePlate": "30A-999.88",
+  "routeName": "Tuyến Đông Anh - Mê Linh",
+  "territoryId": 2,
+  "expectedCompletionTime": "2026-10-25T17:30:00",
+  "note": "Ưu tiên giao điểm số 1 trước 10h sáng"
+}
+```
+
+#### Bảng kê điểm giao của chuyến (`GET /api/warehouse/delivery-trips/{id}/manifest`)
+
+```json
+{
+  "id": 1,
+  "tripCode": "CG-20261025-001",
+  "status": "IN_PROGRESS",
+  "driverName": "Trần Văn Bình",
+  "driverPhone": "0912987654",
+  "vehiclePlate": "30A-999.88",
+  "warehouseName": "Kho Tổng Hà Nội",
+  "routeName": "Tuyến Đông Anh - Mê Linh",
+  "territoryName": "Miền Bắc",
+  "totalStops": 2,
+  "totalAmount": 25000000.00,
+  "stops": [
+    {
+      "stopId": 10,
+      "stopOrder": 1,
+      "orderId": 101,
+      "orderCode": "DH-001",
+      "voucherCode": "PX-20261025-001",
+      "receiverName": "Đại lý Thành Đạt",
+      "receiverPhone": "0988776655",
+      "deliveryAddress": "Khu công nghiệp Thăng Long, Đông Anh, Hà Nội",
+      "deliveryAmount": 15000000.00,
+      "status": "PENDING",
+      "items": [
+        {
+          "productName": "Sữa chua Nếp Cẩm",
+          "unit": "thùng",
+          "quantity": 50,
+          "unitPrice": 300000.00
+        }
+      ]
+    }
+  ]
+}
+```
+
 
 ---
 
@@ -3828,6 +3927,26 @@ Response:
   "note": "Đã có biên bản kiểm tra hàng lỗi với đại lý"
 }
 ```
+
+
+## S6-08 — Xác nhận giao hàng có chứng từ
+
+- `POST /api/warehouse/delivery-trips/{id}/stops/{stopId}/confirm-delivery`
+  - Bearer token; `WAREHOUSE_EXPORT` từ ma trận DB hoặc `ROLE_ADMIN`; kiểm tra kho được giao.
+  - `multipart/form-data`: `receiverName` (bắt buộc, tối đa 100 ký tự), `deliveredAt` (ISO local datetime theo múi giờ ứng dụng, ví dụ `2026-10-25T14:00:00`), `proof` (file ảnh biên bản có chữ ký).
+  - Thời điểm giao nằm trong khoảng xuất phát đến hiện tại. File PNG/JPEG được kiểm tra nội dung thực, không chỉ MIME/tên file; tối đa 5 MB, 20 triệu pixel.
+  - 200: `ApiResponse<DeliveryTripResponse>`. Điểm giao có `receiverName`, `deliveredAt`, `confirmedBy`, `hasSignedProof=true`.
+  - 400: thiếu/sai dữ liệu, chuyến không đang chạy, điểm đã giao/đã trả kho, đơn chưa xuất hoặc chi tiết hàng không khớp. 401: chưa đăng nhập. 403: thiếu quyền hoặc ngoài phạm vi kho.
+  - Lưu ảnh nhị phân và thông tin xác nhận trong DB cùng giao dịch với trạng thái điểm/đơn; khóa chuyến và đơn khi cập nhật. Không ghi file public hay lưu localStorage. Không tự kiểm chứng nội dung chữ ký trong ảnh.
+- `GET /api/warehouse/delivery-trips/{id}/stops/{stopId}/proof`
+  - `WAREHOUSE_VIEW` hoặc `WAREHOUSE_EXPORT` từ DB hoặc `ROLE_ADMIN`, cùng phạm vi kho.
+  - Trả ảnh dưới dạng attachment, MIME do backend nhận diện, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`; 404 khi điểm chưa có chứng từ. Không trả bytes ảnh trong JSON danh sách.
+- `PUT .../stops/{stopId}/status` không thể chuyển `DELIVERED` nếu chưa có xác nhận ảnh. Điểm đã giao hoặc đã trả kho không được sửa trạng thái.
+- Giao thất bại: `status=FAILED`, bắt buộc `failedReason` tối đa 500 ký tự; ghi nhận hàng đang trên chuyến. Khi thực nhận hàng về kho, gọi `POST .../stops/{stopId}/return-to-warehouse` với `returnReason` để ghi nhận hoàn kho một lần. Giữ quy tắc S6-07: FAILED không tự tăng tồn kho.
+- Đơn liên kết chuyến phải dùng confirm-delivery, không được đi tắt qua `PUT /api/orders/{id}/delivery` hoặc chuyển trạng thái đơn sang DELIVERED. Đơn chưa thuộc chuyến giữ luồng S5-01 hiện có.
+- Kết nối Sprint 7: chỉ sau xác nhận hợp lệ mới đặt đơn EXPORTED/SHIPPED thành DELIVERED, ghi ngày giao thực tế và số lượng thực giao/quy đổi cơ sở. S6-08 xác nhận giao đủ đơn, đối chiếu sản phẩm, đơn vị và số lượng với chi tiết chuyến. API hóa đơn S7-01 hiện có sẽ đọc các dữ liệu này; phát hành hóa đơn vẫn là thao tác riêng có quyền INVOICE_CREATE.
+- Schema: Hibernate `ddl-auto=update` hiện có bổ sung `delivery_trip_stops.signed_proof MEDIUMBLOB`, `proof_content_type VARCHAR(30)`, `confirmed_by VARCHAR(100)` (nullable cho dữ liệu cũ). Không backfill ảnh hay tự coi các xác nhận cũ là có chứng từ.
+- Frontend cần gửi FormData bằng token, thêm người nhận/thời gian/file, gọi proof có xác thực, đồng bộ quyền và ẩn/vô hiệu hóa nút khi thiếu WAREHOUSE_EXPORT. Branch này chỉ triển khai backend, chưa có UI S6-08.
 
 ## S8-08 — Xuất báo cáo tồn kho ra Excel
 

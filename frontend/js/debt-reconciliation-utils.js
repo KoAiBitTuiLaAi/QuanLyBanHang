@@ -14,18 +14,28 @@ const DebtReconciliationUtils = (() => {
    */
   function formatMoney(value) {
     if (value === null || value === undefined || value === "") return "—";
-    const num = Number(value);
-    if (isNaN(num)) return String(value);
+    const cents = moneyCents(value);
+    if (cents === null) return "—";
+    const absolute = cents < 0n ? -cents : cents;
+    const whole = (absolute / 100n).toLocaleString("vi-VN");
+    const fraction = String(absolute % 100n).padStart(2, "0").replace(/0+$/, "");
+    return (cents < 0n ? "-" : "") + whole + (fraction ? "," + fraction : "") + " ₫";
+  }
 
-    const formatted = new Intl.NumberFormat("vi-VN", {
-      maximumFractionDigits: 2,
-      minimumFractionDigits: 0,
-    }).format(Math.abs(num));
-
-    if (num < 0) {
-      return `-${formatted} ₫`;
-    }
-    return `${formatted} ₫`;
+  function moneyCents(value) {
+    const text = String(value ?? "").trim();
+    // A difference between two valid 22-digit balances may have 23 integer digits.
+    if (!/^-?\d{1,24}(\.\d{1,2})?$/.test(text)) return null;
+    const negative = text.startsWith("-");
+    const [whole, fraction = ""] = text.replace(/^-/, "").split(".");
+    const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+    return negative ? -cents : cents;
+  }
+  function moneyDifference(system, claimed) {
+    const a = moneyCents(system), b = moneyCents(claimed);
+    if (a === null || b === null) return null;
+    const value = a - b, absolute = value < 0n ? -value : value;
+    return (value < 0n ? "-" : "") + (absolute / 100n) + "." + String(absolute % 100n).padStart(2, "0");
   }
 
   /**
@@ -83,6 +93,11 @@ const DebtReconciliationUtils = (() => {
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(from) || !dateRegex.test(to)) {
       return { valid: false, error: "Định dạng ngày không hợp lệ (phải là YYYY-MM-DD)." };
+    }
+    for (const date of [from, to]) {
+      const parsed = new Date(date + "T00:00:00Z");
+      if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date)
+        return { valid: false, error: "Ngày đối chiếu không tồn tại." };
     }
     if (from > to) {
       return { valid: false, error: "Ngày bắt đầu không được lớn hơn ngày kết thúc kỳ đối chiếu." };
@@ -143,15 +158,15 @@ const DebtReconciliationUtils = (() => {
    * Xác thực và tính toán phản hồi lệch của đại lý.
    */
   function validateDiscrepancyFeedback(systemClosingBalance, dealerClaimedAmount, reason) {
-    const sysBalance = Number(systemClosingBalance || 0);
+    const sysBalance = String(systemClosingBalance ?? "");
     const trimmedReason = String(reason || "").trim();
 
     if (dealerClaimedAmount === null || dealerClaimedAmount === undefined || dealerClaimedAmount === "") {
       return { valid: false, error: "Vui lòng nhập số dư công nợ theo sổ sách của đại lý." };
     }
 
-    const claimed = Number(dealerClaimedAmount);
-    if (isNaN(claimed)) {
+    const claimed = String(dealerClaimedAmount).trim();
+    if (!/^-?\d{1,22}(\.\d{1,2})?$/.test(claimed) || moneyCents(systemClosingBalance) === null) {
       return { valid: false, error: "Số dư theo đại lý phải là số hợp lệ." };
     }
 
@@ -163,7 +178,7 @@ const DebtReconciliationUtils = (() => {
       return { valid: false, error: "Nội dung phản hồi không được vượt quá 500 ký tự." };
     }
 
-    const difference = sysBalance - claimed;
+    const difference = moneyDifference(sysBalance, claimed);
 
     return {
       valid: true,
@@ -171,7 +186,7 @@ const DebtReconciliationUtils = (() => {
       dealerClaimedAmount: claimed,
       difference: difference,
       reason: trimmedReason,
-      isMatched: difference === 0,
+      isMatched: moneyCents(difference) === 0n,
     };
   }
 
@@ -192,15 +207,15 @@ const DebtReconciliationUtils = (() => {
   /**
    * Xây dựng URL xuất file PDF biên bản đối chiếu.
    */
-  function buildExportUrl(dealerId, from, to) {
-    const cleanDealerId = encodeURIComponent(String(dealerId));
-    const cleanFrom = encodeURIComponent(String(from));
-    const cleanTo = encodeURIComponent(String(to));
-    return `/api/finance/debt/${cleanDealerId}/statement/export?from=${cleanFrom}&to=${cleanTo}&format=pdf`;
+  function buildExportUrl(id, portal = false) {
+    if (!/^[1-9]\d*$/.test(String(id))) throw new Error("Mã biên bản không hợp lệ.");
+    return `/api/${portal ? "portal" : "finance"}/debt-reconciliations/${id}/pdf`;
   }
 
   return {
     escapeHtml,
+    moneyCents,
+    moneyDifference,
     formatMoney,
     formatDate,
     formatDateTime,

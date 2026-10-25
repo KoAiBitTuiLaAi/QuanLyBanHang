@@ -29,6 +29,10 @@ public class DeliveryTripResponse {
     private String driverPhone;
     private String vehiclePlate;
 
+    private String routeName;
+    private Long territoryId;
+    private String territoryName;
+
     private DeliveryTripStatus status;
     private String statusDisplayName;
 
@@ -78,6 +82,9 @@ public class DeliveryTripResponse {
                 .driverName(trip.getDriverName())
                 .driverPhone(trip.getDriverPhone())
                 .vehiclePlate(trip.getVehiclePlate())
+                .routeName(trip.getRouteName())
+                .territoryId(trip.getTerritory() != null ? trip.getTerritory().getId() : null)
+                .territoryName(trip.getTerritory() != null ? trip.getTerritory().getName() : null)
                 .status(trip.getStatus())
                 .statusDisplayName(trip.getStatus() != null ? trip.getStatus().getDisplayName() : null)
                 .departureTime(trip.getDepartureTime())
