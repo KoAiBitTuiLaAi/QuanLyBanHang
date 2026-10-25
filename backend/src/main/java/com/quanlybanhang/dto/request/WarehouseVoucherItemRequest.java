@@ -30,6 +30,11 @@ public class WarehouseVoucherItemRequest {
 
     private BigDecimal price;
 
+    /** S8-03 declared value of loss; required and positive for adjustment vouchers. */
+    @jakarta.validation.constraints.DecimalMin(value = "0.01", message = "Giá trị tổn thất phải lớn hơn 0")
+    @jakarta.validation.constraints.Digits(integer = 13, fraction = 2)
+    private BigDecimal lossValue;
+
     /**
      * Số lô hàng (S5-04). Bắt buộc nếu sản phẩm có manageLot = true khi nhập kho.
      * Khi xuất kho (S6-04): nếu bỏ trống hệ thống tự áp dụng lô FEFO gợi ý;

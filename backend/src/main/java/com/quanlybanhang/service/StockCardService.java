@@ -210,7 +210,7 @@ public class StockCardService {
                 case IMPORT -> { change = vi.getBaseQuantity(); eventType = "IMPORT"; label = "Nhập kho"; }
                 case EXPORT -> { change = vi.getBaseQuantity().negate(); eventType = "EXPORT"; label = "Xuất kho"; }
                 case ADJUSTMENT -> {
-                    change = vi.getBaseQuantity(); // Signed adjustment movement, including negative differences.
+                    change = vi.getBaseQuantity(); // Signed adjustment movement, including S8-03 approved loss.
                     eventType = "ADJUSTMENT"; label = "Điều chỉnh";
                 }
                 default -> { change = vi.getBaseQuantity(); eventType = "VOUCHER"; label = "Phiếu kho"; }

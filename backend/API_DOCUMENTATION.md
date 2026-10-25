@@ -4931,3 +4931,17 @@ Hỗ trợ Kế toán công nợ xem báo cáo công nợ quá hạn theo tuổi
 | `GET` | `/api/reports/debt-aging` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp công nợ quá hạn theo tuổi nợ, theo nhân viên và bảng đại lý xếp hạng rủi ro |
 | `GET` | `/api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Xuất toàn bộ báo cáo công nợ quá hạn theo tuổi nợ ra file Excel (`.xlsx`) |
 
+# S8-03 — Phiếu điều chỉnh tồn kho có phê duyệt
+
+## Luồng và quyền
+
+| Method | Endpoint | Quyền DB | Tác dụng |
+|---|---|---|---|
+| `POST` | `/api/warehouse/adjustment-vouchers` | `WAREHOUSE_ADJUST` | Tạo phiếu `PENDING_APPROVAL`, ghi lý do thuộc `DAMAGED`, `LOST`, `EXPIRED` (hoặc `OTHER`), số lượng và giá trị tổn thất theo dòng. Không đổi tồn kho. |
+| `POST` | `/api/warehouse/adjustment-vouchers/{id}/approve` | `WAREHOUSE_APPROVE` | Chặn người lập tự duyệt; khóa phiếu, kho và tồn từng SKU; kiểm tra tồn khả dụng/giữ chỗ; cập nhật tồn và ghi sổ cùng transaction. Trạng thái thành `APPROVED`, có người duyệt và thời điểm duyệt. |
+| `POST` | `/api/warehouse/adjustment-vouchers/{id}/reject` | `WAREHOUSE_APPROVE` | Bắt buộc lý do; lưu người từ chối và lý do, không đổi tồn. |
+| `GET` | `/api/warehouse/vouchers?type=ADJUSTMENT` | `WAREHOUSE_VIEW` | Danh sách phiếu điều chỉnh cùng trạng thái, lập/duyệt/từ chối và giá trị tổn thất. |
+
+`ROLE_ADMIN` luôn được phép theo chính sách chung. Các quyền chức năng được lấy từ ma trận quyền DB; cấu hình mặc định cấp `WAREHOUSE_ADJUST` và `WAREHOUSE_APPROVE` cho Quản lý kho. Thu hồi quyền có hiệu lực theo cơ chế xác thực hiện hành ở request kế tiếp. Phiếu `APPROVED` được lấy vào thẻ kho với lượng cơ sở có dấu âm; `PENDING_APPROVAL` và `REJECTED` không tạo phát sinh tồn.
+
+Giá trị tổn thất mỗi dòng phải dương và được lưu riêng; tổng phiếu được tính từ các dòng. Duyệt thất bại nếu tồn vật lý sau điều chỉnh âm hoặc thấp hơn lượng đang giữ chỗ. Hệ thống dùng giao dịch và khóa hàng để tránh ghi sổ dở dang.
