@@ -99,7 +99,7 @@
 - S8-05: Báo cáo → Dashboard điều hành → Sáu chỉ số, doanh số theo ngày/khu vực, đại lý quá hạn và phân trang; lối tắt ở Tổng quan → Công việc.
 - S8-06: Một phần (frontend): Kinh doanh → Báo cáo doanh số → Chọn chiều nhóm, bộ lọc, so sánh cùng kỳ và xuất Excel; chờ API backend để tải/xuất dữ liệu thật.
 - S8-07: Báo cáo → Tồn kho & Vòng quay → Xem giá trị tồn theo kho và theo nhóm hàng, số ngày tồn bình quân SKU, phát hiện hàng chậm luân chuyển đang chôn vốn và xuất Excel.
-- S8-08: Một phần: Kho hàng → Tồn kho → Áp dụng bộ lọc → Xuất Excel; đã có API `/api/warehouse/stock-ledger/export` xuất XLSX theo bộ lọc, nút giao diện vẫn xuất tại trình duyệt và chưa nối API.
+- S8-08: Kho hàng → Tồn kho → Áp dụng bộ lọc, xuất báo cáo tồn kho ra tệp Excel qua API máy chủ, giữ nguyên ba cột tồn và tên tệp chứa mã kho kèm ngày xuất.
 - S8-09: Một phần (frontend): Báo cáo → Công nợ theo tuổi nợ → Tổng hợp nhóm tuổi nợ/nhân viên, ưu tiên đại lý và Excel; chờ backend để tải dữ liệu/xuất file thật.
 - S8-10: Tài chính → Sổ chi tiết công nợ → Chọn đại lý và khoảng thời gian, xem phát sinh tăng giảm kèm số dư lũy kế, xuất PDF và Excel.
 
