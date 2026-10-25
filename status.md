@@ -4,6 +4,8 @@
 
 Nhánh `feature/S7-07-backend-xem_cong_no_cua_chinh_minh`, từ `develop`; hoàn thiện API đã có và sửa màn hình hiện hữu tại **Kinh doanh → Công nợ của tôi** (`/dealer-invoices`).
 
+Sau khi đồng bộ `develop` mới có S6-09, giữ cả hai phần trạng thái và sửa lỗi biên dịch có sẵn trên develop: bỏ một khai báo trùng `deliveryTripStopRepository`, khôi phục các hợp đồng `OrderService` cũ đang được controller/service sử dụng, giữ hai API theo dõi giao hàng mới. Fixture controller theo dõi đơn bổ sung vai trò đại lý đúng như hồ sơ DB thật; không nới quyền để kiểm thử qua.
+
 | Yêu cầu | Backend | Frontend | Kết nối / phân quyền |
 |---|---|---|---|
 | Hóa đơn của chính đại lý, số tiền, hạn thanh toán, trạng thái | Có; cách ly hồ sơ DB, lọc hợp lệ, phân trang chống tràn số | Có; sửa trường số lượng/thành tiền, trạng thái và phân trang | INVOICE_VIEW; dealer không được đổi hồ sơ, Admin chọn dealerId |
@@ -11,7 +13,7 @@ Nhánh `feature/S7-07-backend-xem_cong_no_cua_chinh_minh`, từ `develop`; hoàn
 | Tổng nợ và hạn mức còn được lấy hàng | Có; giữ FIFO và khấu trừ trả hàng đã xác nhận; exactAmounts chuỗi thập phân | Có; BigInt giữ số tiền chính xác, dùng availableOrderLimit của server, không tự chặn sai chính sách ALLOW | FINANCE_VIEW_DEBT độc lập với INVOICE_VIEW; menu mở với một trong hai quyền |
 | Quyền và dữ liệu trả về | Có; ẩn invoices trong summary nếu thiếu INVOICE_VIEW, ẩn tiền trên profile nếu thiếu FINANCE_VIEW_DEBT; khóa cả /portal/debt cũ, không dùng role fallback | Có; bỏ dữ liệu cũ sau lỗi API/đổi quyền/đổi bộ lọc; khóa xuất khi không có dữ liệu; cổng đặt hàng bỏ gọi tổng nợ khi thiếu quyền | Cùng JWT có hiệu lực cấp/thu hồi; ROLE_ADMIN toàn quyền; ORDER_VIEW không đọc được tổng nợ, giỏ hàng dùng preview nghiệp vụ hiện có |
 
-Kiểm thử đạt: **80 backend** (9 tích hợp S7-07, 20 controller portal, 12 hóa đơn, 26 công nợ, 13 trả hàng), **280 Node**, **13 route Python**; Chrome kiểm tra tiền lớn/phần lẻ, dữ liệu chi tiết, PDF, sandbox bản in, lỗi API, phản hồi sai thứ tự, thu hồi quyền đang tải, quyền độc lập và Admin; giao diện tại 1440/1024/768/390/320 px không tràn ngang toàn trang. Backend tích hợp dùng H2 cách ly; Chrome chặn toàn bộ API bằng HTTP fixture. Không kiểm thử ghi trên MySQL thật, không tạo/sửa đơn hay reset DB nghiệp vụ. Antigravity Opus hỗ trợ rà thiết kế và ca kiểm thử; Codex chốt code/kết quả. Excel hiện xuất trang đang xem; PDF được dựng từ hóa đơn đã lưu, không bổ sung kho lưu trữ PDF gốc.
+Kiểm thử đạt: **133 backend** (9 tích hợp S7-07, 20 controller portal, 12 hóa đơn, 26 công nợ, 13 trả hàng; hồi quy thêm 37 controller đơn hàng, 8 controller và 8 service theo dõi giao hàng), **280 Node**, **13 route Python**; Chrome kiểm tra tiền lớn/phần lẻ, dữ liệu chi tiết, PDF, sandbox bản in, lỗi API, phản hồi sai thứ tự, thu hồi quyền đang tải, quyền độc lập và Admin; giao diện tại 1440/1024/768/390/320 px không tràn ngang toàn trang. Backend tích hợp dùng H2 cách ly; Chrome chặn toàn bộ API bằng HTTP fixture. Không kiểm thử ghi trên MySQL thật, không tạo/sửa đơn hay reset DB nghiệp vụ. Antigravity Opus hỗ trợ rà thiết kế và ca kiểm thử; Codex chốt code/kết quả. Excel hiện xuất trang đang xem; PDF được dựng từ hóa đơn đã lưu, không bổ sung kho lưu trữ PDF gốc.
 
 ## S6-09 — Theo dõi trạng thái giao hàng của đơn (Backend) — 25/10/2026
 

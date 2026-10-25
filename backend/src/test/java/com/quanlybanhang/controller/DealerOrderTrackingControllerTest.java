@@ -76,6 +76,8 @@ class DealerOrderTrackingControllerTest {
     void setUp() throws Exception {
         when(userRepository.findByUsername("dealer_user")).thenReturn(java.util.Optional.of(
                 com.quanlybanhang.model.User.builder().username("dealer_user")
+                        .roles(java.util.Set.of(com.quanlybanhang.model.Role.builder()
+                                .name(com.quanlybanhang.model.ERole.ROLE_DEALER).build()))
                         .dealer(com.quanlybanhang.model.Dealer.builder().id(1L).build()).build()));
         objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
 
