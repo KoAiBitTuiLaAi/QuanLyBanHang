@@ -244,17 +244,13 @@ class DeliveryTripServiceTest {
 
     @Test
     @DisplayName("Giao thành công 1 điểm: deliveredPoints = 1, remainingPoints = 1, cập nhật tiền trên đường")
-    void updateStopStatus_Delivered_UpdatesProgressAndValueOnRoad() {
+    void updateStopStatus_Delivered_UpdatesProgressAndValueOnRoad() throws Exception {
         DeliveryTrip trip = createSampleTrip();
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
         when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(i -> i.getArgument(0));
 
-        UpdateDeliveryStopStatusRequest req = UpdateDeliveryStopStatusRequest.builder()
-                .status(DeliveryStopStatus.DELIVERED)
-                .note("Đã ký nhận đầy đủ")
-                .build();
 
-        DeliveryTripResponse res = tripService.updateStopStatus(10L, 101L, req, "admin");
+        DeliveryTripResponse res = tripService.confirmDelivery(10L, 101L, "Người ký nhận", LocalDateTime.now().minusMinutes(1), proofImage(), "admin");
 
         assertThat(res.getDeliveredPoints()).isEqualTo(1);
         assertThat(res.getRemainingPoints()).isEqualTo(1);
@@ -266,7 +262,7 @@ class DeliveryTripServiceTest {
     @DisplayName("QUY TẮC CỐT LÕI S6-07: Hàng chưa giao được vẫn thuộc trách nhiệm chuyến, KHÔNG TỰ VỀ KHO")
     void updateStopStatus_Failed_DoesNotReturnToWarehouse_RemainsOnRoad() {
         DeliveryTrip trip = createSampleTrip();
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
         when(tripRepository.save(any(DeliveryTrip.class))).thenAnswer(i -> i.getArgument(0));
 
         UpdateDeliveryStopStatusRequest req = UpdateDeliveryStopStatusRequest.builder()
@@ -305,7 +301,7 @@ class DeliveryTripServiceTest {
     @DisplayName("Cập nhật điểm FAILED nhưng thiếu lý do -> ném ngoại lệ IllegalArgumentException")
     void updateStopStatus_FailedWithoutReason_ThrowsException() {
         DeliveryTrip trip = createSampleTrip();
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
 
         UpdateDeliveryStopStatusRequest req = UpdateDeliveryStopStatusRequest.builder()
                 .status(DeliveryStopStatus.FAILED)
@@ -419,7 +415,7 @@ class DeliveryTripServiceTest {
                 .baseQuantity(new BigDecimal("100.0000"))
                 .build();
 
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
         when(inventoryRepository.findByWarehouseIdAndProductId(1L, 50L)).thenReturn(Optional.of(inv));
         when(stopRepository.save(any(DeliveryTripStop.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -435,6 +431,81 @@ class DeliveryTripServiceTest {
         verify(inventoryRepository).save(inv);
         verify(auditLogService).logAction(eq("DELIVERY_TRIP"), eq(trip.getTripCode()), eq("RETURN_TO_WAREHOUSE"),
                 eq("false"), eq("true"), anyString(), eq("admin"));
+    }
+
+
+    private org.springframework.mock.web.MockMultipartFile proofImage() throws Exception {
+        var out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", out);
+        return new org.springframework.mock.web.MockMultipartFile("proof", "signed.png", "image/png", out.toByteArray());
+    }
+
+    @Test
+    void deliveredWithoutProofRejected() {
+        var trip = createSampleTrip();
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        assertThatThrownBy(() -> tripService.updateStopStatus(10L, 101L,
+                UpdateDeliveryStopStatusRequest.builder().status(DeliveryStopStatus.DELIVERED).build(), "admin"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("confirm-delivery");
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void confirmationStoresReceiverTimeAndProof() throws Exception {
+        var trip = createSampleTrip();
+        var time = LocalDateTime.now().minusMinutes(1);
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        var result = tripService.confirmDelivery(10L, 101L, " Người nhận ", time, proofImage(), "admin");
+        var stop = result.getStops().get(0);
+        assertThat(stop.getReceiverName()).isEqualTo("Người nhận");
+        assertThat(stop.getDeliveredAt()).isEqualTo(time);
+        assertThat(stop.isHasSignedProof()).isTrue();
+        assertThat(stop.getConfirmedBy()).isEqualTo("admin");
+        assertThatThrownBy(() -> tripService.confirmDelivery(10L, 101L, "Thay đổi", time, proofImage(), "admin"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void rejectsInvalidProofAndFutureDate() throws Exception {
+        var trip = createSampleTrip();
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        assertThatThrownBy(() -> tripService.confirmDelivery(10L, 101L, "Người nhận", LocalDateTime.now().plusDays(1), proofImage(), "admin"))
+                .isInstanceOf(IllegalArgumentException.class);
+        var fake = new org.springframework.mock.web.MockMultipartFile("proof", "fake.png", "image/png", "not an image".getBytes());
+        assertThatThrownBy(() -> tripService.confirmDelivery(10L, 101L, "Người nhận", LocalDateTime.now().minusMinutes(1), fake, "admin"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void cannotDeliverReturnedOrAlreadyDeliveredStop() {
+        var trip = createSampleTrip();
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        trip.getStops().get(0).setReturnedToWarehouse(true);
+        assertThatThrownBy(() -> tripService.updateStopStatus(10L, 101L,
+                UpdateDeliveryStopStatusRequest.builder().status(DeliveryStopStatus.DELIVERED).build(), "admin"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void confirmationPopulatesActualQuantitiesForSprint7() throws Exception {
+        var trip = createSampleTrip();
+        var product = Product.builder().id(50L).build();
+        var line = OrderItem.builder().product(product).unit("thùng").quantity(new BigDecimal("2"))
+                .conversionFactor(new BigDecimal("24")).build();
+        var order = Order.builder().id(7L).status("EXPORTED").items(new ArrayList<>(List.of(line))).build();
+        var stop = trip.getStops().get(0);
+        stop.setOrder(order);
+        stop.getItems().add(DeliveryTripStopItem.builder().product(product).unit("thùng").quantity(new BigDecimal("2")).build());
+        when(tripRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(trip));
+        when(orderRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(order));
+        when(tripRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        tripService.confirmDelivery(10L, 101L, "Người nhận", LocalDateTime.now().minusMinutes(1), proofImage(), "admin");
+        assertThat(order.getStatus()).isEqualTo("DELIVERED");
+        assertThat(line.getDeliveredQuantity()).isEqualByComparingTo("2");
+        assertThat(line.getDeliveredBaseQuantity()).isEqualByComparingTo("48");
+        verify(orderRepository).save(order);
     }
 
     private DeliveryTrip createSampleTrip() {

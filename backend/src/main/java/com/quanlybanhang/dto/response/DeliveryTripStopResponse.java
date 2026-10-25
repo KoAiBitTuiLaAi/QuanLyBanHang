@@ -27,6 +27,8 @@ public class DeliveryTripStopResponse {
     private String statusDisplayName;
     private BigDecimal deliveryAmount;
     private LocalDateTime deliveredAt;
+    private boolean hasSignedProof;
+    private String confirmedBy;
     private String failedReason;
     private LocalDateTime failedAt;
     private Boolean returnedToWarehouse;

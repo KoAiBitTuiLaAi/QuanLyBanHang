@@ -71,6 +71,17 @@ public class DeliveryTripStop {
     @Builder.Default
     private BigDecimal deliveryAmount = BigDecimal.ZERO;
 
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    @Column(name = "signed_proof", columnDefinition = "MEDIUMBLOB")
+    private byte[] signedProof;
+
+    @Column(name = "proof_content_type", length = 30)
+    private String proofContentType;
+
+    @Column(name = "confirmed_by", length = 100)
+    private String confirmedBy;
+
     @Column(name = "delivered_at")
     private LocalDateTime deliveredAt;
 

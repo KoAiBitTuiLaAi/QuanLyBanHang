@@ -61,6 +61,15 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager reservationTransactions;
 
+    @Autowired
+    private DeliveryTripStopRepository deliveryTripStopRepository;
+
+    private void requireTripConfirmation(Long orderId) {
+        if (deliveryTripStopRepository != null && deliveryTripStopRepository.existsByOrderId(orderId)) {
+            throw new IllegalArgumentException("Đơn thuộc chuyến giao: phải dùng confirm-delivery kèm chứng từ S6-08");
+        }
+    }
+
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final DealerRepository dealerRepository;
@@ -846,6 +855,7 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + id));
 
         checkWarehouseAuthorizationForOrder(order, "cập nhật giao hàng");
+        requireTripConfirmation(id);
 
         if (request.getItems() != null) {
             Set<Long> seen = new HashSet<>();
@@ -983,6 +993,7 @@ public class OrderServiceImpl implements OrderService {
 
         String oldStatus = order.getStatus();
         String targetStatus = normalizeLifecycleStatus(status);
+        if ("DELIVERED".equals(targetStatus)) requireTripConfirmation(id);
 
         if ("CANCELLED".equalsIgnoreCase(oldStatus)) {
             throw new IllegalArgumentException("Không thể cập nhật trạng thái của đơn hàng đã bị huỷ");

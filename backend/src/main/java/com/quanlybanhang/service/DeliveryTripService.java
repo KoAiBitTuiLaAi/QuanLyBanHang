@@ -17,6 +17,11 @@ public interface DeliveryTripService {
     /**
      * Lấy các tùy chọn bộ lọc và thông tin phân quyền.
      */
+    DeliveryTripResponse confirmDelivery(Long tripId, Long stopId, String receiverName,
+            java.time.LocalDateTime deliveredAt, org.springframework.web.multipart.MultipartFile proof, String username);
+
+    org.springframework.http.ResponseEntity<byte[]> getDeliveryProof(Long tripId, Long stopId);
+
     DeliveryTripOptionsResponse getOptions();
 
     /**

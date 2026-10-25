@@ -112,7 +112,7 @@ class DeliveryTripIntegrationTest {
 
     @Test
     @DisplayName("Luồng đầy đủ S6-07: Tạo chuyến, theo dõi tiền hàng trên đường, hàng FAILED không tự về kho")
-    void testDeliveryTripLifecycleAndInTransitMoneyTracking() {
+    void testDeliveryTripLifecycleAndInTransitMoneyTracking() throws Exception {
         // 1. Tạo chuyến giao hàng với 2 điểm
         Map<String, Object> createReq = Map.of(
                 "warehouseId", warehouse.getId(),
@@ -163,7 +163,23 @@ class DeliveryTripIntegrationTest {
                 "status", "DELIVERED",
                 "note", "Khách đã nhận đủ hàng"
         );
-        JsonNode deliveredRes = call(HttpMethod.PUT, API + "/" + tripId + "/stops/" + stop1Id + "/status", staffToken, updateDeliveredReq, 200).get("data");
+        call(HttpMethod.PUT, API + "/" + tripId + "/stops/" + stop1Id + "/status", staffToken, updateDeliveredReq, 400);
+        JsonNode deliveredRes = confirm(tripId, stop1Id, staffToken, 200).get("data");
+        assertThat(deliveredRes.at("/stops/0/hasSignedProof").asBoolean()).isTrue();
+        HttpHeaders proofHeaders = new HttpHeaders();
+        proofHeaders.setBearerAuth(staffToken);
+        String proofUrl = API + "/" + tripId + "/stops/" + stop1Id + "/proof";
+        var downloaded = http.exchange(proofUrl, HttpMethod.GET, new HttpEntity<>(proofHeaders), byte[].class);
+        assertThat(downloaded.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(downloaded.getBody()).isEqualTo(imageBytes());
+        assertThat(downloaded.getHeaders().getCacheControl()).isEqualTo("no-store");
+        confirm(tripId, stop1Id, staffToken, 400);
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_VIEW));
+        confirm(tripId, stop2Id, staffToken, 403);
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of());
+        assertThat(http.exchange(proofUrl, HttpMethod.GET, new HttpEntity<>(proofHeaders), byte[].class)
+                .getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        matrix.updateRolePermissions(ERole.ROLE_WAREHOUSE_STAFF, Set.of(Permission.WAREHOUSE_VIEW, Permission.WAREHOUSE_EXPORT));
         assertThat(deliveredRes.get("deliveredPoints").asLong()).isEqualTo(1L);
         assertThat(deliveredRes.get("remainingPoints").asLong()).isEqualTo(1L);
         assertThat(deliveredRes.get("deliveredValue").asDouble()).isEqualTo(10000000.00);
@@ -284,6 +300,28 @@ class DeliveryTripIntegrationTest {
 
         // 5. Token hoạt động lại bình thường -> 200 OK
         call(HttpMethod.GET, API + "/options", staffToken, null, 200);
+    }
+
+    private byte[] imageBytes() throws Exception {
+        var out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", out);
+        return out.toByteArray();
+    }
+
+    private JsonNode confirm(long tripId, long stopId, String token, int status) throws Exception {
+        var body = new org.springframework.util.LinkedMultiValueMap<String, Object>();
+        body.add("receiverName", "Người ký nhận");
+        body.add("deliveredAt", LocalDateTime.now().toString());
+        body.add("proof", new org.springframework.core.io.ByteArrayResource(imageBytes()) {
+            @Override public String getFilename() { return "signed.png"; }
+        });
+        var headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        var response = http.exchange(API + "/" + tripId + "/stops/" + stopId + "/confirm-delivery",
+                HttpMethod.POST, new HttpEntity<>(body, headers), JsonNode.class);
+        assertThat(response.getStatusCode().value()).as("%s", response.getBody()).isEqualTo(status);
+        return response.getBody();
     }
 
     private String login(String username) {

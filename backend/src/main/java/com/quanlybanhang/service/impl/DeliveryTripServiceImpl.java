@@ -479,11 +479,81 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     }
 
     @Override
+    public DeliveryTripResponse confirmDelivery(Long tripId, Long stopId, String receiverName,
+            LocalDateTime deliveredAt, org.springframework.web.multipart.MultipartFile proof, String username) {
+        Scope scope = checkScope(true);
+        DeliveryTrip trip = tripRepository.findByIdForUpdate(tripId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến giao hàng"));
+        scope.require(trip.getWarehouse().getId());
+        DeliveryTripStop stop = trip.getStops().stream().filter(s -> s.getId().equals(stopId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Điểm giao không thuộc chuyến"));
+        if (!StringUtils.hasText(receiverName) || receiverName.trim().length() > 100) {
+            throw new IllegalArgumentException("Người nhận thực tế bắt buộc, tối đa 100 ký tự");
+        }
+        if (deliveredAt == null || deliveredAt.isAfter(LocalDateTime.now())
+                || (trip.getDepartureTime() != null && deliveredAt.isBefore(trip.getDepartureTime()))) {
+            throw new IllegalArgumentException("Thời điểm giao phải từ lúc xuất phát đến hiện tại");
+        }
+        if (proof == null || proof.isEmpty() || proof.getSize() > 5 * 1024 * 1024) {
+            throw new IllegalArgumentException("Ảnh biên bản có chữ ký bắt buộc, tối đa 5 MB");
+        }
+        byte[] bytes;
+        String contentType;
+        try {
+            bytes = proof.getBytes();
+            try (var input = javax.imageio.ImageIO.createImageInputStream(new java.io.ByteArrayInputStream(bytes))) {
+                var readers = javax.imageio.ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) throw new IllegalArgumentException("Chứng từ phải là ảnh PNG hoặc JPEG hợp lệ");
+                var reader = readers.next();
+                try {
+                    String format = reader.getFormatName();
+                    if (!"png".equalsIgnoreCase(format) && !"jpeg".equalsIgnoreCase(format))
+                        throw new IllegalArgumentException("Chỉ chấp nhận PNG hoặc JPEG");
+                    reader.setInput(input);
+                    if ((long) reader.getWidth(0) * reader.getHeight(0) > 20_000_000L)
+                        throw new IllegalArgumentException("Ảnh vượt quá 20 triệu điểm ảnh");
+                    if (reader.read(0) == null) throw new IllegalArgumentException("Ảnh không hợp lệ");
+                    contentType = "png".equalsIgnoreCase(format) ? "image/png" : "image/jpeg";
+                } finally { reader.dispose(); }
+            }
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("Không đọc được ảnh chứng từ", e);
+        }
+        if (stop.getSignedProof() != null) throw new IllegalStateException("Chứng từ đã được xác nhận");
+        stop.setSignedProof(bytes);
+        stop.setProofContentType(contentType);
+        stop.setReceiverName(receiverName.trim());
+        stop.setDeliveredAt(deliveredAt);
+        stop.setConfirmedBy(username);
+        return updateStopStatus(tripId, stopId,
+                UpdateDeliveryStopStatusRequest.builder().status(DeliveryStopStatus.DELIVERED).build(), username);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.http.ResponseEntity<byte[]> getDeliveryProof(Long tripId, Long stopId) {
+        Scope scope = checkScope(false);
+        DeliveryTrip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến giao hàng"));
+        scope.require(trip.getWarehouse().getId());
+        DeliveryTripStop stop = trip.getStops().stream().filter(s -> s.getId().equals(stopId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Điểm giao không thuộc chuyến"));
+        if (stop.getSignedProof() == null) return org.springframework.http.ResponseEntity.notFound().build();
+        return org.springframework.http.ResponseEntity.ok()
+                .header("Cache-Control", "no-store")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Disposition", "attachment; filename=delivery-proof." +
+                        ("image/png".equals(stop.getProofContentType()) ? "png" : "jpg"))
+                .contentType(org.springframework.http.MediaType.parseMediaType(stop.getProofContentType()))
+                .body(stop.getSignedProof());
+    }
+
+    @Override
     public DeliveryTripResponse updateStopStatus(Long tripId, Long stopId,
                                                 UpdateDeliveryStopStatusRequest request, String username) {
         Scope scope = checkScope(true);
 
-        DeliveryTrip trip = tripRepository.findById(tripId)
+        DeliveryTrip trip = tripRepository.findByIdForUpdate(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến giao hàng với ID: " + tripId));
         scope.require(trip.getWarehouse().getId());
 
@@ -496,11 +566,17 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy điểm giao ID: " + stopId + " trong chuyến " + trip.getTripCode()));
 
+        if (stop.getStatus() == DeliveryStopStatus.DELIVERED || Boolean.TRUE.equals(stop.getReturnedToWarehouse())) {
+            throw new IllegalStateException("Không thể sửa điểm đã giao hoặc đã nhập trả kho");
+        }
         DeliveryStopStatus targetStatus = request.getStatus();
         if (targetStatus == null) {
             throw new IllegalArgumentException("Trạng thái giao hàng không được để trống");
         }
 
+        if ((request.getFailedReason() != null && request.getFailedReason().length() > 500)
+                || (request.getNote() != null && request.getNote().length() > 500))
+            throw new IllegalArgumentException("Lý do và ghi chú tối đa 500 ký tự");
         if (targetStatus == DeliveryStopStatus.FAILED) {
             if (!StringUtils.hasText(request.getFailedReason())) {
                 throw new IllegalArgumentException("Bắt buộc phải nhập lý do khi điểm giao chưa giao được");
@@ -529,16 +605,42 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                     username);
 
         } else if (targetStatus == DeliveryStopStatus.DELIVERED) {
+            if (stop.getSignedProof() == null || !StringUtils.hasText(stop.getConfirmedBy())) {
+                throw new IllegalArgumentException("Phải xác nhận giao hàng kèm ảnh biên bản có chữ ký qua API confirm-delivery");
+            }
             stop.setStatus(DeliveryStopStatus.DELIVERED);
-            stop.setDeliveredAt(LocalDateTime.now());
+            stop.setFailedReason(null);
+            stop.setFailedAt(null);
             stop.setNote(request.getNote() != null ? request.getNote().trim() : stop.getNote());
 
             // Cập nhật trạng thái Order nếu có liên kết
             if (stop.getOrder() != null) {
-                Order order = stop.getOrder();
+                Order order = orderRepository.findByIdForUpdate(stop.getOrder().getId())
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng"));
+                if (!Set.of("EXPORTED", "SHIPPED").contains(order.getStatus())) {
+                    throw new IllegalStateException("Chỉ xác nhận đơn đã xuất kho và chưa giao");
+                }
+                Map<String, BigDecimal> actual = new HashMap<>();
+                for (DeliveryTripStopItem item : stop.getItems()) {
+                    if (item.getProduct() == null || item.getQuantity() == null || item.getQuantity().signum() <= 0)
+                        throw new IllegalArgumentException("Chi tiết hàng giao không hợp lệ");
+                    actual.merge(item.getProduct().getId() + ":" + item.getUnit(), item.getQuantity(), BigDecimal::add);
+                }
+                Map<String, BigDecimal> expected = new HashMap<>();
+                for (OrderItem item : order.getItems())
+                    expected.merge(item.getProduct().getId() + ":" + item.getUnit(), item.getQuantity(), BigDecimal::add);
+                if (actual.size() != expected.size() || expected.entrySet().stream().anyMatch(e ->
+                        !actual.containsKey(e.getKey()) || actual.get(e.getKey()).compareTo(e.getValue()) != 0))
+                    throw new IllegalArgumentException("Xác nhận S6-08 yêu cầu giao đủ hàng của đơn; chi tiết chuyến không khớp");
                 if (!"DELIVERED".equalsIgnoreCase(order.getStatus()) && !"CLOSED".equalsIgnoreCase(order.getStatus())) {
                     order.setStatus("DELIVERED");
-                    order.setActualDeliveryDate(LocalDate.now());
+                    order.setActualDeliveryDate(stop.getDeliveredAt().toLocalDate());
+                    // Chuyến giao toàn bộ đơn; ghi thực giao để S7-01 phát hành hóa đơn.
+                    for (OrderItem item : order.getItems()) {
+                        item.setDeliveredQuantity(item.getQuantity());
+                        item.setDeliveredBaseQuantity(item.getQuantity().multiply(
+                                item.getConversionFactor() != null ? item.getConversionFactor() : BigDecimal.ONE));
+                    }
                     orderRepository.save(order);
                 }
             }
@@ -562,7 +664,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     public DeliveryTripResponse completeTrip(Long id, String username) {
         Scope scope = checkScope(true);
 
-        DeliveryTrip trip = tripRepository.findById(id)
+        DeliveryTrip trip = tripRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến giao hàng với ID: " + id));
         scope.require(trip.getWarehouse().getId());
 
@@ -596,7 +698,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     public DeliveryTripResponse cancelTrip(Long id, String cancelReason, String username) {
         Scope scope = checkScope(true);
 
-        DeliveryTrip trip = tripRepository.findById(id)
+        DeliveryTrip trip = tripRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến giao hàng với ID: " + id));
         scope.require(trip.getWarehouse().getId());
 
@@ -634,7 +736,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                                                               ReturnStopGoodsRequest request, String username) {
         Scope scope = checkScope(true);
 
-        DeliveryTrip trip = tripRepository.findById(tripId)
+        DeliveryTrip trip = tripRepository.findByIdForUpdate(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến giao hàng với ID: " + tripId));
         scope.require(trip.getWarehouse().getId());
 
@@ -767,6 +869,8 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                 .statusDisplayName(stop.getStatus() != null ? stop.getStatus().getDisplayName() : null)
                 .deliveryAmount(stop.getDeliveryAmount())
                 .deliveredAt(stop.getDeliveredAt())
+                .hasSignedProof(stop.getSignedProof() != null)
+                .confirmedBy(stop.getConfirmedBy())
                 .failedReason(stop.getFailedReason())
                 .failedAt(stop.getFailedAt())
                 .returnedToWarehouse(stop.getReturnedToWarehouse())

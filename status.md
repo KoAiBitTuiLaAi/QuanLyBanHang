@@ -755,3 +755,17 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 4. Nối preview chiết khấu cho cổng/đặt lại, UI sales xác nhận đơn cổng; nghiệm thu MySQL/SMTP/360px theo AC.
 
 Chi tiết: [báo cáo rà soát](docs/SPRINT_1_5_AUDIT_20261018.md).
+
+
+## S6-08 — Backend xác nhận giao hàng kèm chứng từ (25/10/2026)
+
+| Hạng mục | Backend | Frontend | Kết nối |
+|---|---|---|---|
+| Người nhận thực tế, thời điểm giao, ảnh biên bản ký nhận | Đã bổ sung API multipart, lưu DB, tải ảnh có kiểm tra quyền | Chưa làm theo phạm vi yêu cầu | Chưa nối UI |
+| Giao thất bại và nhập hàng trả kho | Bắt buộc lý do; giữ API nhập trả kho tường minh S6-07; chặn sửa sau trả kho | Không sửa | Backend dùng lại luồng hiện có |
+| Hóa đơn Sprint 7 | DELIVERED và thực giao chỉ ghi sau xác nhận hợp lệ cho đơn thuộc chuyến | Không sửa | Nối dữ liệu S7-01; phát hành hóa đơn là thao tác riêng |
+| Ma trận quyền DB | WAREHOUSE_EXPORT cho xác nhận, VIEW/EXPORT cho ảnh; ADMIN toàn quyền; phạm vi kho; token đọc lại quyền mỗi request | Chưa có action S6-08 | BE có kiểm tra; chưa xác minh UI ẩn/hiện S6-08 |
+
+Chi tiết hợp đồng và giới hạn: `backend/API_DOCUMENTATION.md`, mục S6-08. Không commit/push tự động.
+
+Kiểm chứng S6-08: 92 tests thuộc 10 lớp service/controller/security/integration đều đạt (0 failures, 0 errors, 0 skipped), gồm lưu/tải ảnh qua DB H2, token cũ sau thu hồi quyền trả 403, chặn bỏ qua chứng từ và dữ liệu thực giao cho hóa đơn. Chưa chạy với MySQL triển khai thực tế; chưa kiểm thử UI S6-08.

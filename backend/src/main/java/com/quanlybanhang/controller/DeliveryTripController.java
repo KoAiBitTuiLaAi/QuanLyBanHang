@@ -89,6 +89,23 @@ public class DeliveryTripController {
         return ApiResponse.success("Cập nhật trạng thái điểm giao thành công", trip);
     }
 
+    @PostMapping(value = "/{id}/stops/{stopId}/confirm-delivery", consumes = "multipart/form-data")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_EXPORT')")
+    public ApiResponse confirmDelivery(@PathVariable Long id, @PathVariable Long stopId,
+            @RequestParam String receiverName,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            java.time.LocalDateTime deliveredAt,
+            @RequestPart("proof") org.springframework.web.multipart.MultipartFile proof, Principal principal) {
+        return ApiResponse.success("Xác nhận giao hàng thành công", deliveryTripService.confirmDelivery(
+                id, stopId, receiverName, deliveredAt, proof, principal.getName()));
+    }
+
+    @GetMapping("/{id}/stops/{stopId}/proof")
+    @PreAuthorize("hasRole('ADMIN') or hasAnyAuthority('WAREHOUSE_VIEW', 'WAREHOUSE_EXPORT')")
+    public org.springframework.http.ResponseEntity<byte[]> getProof(@PathVariable Long id, @PathVariable Long stopId) {
+        return deliveryTripService.getDeliveryProof(id, stopId);
+    }
+
     @PostMapping("/{id}/complete")
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('WAREHOUSE_EXPORT')")
     public ApiResponse completeTrip(
