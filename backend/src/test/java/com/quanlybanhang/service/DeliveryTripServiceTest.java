@@ -73,6 +73,9 @@ class DeliveryTripServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private OrderStatusHistoryRepository orderStatusHistoryRepository;
+
     @InjectMocks
     private DeliveryTripServiceImpl tripService;
 

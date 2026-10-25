@@ -75,7 +75,7 @@ public class OrderServiceImpl implements OrderService {
     private final AuditLogService auditLogService;
     private final VolumeDiscountPolicyService volumeDiscountPolicyService;
     private final DealerDebtService dealerDebtService;
-    private final OrderStatusHistoryRepository orderStatusHistoryRepository;
+    private OrderStatusHistoryRepository orderStatusHistoryRepository;
 
     @Autowired
     public OrderServiceImpl(
@@ -159,6 +159,27 @@ public class OrderServiceImpl implements OrderService {
     @Autowired(required = false)
     public void setOrderPdfService(OrderPdfService orderPdfService) {
         this.orderPdfService = orderPdfService;
+    }
+
+    @Autowired(required = false)
+    public void setOrderStatusHistoryRepository(OrderStatusHistoryRepository orderStatusHistoryRepository) {
+        this.orderStatusHistoryRepository = orderStatusHistoryRepository;
+    }
+
+    @Autowired(required = false)
+    private DeliveryTripStopRepository deliveryTripStopRepository;
+
+    @Autowired(required = false)
+    public void setDeliveryTripStopRepository(DeliveryTripStopRepository deliveryTripStopRepository) {
+        this.deliveryTripStopRepository = deliveryTripStopRepository;
+    }
+
+    @Autowired(required = false)
+    private WarehouseVoucherRepository warehouseVoucherRepository;
+
+    @Autowired(required = false)
+    public void setWarehouseVoucherRepository(WarehouseVoucherRepository warehouseVoucherRepository) {
+        this.warehouseVoucherRepository = warehouseVoucherRepository;
     }
 
     private OrderPdfService getPdfService() {
@@ -1602,6 +1623,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
         boolean hasShortage = items.stream().anyMatch(i -> Boolean.TRUE.equals(i.getIsShortage()));
+        DealerDeliveryTrackingResponse tracking = buildDeliveryTracking(order);
 
         return OrderResponse.builder()
                 .id(order.getId())
@@ -1673,6 +1695,12 @@ public class OrderServiceImpl implements OrderService {
                 .cancelReason(order.getCancelReason())
                 .cancelledBy(order.getCancelledBy())
                 .cancelledAt(order.getCancelledAt())
+                .pickingAt(tracking != null ? tracking.getPickingAt() : null)
+                .exportedAt(tracking != null ? tracking.getExportedAt() : null)
+                .shippingAt(tracking != null ? tracking.getShippingAt() : null)
+                .deliveredAt(tracking != null ? tracking.getDeliveredAt() : null)
+                .deliveryMilestones(tracking != null ? tracking.getMilestones() : null)
+                .deliveryTrip(tracking != null ? tracking.getDeliveryTrip() : null)
                 .build();
     }
 
@@ -3821,6 +3849,307 @@ public class OrderServiceImpl implements OrderService {
                 .order(createdOrder)
                 .excludedItems(discontinuedItems)
                 .warnings(warnings)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DealerDeliveryTrackingResponse getDealerOrderDeliveryTracking(Long orderId, Long dealerId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + orderId));
+        if (dealerId != null) {
+            if (order.getDealer() == null || !dealerId.equals(order.getDealer().getId())) {
+                throw new AccessDeniedException("Đơn hàng không thuộc đại lý đang chọn");
+            }
+        }
+        return buildDeliveryTracking(order);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DealerDeliveryTrackingResponse getOrderDeliveryTrackingForStaff(Long orderId, String username) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với ID: " + orderId));
+        checkSalesAuthorizationForOrder(order, "theo doi giao hang");
+        return buildDeliveryTracking(order);
+    }
+
+    private DealerDeliveryTrackingResponse buildDeliveryTracking(Order order) {
+        if (order == null) return null;
+        Long orderId = order.getId();
+        String currentStatus = order.getStatus() != null ? order.getStatus().trim().toUpperCase() : "RECORDED";
+
+        if (orderId == null) {
+            return DealerDeliveryTrackingResponse.builder()
+                    .status(currentStatus)
+                    .statusDisplayName(OrderStatus.getDisplayName(currentStatus))
+                    .milestones(Collections.emptyList())
+                    .items(Collections.emptyList())
+                    .build();
+        }
+
+        // 1. Tìm thông tin chuyến giao hàng (DeliveryTripStop)
+        DeliveryTripStop stop = null;
+        if (deliveryTripStopRepository != null) {
+            List<DeliveryTripStop> stops = deliveryTripStopRepository.findByOrderIdOrderByIdDesc(orderId);
+            if (!stops.isEmpty()) {
+                stop = stops.get(0);
+            }
+        }
+        DeliveryTrip trip = stop != null ? stop.getTrip() : null;
+
+        // 2. Tìm thông tin phiếu xuất kho (WarehouseVoucher)
+        WarehouseVoucher exportVoucher = null;
+        if (warehouseVoucherRepository != null) {
+            List<WarehouseVoucher> vouchers = warehouseVoucherRepository.findByShipmentOrderIdOrderByIdAsc(orderId);
+            if (!vouchers.isEmpty()) {
+                exportVoucher = vouchers.get(0);
+            }
+        }
+
+        // 3. Lấy lịch sử trạng thái (OrderStatusHistory)
+        List<OrderStatusHistory> historyEntities = orderStatusHistoryRepository != null
+                ? orderStatusHistoryRepository.findByOrderIdOrderByChangedAtAsc(orderId)
+                : Collections.emptyList();
+        Map<String, OrderStatusHistory> historyByStatus = new HashMap<>();
+        for (OrderStatusHistory h : historyEntities) {
+            if (h.getNewStatus() != null) {
+                historyByStatus.put(h.getNewStatus().toUpperCase(), h);
+            }
+        }
+
+        // ── 5 MỐC THỜI GIAN CỐT LÕI (S6-09) ──
+        // Mốc 1: Đã duyệt (APPROVED)
+        LocalDateTime approvedAt = order.getApprovedAt();
+        if (approvedAt == null) {
+            OrderStatusHistory h = historyByStatus.get("APPROVED");
+            if (h == null) h = historyByStatus.get("RECORDED");
+            if (h != null) approvedAt = h.getChangedAt();
+            else if (order.getRecordedAt() != null) approvedAt = order.getRecordedAt();
+        }
+
+        // Mốc 2: Đang soạn (PICKING)
+        LocalDateTime pickingAt = null;
+        OrderStatusHistory pickHist = historyByStatus.get("PICKING");
+        if (pickHist == null) pickHist = historyByStatus.get("PROCESSING");
+        if (pickHist != null) {
+            pickingAt = pickHist.getChangedAt();
+        }
+
+        // Mốc 3: Đã xuất (EXPORTED)
+        LocalDateTime exportedAt = null;
+        if (exportVoucher != null && exportVoucher.getRecordedAt() != null) {
+            exportedAt = exportVoucher.getRecordedAt();
+        } else {
+            OrderStatusHistory expHist = historyByStatus.get("EXPORTED");
+            if (expHist == null) expHist = historyByStatus.get("SHIPPED");
+            if (expHist != null) exportedAt = expHist.getChangedAt();
+        }
+
+        // Mốc 4: Đang giao (SHIPPING)
+        LocalDateTime shippingAt = null;
+        if (trip != null && trip.getDepartureTime() != null) {
+            shippingAt = trip.getDepartureTime();
+        } else {
+            OrderStatusHistory shipHist = historyByStatus.get("SHIPPING");
+            if (shipHist != null) shippingAt = shipHist.getChangedAt();
+        }
+
+        // Mốc 5: Đã giao (DELIVERED)
+        LocalDateTime deliveredAt = null;
+        if (stop != null && stop.getDeliveredAt() != null) {
+            deliveredAt = stop.getDeliveredAt();
+        } else {
+            OrderStatusHistory delHist = historyByStatus.get("DELIVERED");
+            if (delHist != null) {
+                deliveredAt = delHist.getChangedAt();
+            } else if (order.getActualDeliveryDate() != null) {
+                deliveredAt = order.getActualDeliveryDate().atStartOfDay();
+            }
+        }
+
+        // Xác định trạng thái của 5 mốc
+        // Trật tự mốc: 1. APPROVED -> 2. PICKING -> 3. EXPORTED -> 4. SHIPPING -> 5. DELIVERED
+        boolean isDelivered = "DELIVERED".equalsIgnoreCase(currentStatus)
+                || "CLOSED".equalsIgnoreCase(currentStatus)
+                || "COMPLETED".equalsIgnoreCase(currentStatus)
+                || (stop != null && stop.getStatus() == DeliveryStopStatus.DELIVERED);
+        boolean isShipping = "SHIPPING".equalsIgnoreCase(currentStatus)
+                || (!isDelivered && trip != null && trip.getStatus() == DeliveryTripStatus.IN_PROGRESS && stop != null && stop.getStatus() == DeliveryStopStatus.PENDING);
+        boolean isExported = "EXPORTED".equalsIgnoreCase(currentStatus)
+                || "SHIPPED".equalsIgnoreCase(currentStatus)
+                || (exportVoucher != null && !isShipping && !isDelivered);
+        boolean isPicking = "PICKING".equalsIgnoreCase(currentStatus)
+                || "PROCESSING".equalsIgnoreCase(currentStatus);
+        boolean isApproved = "APPROVED".equalsIgnoreCase(currentStatus)
+                || "RECORDED".equalsIgnoreCase(currentStatus);
+
+        // State cho từng mốc: COMPLETED, CURRENT, PENDING, UNKNOWN
+        String step1State, step2State, step3State, step4State, step5State;
+        if (isDelivered) {
+            step1State = "COMPLETED";
+            step2State = pickingAt != null ? "COMPLETED" : "UNKNOWN";
+            step3State = exportedAt != null ? "COMPLETED" : "UNKNOWN";
+            step4State = shippingAt != null ? "COMPLETED" : "UNKNOWN";
+            step5State = "CURRENT";
+        } else if (isShipping) {
+            step1State = "COMPLETED";
+            step2State = pickingAt != null ? "COMPLETED" : "UNKNOWN";
+            step3State = "COMPLETED";
+            step4State = "CURRENT";
+            step5State = "PENDING";
+        } else if (isExported) {
+            step1State = "COMPLETED";
+            step2State = pickingAt != null ? "COMPLETED" : "UNKNOWN";
+            step3State = "CURRENT";
+            step4State = "PENDING";
+            step5State = "PENDING";
+        } else if (isPicking) {
+            step1State = "COMPLETED";
+            step2State = "CURRENT";
+            step3State = "PENDING";
+            step4State = "PENDING";
+            step5State = "PENDING";
+        } else if (isApproved) {
+            step1State = "CURRENT";
+            step2State = "PENDING";
+            step3State = "PENDING";
+            step4State = "PENDING";
+            step5State = "PENDING";
+        } else {
+            // DRAFT, PENDING_APPROVAL, CANCELLED, REJECTED
+            step1State = approvedAt != null ? "COMPLETED" : "UNKNOWN";
+            step2State = "UNKNOWN";
+            step3State = "UNKNOWN";
+            step4State = "UNKNOWN";
+            step5State = "UNKNOWN";
+        }
+
+        List<DeliveryMilestoneResponse> milestones = new ArrayList<>();
+        milestones.add(DeliveryMilestoneResponse.builder()
+                .milestoneKey("approved")
+                .label("Đã duyệt")
+                .status(step1State)
+                .timestamp(approvedAt)
+                .description(order.getApprovedBy() != null ? "Duyệt bởi " + order.getApprovedBy() : "Đơn hàng đã được duyệt")
+                .build());
+
+        milestones.add(DeliveryMilestoneResponse.builder()
+                .milestoneKey("picking")
+                .label("Đang soạn")
+                .status(step2State)
+                .timestamp(pickingAt)
+                .description("Kho thực hiện soạn hàng và đóng gói")
+                .build());
+
+        milestones.add(DeliveryMilestoneResponse.builder()
+                .milestoneKey("exported")
+                .label("Đã xuất")
+                .status(step3State)
+                .timestamp(exportedAt)
+                .description(exportVoucher != null ? "Xuất kho theo phiếu " + exportVoucher.getVoucherCode() : "Đã xuất kho")
+                .build());
+
+        milestones.add(DeliveryMilestoneResponse.builder()
+                .milestoneKey("shipping")
+                .label("Đang giao")
+                .status(step4State)
+                .timestamp(shippingAt)
+                .description(trip != null ? "Xe BKS " + trip.getVehiclePlate() + " - Tài xế " + trip.getDriverName() + " (" + trip.getDriverPhone() + ")" : "Xe đang giao hàng")
+                .build());
+
+        milestones.add(DeliveryMilestoneResponse.builder()
+                .milestoneKey("delivered")
+                .label("Đã giao")
+                .status(step5State)
+                .timestamp(deliveredAt)
+                .description(stop != null && stop.getReceiverName() != null ? "Người nhận: " + stop.getReceiverName() : "Đã giao hàng thành công đến đại lý")
+                .build());
+
+        // Thông tin chuyến xe
+        DealerDeliveryTripResponse tripDto = null;
+        if (trip != null && stop != null) {
+            tripDto = DealerDeliveryTripResponse.builder()
+                    .tripId(trip.getId())
+                    .tripCode(trip.getTripCode())
+                    .driverName(trip.getDriverName())
+                    .driverPhone(trip.getDriverPhone())
+                    .vehiclePlate(trip.getVehiclePlate())
+                    .departureTime(trip.getDepartureTime())
+                    .expectedCompletionTime(trip.getExpectedCompletionTime())
+                    .actualCompletionTime(trip.getActualCompletionTime())
+                    .tripStatus(trip.getStatus() != null ? trip.getStatus().name() : null)
+                    .stopStatus(stop.getStatus() != null ? stop.getStatus().name() : null)
+                    .stopOrder(stop.getStopOrder())
+                    .receiverName(stop.getReceiverName())
+                    .receiverPhone(stop.getReceiverPhone())
+                    .deliveryAddress(stop.getDeliveryAddress())
+                    .deliveredAt(stop.getDeliveredAt())
+                    .note(stop.getNote())
+                    .failedReason(stop.getFailedReason())
+                    .build();
+        }
+
+        // Danh sách thực giao từng dòng hàng
+        List<DealerDeliveryTrackingItemResponse> items = new ArrayList<>();
+        if (order.getItems() != null) {
+            for (OrderItem oi : order.getItems()) {
+                BigDecimal qty = oi.getQuantity();
+                BigDecimal delivered = oi.getDeliveredQuantity();
+                BigDecimal shortage = null;
+                boolean isShort = false;
+                if (delivered != null) {
+                    if (qty != null && delivered.compareTo(qty) < 0) {
+                        shortage = qty.subtract(delivered);
+                        isShort = true;
+                    } else {
+                        shortage = BigDecimal.ZERO;
+                        isShort = false;
+                    }
+                }
+                items.add(DealerDeliveryTrackingItemResponse.builder()
+                        .orderItemId(oi.getId())
+                        .productId(oi.getProduct() != null ? oi.getProduct().getId() : null)
+                        .productCode(oi.getProduct() != null ? oi.getProduct().getCode() : null)
+                        .productName(oi.getProduct() != null ? oi.getProduct().getName() : null)
+                        .unit(oi.getUnit())
+                        .baseUnit(oi.getBaseUnit())
+                        .quantity(qty)
+                        .exportedQuantity(oi.effectiveExportedQuantity())
+                        .remainingExportQuantity(oi.remainingExportQuantity())
+                        .deliveredQuantity(delivered)
+                        .shortageQuantity(shortage)
+                        .isShortage(isShort)
+                        .deliveryNote(oi.getDeliveryNote())
+                        .unitPrice(oi.getPrice())
+                        .totalAmount(oi.getTotalAmount())
+                        .build());
+            }
+        }
+
+        boolean hasShortage = items.stream().anyMatch(i -> Boolean.TRUE.equals(i.getIsShortage()));
+
+        return DealerDeliveryTrackingResponse.builder()
+                .orderId(order.getId())
+                .orderCode(order.getOrderCode())
+                .dealerId(order.getDealer() != null ? order.getDealer().getId() : null)
+                .dealerCode(order.getDealer() != null ? order.getDealer().getCode() : null)
+                .dealerName(order.getDealer() != null ? order.getDealer().getName() : order.getCustomerName())
+                .status(currentStatus)
+                .statusDisplayName(OrderStatus.getDisplayName(currentStatus))
+                .backordered(Boolean.TRUE.equals(order.getBackordered()))
+                .hasShortage(hasShortage)
+                .deliveryNote(order.getDeliveryNote())
+                .expectedDeliveryDate(order.getExpectedDeliveryDate())
+                .actualDeliveryDate(order.getActualDeliveryDate())
+                .approvedAt(approvedAt)
+                .pickingAt(pickingAt)
+                .exportedAt(exportedAt)
+                .shippingAt(shippingAt)
+                .deliveredAt(deliveredAt)
+                .milestones(milestones)
+                .deliveryTrip(tripDto)
+                .items(items)
                 .build();
     }
 }

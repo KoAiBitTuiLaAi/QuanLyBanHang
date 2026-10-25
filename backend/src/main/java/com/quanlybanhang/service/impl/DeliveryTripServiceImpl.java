@@ -54,6 +54,7 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final OrderStatusHistoryRepository orderStatusHistoryRepository;
 
     // ── SCOPE & SECURITY HELPER ──
     private record Scope(boolean global, boolean write, Set<Long> allowedWarehouseIds) {
@@ -506,6 +507,30 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
 
         DeliveryTrip saved = tripRepository.save(trip);
 
+        if (saved.getStatus() == DeliveryTripStatus.IN_PROGRESS && saved.getStops() != null) {
+            for (DeliveryTripStop stop : saved.getStops()) {
+                if (stop.getOrder() != null) {
+                    Order order = stop.getOrder();
+                    if ("EXPORTED".equalsIgnoreCase(order.getStatus()) || "SHIPPED".equalsIgnoreCase(order.getStatus())) {
+                        String oldStatus = order.getStatus();
+                        order.setStatus("SHIPPING");
+                        orderRepository.save(order);
+                        if (orderStatusHistoryRepository != null) {
+                            orderStatusHistoryRepository.save(OrderStatusHistory.builder()
+                                    .order(order)
+                                    .previousStatus(oldStatus)
+                                    .newStatus("SHIPPING")
+                                    .statusDisplayName("Đang giao")
+                                    .changedBy(username)
+                                    .changedAt(departureTime != null ? departureTime : LocalDateTime.now())
+                                    .note("Gán vào chuyến giao " + saved.getTripCode() + " - Tài xế: " + saved.getDriverName() + " (" + saved.getVehiclePlate() + ")")
+                                    .build());
+                        }
+                    }
+                }
+            }
+        }
+
         auditLogService.logAction("DELIVERY_TRIP", saved.getTripCode(), "CREATE_TRIP",
                 null, saved.getStatus().name(),
                 "Tạo chuyến giao hàng " + saved.getTripCode() + " với " + saved.getTotalPoints()
@@ -577,9 +602,21 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
                     throw new IllegalArgumentException("Đơn còn nợ hàng; không xác nhận đã giao toàn đơn khi chưa xuất bù đủ");
                 }
                 if (!"DELIVERED".equalsIgnoreCase(order.getStatus()) && !"CLOSED".equalsIgnoreCase(order.getStatus())) {
+                    String oldStatus = order.getStatus();
                     order.setStatus("DELIVERED");
                     order.setActualDeliveryDate(LocalDate.now());
                     orderRepository.save(order);
+                    if (orderStatusHistoryRepository != null) {
+                        orderStatusHistoryRepository.save(OrderStatusHistory.builder()
+                                .order(order)
+                                .previousStatus(oldStatus)
+                                .newStatus("DELIVERED")
+                                .statusDisplayName("Đã giao")
+                                .changedBy(username)
+                                .changedAt(LocalDateTime.now())
+                                .note("Giao hàng thành công theo chuyến " + trip.getTripCode())
+                                .build());
+                    }
                 }
             }
 
@@ -659,6 +696,27 @@ public class DeliveryTripServiceImpl implements DeliveryTripService {
         trip.setStatus(DeliveryTripStatus.CANCELLED);
         trip.setCancelReason(cancelReason.trim());
         trip.setUpdatedAt(LocalDateTime.now());
+
+        if (trip.getStops() != null) {
+            for (DeliveryTripStop stop : trip.getStops()) {
+                if (stop.getOrder() != null && "SHIPPING".equalsIgnoreCase(stop.getOrder().getStatus())) {
+                    Order order = stop.getOrder();
+                    order.setStatus("EXPORTED");
+                    orderRepository.save(order);
+                    if (orderStatusHistoryRepository != null) {
+                        orderStatusHistoryRepository.save(OrderStatusHistory.builder()
+                                .order(order)
+                                .previousStatus("SHIPPING")
+                                .newStatus("EXPORTED")
+                                .statusDisplayName("Đã xuất")
+                                .changedBy(username)
+                                .changedAt(LocalDateTime.now())
+                                .note("Hủy chuyến giao " + trip.getTripCode() + ": " + cancelReason.trim())
+                                .build());
+                    }
+                }
+            }
+        }
 
         DeliveryTrip saved = tripRepository.save(trip);
 

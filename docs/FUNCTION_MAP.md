@@ -77,7 +77,7 @@
 - S6-06: Kho hàng → Phân tuyến giao hàng → Chọn kho, gom phiếu theo khu vực, gán tài xế/xe, lập lộ trình và in danh sách điểm giao.
 - S6-07: Kho hàng → Theo dõi chuyến giao → Tiền hàng trên đường, điểm đã giao/còn lại, lọc kho/trạng thái/quá hạn, Xem điểm giao và chuyến còn hàng chưa xử lý.
 - S6-08: Một phần (frontend): Kho hàng → Xác nhận giao hàng → Xem đơn thật, mở form/xem trước ảnh; khóa lưu xác nhận/hoàn kho vì chưa có API S6-08.
-- S6-09: Một phần (frontend): Kinh doanh → Đơn hàng của tôi → Theo dõi giao hàng → 5 mốc, thực giao từng dòng; mốc thiếu API hiện “Chưa có dữ liệu”.
+- S6-09: Cổng đại lý → Đơn hàng của tôi → Chi tiết đơn hàng → Theo dõi giao hàng (5 mốc thời gian: Đã duyệt, Đang soạn, Đã xuất, Đang giao, Đã giao; thực giao từng dòng hàng; thông tin chuyến xe & tài xế).
 
 ## Sprint 7 — Tài chính và công nợ
 

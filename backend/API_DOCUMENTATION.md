@@ -2438,6 +2438,151 @@ Authorization: Bearer <access-token>
 ```
 
 
+
+
+---
+
+## S6-09 — Theo dõi trạng thái giao hàng của đơn (Đại lý & Nhân viên) — 25/10/2026
+
+Cho phép Đại lý (`ROLE_DEALER`) và Nhân viên nội bộ (`ROLE_SALES`, `ROLE_WAREHOUSE_STAFF`, `ROLE_ADMIN`,...) theo dõi tiến trình giao hàng theo thời gian thực để chủ động bố trí người nhận hàng đúng lúc xe tới:
+1. **Hiển thị 5 mốc thời gian rõ ràng**:
+   - `approved`: Đã duyệt
+   - `picking`: Đang soạn hàng (lấy từ phiếu soạn hàng S6-03 hoặc lịch sử trạng thái)
+   - `exported`: Đã xuất kho (lấy từ phiếu xuất kho S6-05)
+   - `shipping`: Đang giao hàng (lấy từ thời điểm gán chuyến xe S6-06 hoặc cập nhật trạng thái)
+   - `delivered`: Đã giao hàng thành công (lấy từ điểm dừng hoàn thành S6-07/S6-08)
+   Mỗi mốc có `milestoneKey`, `label`, `status` (`COMPLETED`, `CURRENT`, `PENDING`, `UNKNOWN`), `timestamp` và `description`.
+2. **Xem được số lượng thực giao từng dòng hàng**:
+   - `quantity`: Số lượng đặt
+   - `exportedQuantity`: Số lượng thực xuất từ kho
+   - `deliveredQuantity`: Số lượng thực giao đến tay đại lý
+   - `shortageQuantity`: Số lượng thiếu hụt nếu có giao thiếu
+   - `isShortage`: Cờ cảnh báo thiếu
+   - `deliveryNote`: Ghi chú giao hàng từng dòng
+3. **Thông tin phương tiện và tài xế vận chuyển**:
+   - `tripCode`: Mã chuyến giao hàng
+   - `driverName`, `driverPhone`: Tên và số điện thoại tài xế
+   - `vehiclePlate`: Biển số xe giao hàng
+   - `departureTime`: Thời điểm xe bắt đầu xuất phát
+   - `expectedCompletionTime`: Thời gian dự kiến xe tới giao
+
+### Danh sách Endpoint S6-09:
+
+| Method | Endpoint | Quyền yêu cầu | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/portal/orders/{id}/tracking` (alias `/api/portal/orders/{id}/delivery-tracking`) | `ORDER_VIEW` hoặc `ROLE_ADMIN` | Dành cho Đại lý (hoặc Admin chọn `dealerId`): Xem 5 mốc giao hàng, thông tin chuyến xe và thực giao từng dòng |
+| `GET` | `/api/orders/{id}/delivery-tracking` | `ORDER_VIEW` hoặc `ROLE_ADMIN` | Dành cho Nhân viên nội bộ: Xem 5 mốc giao hàng, thông tin chuyến xe và thực giao từng dòng |
+
+#### Request mẫu (Đại lý):
+```text
+GET /api/portal/orders/101/tracking
+Authorization: Bearer <access-token>
+```
+
+#### Response thành công (HTTP 200 OK):
+```json
+{
+  "success": true,
+  "message": "Theo dõi giao hàng của đơn",
+  "data": {
+    "orderId": 101,
+    "orderCode": "DH-MINHPHAT-001",
+    "dealerId": 1,
+    "dealerName": "Đại lý Minh Phát",
+    "deliveryAddress": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+    "contactPerson": "Nguyễn Văn Nhận",
+    "contactPhone": "0912345678",
+    "status": "SHIPPING",
+    "statusDisplayName": "Đang giao",
+    "createdAt": "2026-10-25T08:00:00",
+    "approvedAt": "2026-10-25T09:00:00",
+    "pickingAt": "2026-10-25T10:15:00",
+    "exportedAt": "2026-10-25T11:30:00",
+    "shippingAt": "2026-10-25T13:00:00",
+    "deliveredAt": null,
+    "hasShortage": true,
+    "milestones": [
+      {
+        "milestoneKey": "approved",
+        "label": "Đã duyệt",
+        "status": "COMPLETED",
+        "timestamp": "2026-10-25T09:00:00",
+        "description": "Đơn hàng đã được duyệt kinh doanh"
+      },
+      {
+        "milestoneKey": "picking",
+        "label": "Đang soạn",
+        "status": "COMPLETED",
+        "timestamp": "2026-10-25T10:15:00",
+        "description": "Thủ kho đã tạo lượt soạn hàng"
+      },
+      {
+        "milestoneKey": "exported",
+        "label": "Đã xuất",
+        "status": "COMPLETED",
+        "timestamp": "2026-10-25T11:30:00",
+        "description": "Đã xuất kho theo phiếu xuất PX-20261025-001"
+      },
+      {
+        "milestoneKey": "shipping",
+        "label": "Đang giao",
+        "status": "CURRENT",
+        "timestamp": "2026-10-25T13:00:00",
+        "description": "Đang vận chuyển bởi tài xế Nguyễn Văn Tài - Biển số 29C-12345"
+      },
+      {
+        "milestoneKey": "delivered",
+        "label": "Đã giao",
+        "status": "PENDING",
+        "timestamp": null,
+        "description": "Chưa hoàn tất giao hàng"
+      }
+    ],
+    "deliveryTrip": {
+      "tripId": 10,
+      "tripCode": "CX-20261025-001",
+      "driverName": "Nguyễn Văn Tài",
+      "driverPhone": "0909123456",
+      "vehiclePlate": "29C-12345",
+      "departureTime": "2026-10-25T13:00:00",
+      "expectedCompletionTime": "2026-10-25T15:30:00",
+      "actualCompletionTime": null,
+      "tripStatus": "IN_PROGRESS",
+      "stopStatus": "IN_TRANSIT",
+      "stopOrder": 1,
+      "receiverName": "Nguyễn Văn Nhận",
+      "receiverPhone": "0912345678",
+      "deliveryAddress": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+      "deliveredAt": null,
+      "note": "Giao cổng sau",
+      "failedReason": null
+    },
+    "items": [
+      {
+        "orderItemId": 201,
+        "productId": 10,
+        "productCode": "SP-KEN330",
+        "productName": "Bia Heineken lon 330ml",
+        "unit": "thùng",
+        "quantity": 10.0,
+        "exportedQuantity": 8.0,
+        "remainingExportQuantity": 2.0,
+        "deliveredQuantity": 8.0,
+        "shortageQuantity": 2.0,
+        "isShortage": true,
+        "deliveryNote": "Kho thiếu 2 thùng xuất sau"
+      }
+    ]
+  }
+}
+```
+
+#### Ràng buộc bảo mật & Ma trận phân quyền:
+- Đại lý bắt buộc phải có quyền `ORDER_VIEW` trong ma trận DB. Thu hồi quyền lập tức trả về `403 Forbidden`.
+- Row-Level Security: Đại lý chỉ được xem đơn hàng của chính mình. Truy cập đơn của đại lý khác bị chặn `403 Forbidden`.
+- `ROLE_ADMIN` luôn có toàn quyền và có thể truyền `?dealerId=...` để tra cứu theo ngữ cảnh đại lý.
+
+
 ## Cổng tự đặt hàng dành cho Đại lý (S4-10)
 
 Cổng tự đặt hàng trực tuyến dành riêng cho khách hàng đại lý (`ROLE_DEALER`), cho phép đại lý chủ động kiểm tra giá, xem công nợ còn lại và gửi đơn đặt hàng 24/7 trên cả máy tính và thiết bị di động.

@@ -20,6 +20,7 @@ import com.quanlybanhang.dto.response.OrderLineItemPricingResponse;
 import com.quanlybanhang.dto.response.OrderPickingListResponse;
 import com.quanlybanhang.dto.response.OrderResponse;
 import com.quanlybanhang.dto.response.OrderTrackingResponse;
+import com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse;
 import com.quanlybanhang.model.OrderDraft;
 import com.quanlybanhang.repository.OrderDraftRepository;
 import com.quanlybanhang.service.DealerDebtService;
@@ -298,6 +299,17 @@ public class OrderController {
         String username = principal != null ? principal.getName() : "system";
         OrderTrackingResponse tracking = orderService.getOrderTracking(id, username);
         return ApiResponse.success("Theo dõi vòng đời đơn hàng", tracking);
+    }
+
+    /**
+     * S6-09: Theo dõi trạng thái giao hàng 5 mốc và thực giao từng dòng (dành cho nhân viên).
+     */
+    @GetMapping("/{id}/delivery-tracking")
+    @PreAuthorize("hasAuthority('ORDER_VIEW')")
+    public ApiResponse getOrderDeliveryTrackingForStaff(@PathVariable Long id, Principal principal) {
+        String username = principal != null ? principal.getName() : "system";
+        DealerDeliveryTrackingResponse tracking = orderService.getOrderDeliveryTrackingForStaff(id, username);
+        return ApiResponse.success("Theo dõi giao hàng của đơn", tracking);
     }
 
     /**
