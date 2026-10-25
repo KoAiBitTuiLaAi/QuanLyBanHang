@@ -1,5 +1,22 @@
 # Trạng thái sprint 1–8
 
+## Cập nhật giao diện thanh điều hướng và biểu tượng chuông thông báo — 25/10/2026
+
+Tối ưu trải nghiệm điều hướng kho hàng và biểu tượng thông báo cổng đại lý theo yêu cầu người dùng:
+1. Sửa biểu tượng chuông trên topbar (`frontend/dealer-portal.html`, `frontend/css/dealer-portal.css`) sang màu đen trắng tương phản cao (nền trắng `#ffffff`, viền xám `#cbd5e1`, icon chuông màu đen `#1e293b`), thay thế màu trắng cũ khó nhìn.
+2. Tối ưu thanh điều hướng phân hệ kho: Bỏ tab "Tồn kho" khỏi thanh tab bar bên trong trang Đơn vị tính (`frontend/warehouse/units.html`) vì "Tồn kho" đã có mục riêng trên sidebar bên trái (`/warehouse/inventory`).
+3. Tinh gọn sidebar bên trái (`frontend/js/menu-config.js`): Bỏ 3 mục trùng lặp "Sổ cái kho", "Nhập / Xuất kho", "Kiểm kê kho" khỏi sidebar menu. Khi người dùng click vào "Đơn vị tính", thanh tab bar ("thanh chỉ hướng") sẽ chứa đầy đủ 4 phân hệ tương ứng: Đơn vị tính, Lập chứng từ, Sổ cái kho, Kiểm kê kho.
+4. Cập nhật `docs/FUNCTION_MAP.md` phản ánh vị trí điều hướng mới của các phân hệ kho hàng (S5-04, S5-08).
+
+| Yêu cầu / Hạng mục | Backend | Frontend | Đã kết nối đúng | Ma trận phân quyền & Ghi chú |
+|---|:---:|:---:|:---:|---|
+| **1. Biểu tượng chuông thông báo đen trắng** | Không cần đổi (API giữ nguyên) | ✅ Hoàn thành | ✅ Đã kết nối đúng | Cập nhật CSS/HTML tại `frontend/dealer-portal.html` & `frontend/css/dealer-portal.css`. Nền trắng, viền mảnh, chuông đen rõ nét, hover đổi màu nhẹ. Dẫn tới `/dealer-notifications` tuân thủ ma trận phân quyền `NOTIFICATION_VIEW` (hoặc `ROLE_ADMIN`). |
+| **2. Bỏ "Tồn kho" khỏi thanh tab bar trong Đơn vị tính** | Không cần đổi | ✅ Hoàn thành | ✅ Đã kết nối đúng | Loại bỏ button tab "Tồn kho" (`tab-inventory-report`) khỏi `.nav-tabs` trong `frontend/warehouse/units.html`. Trang Đơn vị tính giờ đây chỉ tập trung vào 4 phân hệ: Đơn vị tính, Lập chứng từ, Sổ cái kho, Kiểm kê kho. "Tồn kho" vẫn truy cập độc lập qua menu sidebar `Kho hàng → Tồn kho` (`/warehouse/inventory`). |
+| **3. Bỏ Sổ cái kho, Nhập/xuất kho, Kiểm kê kho khỏi sidebar trái** | Không cần đổi (Backend API giữ nguyên) | ✅ Hoàn thành | ✅ Đã kết nối đúng | Xóa 3 mục `import-export`, `warehouse-ledger`, `warehouse-stocktake` khỏi menu sidebar trong `frontend/js/menu-config.js`. Cập nhật `product-units` nhận quyền từ ma trận (`WAREHOUSE_VIEW`, `WAREHOUSE_MANAGE`, `WAREHOUSE_IMPORT`, `WAREHOUSE_EXPORT`, `WAREHOUSE_APPROVE`, `WAREHOUSE_ADJUST`), `roles: ALL_ROLES`. Khi click "Đơn vị tính", sidebar luôn active đúng mục và hiển thị thanh tab bar đủ 4 chức năng. Trong từng tab, các quyền thao tác (xem đơn vị, tạo phiếu nhập/xuất, sổ cái, kiểm kê) tiếp tục được kiểm soát chặt chẽ theo ma trận quyền của database. |
+| **4. Đồng bộ vị trí chức năng trên FUNCTION_MAP** | Không áp dụng | ✅ Hoàn thành | ✅ Đã kết nối đúng | Cập nhật `docs/FUNCTION_MAP.md` cho các story S5-04 và S5-08 dẫn qua `Kho hàng → Đơn vị tính → [Tab tương ứng]`. |
+
+Kiểm thử: **35/35 test suites Node.js qua 100%**, bao gồm toàn bộ `tests/menu-config.test.cjs` (32/32 tests), `tests/warehouse-stocktake-s5-08.test.cjs` (23/23 tests), `tests/warehouse-import-voucher.test.cjs` (7/7 tests). `test_frontend_server.py` qua 13/13 tests.
+
 ## S7-06 — Backend biên bản đối chiếu định kỳ và nối frontend — 25/10/2026
 
 Nhánh `feature/S7-06-backend-lap_bien_ban_doi_chieu_cong_no_dinh_ky`, từ `develop`. Phát hiện frontend cũ chỉ giả lập xác nhận/phản hồi trong bộ nhớ và xuất PDF sổ hiện thời; thay bằng biên bản lưu DB.

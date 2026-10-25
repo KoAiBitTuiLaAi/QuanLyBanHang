@@ -453,6 +453,10 @@
   // ══════════════════════════════════════════════════
   const sidebar = $("sidebar");
   const initialTabParam = new URLSearchParams(window.location.search).get("tab");
+  if (initialTabParam === "inventory") {
+    window.location.replace("/warehouse/inventory");
+    return;
+  }
   const overlay = document.createElement("div");
   overlay.className = "sidebar-overlay";
   document.body.appendChild(overlay);
@@ -1886,7 +1890,7 @@
   });
 
   const requestedTab = {
-    receipts: "create-receipt", ledger: "ledger-audit", inventory: "inventory-report", stocktake: "stocktake",
+    receipts: "create-receipt", ledger: "ledger-audit", stocktake: "stocktake",
   }[initialTabParam] || "sku-units";
   $("active-warehouse-select").addEventListener("change", async () => {
     if (stocktakeIsActive()) {

@@ -60,11 +60,11 @@
 - S5-01: Kinh doanh → Đơn hàng của tôi → Lọc trạng thái/ngày → Xem chi tiết, ngày giao dự kiến, số lượng thực giao và thiếu.
 - S5-02: Kinh doanh → Đơn hàng của tôi → Đặt lại/Đặt lại đơn này → Chọn toàn bộ/một phần hàng, sửa số lượng → Xác nhận đặt hàng.
 - S5-03: Kho hàng → Kho & vị trí lưu → Thêm/Sửa kho, vị trí khu/kệ, gán sản phẩm; Kho phục vụ đại lý → Gán kho.
-- S5-04: Kho hàng → Nhập / Xuất kho → Nhập kho (Nhà cung cấp) → Chọn NCC/kho, nhập chứng từ, đơn vị, lô/HSD → Lưu bản nháp/Xác nhận ghi sổ kho.
+- S5-04: Kho hàng → Đơn vị tính → Lập chứng từ → Nhập kho (Nhà cung cấp) → Chọn NCC/kho, nhập chứng từ, đơn vị, lô/HSD → Lưu bản nháp/Xác nhận ghi sổ kho.
 - S5-05: Kho hàng → Tồn kho → Lọc SKU, nhóm hàng, kho, trạng thái → Xem tồn thực tế, giữ chỗ và khả dụng.
 - S5-06: Tự giữ tồn khi duyệt đơn, nhả khi huỷ/hết hạn; Kinh doanh → Đơn hàng → Xem chi tiết để xem giữ chỗ; Kho hàng → Tồn kho để đối chiếu.
 - S5-07: Kho hàng → Chuyển kho nội bộ → Lập phiếu chuyển → Chọn kho đi/đến, hàng → Xuất chuyển; Chi tiết → Xác nhận thực nhận/Hủy.
-- S5-08: Kho hàng → Kiểm kê kho → Tạo phiếu kiểm kê mới theo kho/nhóm hàng → Nhập thực đếm, Lưu nháp tiến độ → Nhập lý do, Chốt kiểm kê & Cân bằng kho.
+- S5-08: Kho hàng → Đơn vị tính → Kiểm kê kho → Tạo phiếu kiểm kê mới theo kho/nhóm hàng → Nhập thực đếm, Lưu nháp tiến độ → Nhập lý do, Chốt kiểm kê & Cân bằng kho.
 - S5-09: Kho hàng → Ngưỡng tồn tối thiểu → Khai báo SKU/kho; xem cảnh báo tại Tổng quan hoặc Kho hàng → Tồn kho → Lọc dưới mức tối thiểu.
 
 ## Sprint 6 — Xuất kho và giao hàng

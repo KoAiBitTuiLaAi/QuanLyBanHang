@@ -153,6 +153,22 @@ const MenuConfig = (() => {
       roles: ALL_ROLES,
     },
     {
+      id: "product-units",
+      section: "Kho hàng",
+      label: "Đơn vị tính",
+      icon: '<path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>',
+      href: "/warehouse/units?tab=units",
+      permissions: [
+        "WAREHOUSE_VIEW",
+        "WAREHOUSE_MANAGE",
+        "WAREHOUSE_IMPORT",
+        "WAREHOUSE_EXPORT",
+        "WAREHOUSE_APPROVE",
+        "WAREHOUSE_ADJUST",
+      ],
+      roles: ALL_ROLES,
+    },
+    {
       id: "warehouses",
       section: "Kho hàng",
       label: "Kho & vị trí lưu",
@@ -191,43 +207,6 @@ const MenuConfig = (() => {
       ],
     },
     {
-      id: "product-units",
-      section: "Kho hàng",
-      label: "Đơn vị tính",
-      icon: '<path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>',
-      href: "/warehouse/units?tab=units",
-      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_MANAGE"],
-      roles: [
-        "ROLE_ADMIN",
-        "ROLE_SALES_MANAGER",
-        "ROLE_WAREHOUSE_MANAGER",
-        "ROLE_WAREHOUSE_STAFF",
-        "ROLE_VIEWER",
-      ],
-    },
-    {
-      id: "import-export",
-      section: "Kho hàng",
-      label: "Nhập / Xuất kho",
-      icon: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
-      href: "/warehouse/units?tab=receipts",
-      permissions: ["WAREHOUSE_IMPORT", "WAREHOUSE_EXPORT"],
-      roles: [
-        "ROLE_ADMIN",
-        "ROLE_WAREHOUSE_MANAGER",
-        "ROLE_WAREHOUSE_STAFF",
-      ],
-    },
-    {
-      id: "warehouse-ledger",
-      section: "Kho hàng",
-      label: "Sổ cái kho",
-      icon: '<path d="M4 3h16v18H4zM8 7h8M8 12h8M8 17h5"/>',
-      href: "/warehouse/units?tab=ledger",
-      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_IMPORT", "WAREHOUSE_APPROVE", "WAREHOUSE_ADJUST"],
-      roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER", "ROLE_WAREHOUSE_MANAGER", "ROLE_WAREHOUSE_STAFF", "ROLE_VIEWER"],
-    },
-    {
       id: "delivery-routes",
       section: "Kho hàng",
       label: "Phân tuyến giao hàng",
@@ -258,15 +237,6 @@ const MenuConfig = (() => {
         "ROLE_WAREHOUSE_MANAGER",
         "ROLE_WAREHOUSE_STAFF",
       ],
-    },
-    {
-      id: "warehouse-stocktake",
-      section: "Kho hàng",
-      label: "Kiểm kê kho",
-      icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
-      href: "/warehouse/units?tab=stocktake",
-      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_ADJUST"],
-      roles: ALL_ROLES,
     },
     {
       id: "warehouse-stock-card",
@@ -500,8 +470,7 @@ const MenuConfig = (() => {
       return menuItems.find(item => item.id === "warehouse");
     }
     if (pathname === "/warehouse/units") {
-      const validTabs = ["units", "receipts", "ledger", "inventory", "stocktake"];
-      if (!validTabs.includes(query.get("tab"))) query.set("tab", "units");
+      return menuItems.find(item => item.id === "product-units");
     }
 
     let currentPage = null;
