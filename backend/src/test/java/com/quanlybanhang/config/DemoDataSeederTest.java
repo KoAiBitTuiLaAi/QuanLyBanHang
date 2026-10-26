@@ -73,6 +73,16 @@ class DemoDataSeederTest {
     @Autowired OrderRepository orders;
     @Autowired WarehouseVoucherRepository vouchers;
     @Autowired WarehouseInventoryRepository inventories;
+    @Autowired WarehouseTransferRepository transfers;
+    @Autowired WarehouseLocationRepository locations;
+    @Autowired WarehouseLocationProductRepository locationProducts;
+    @Autowired DebtPaymentRepository debtPayments;
+    @Autowired DebtPaymentAllocationRepository debtPaymentAllocations;
+    @Autowired InvoiceAdjustmentRepository invoiceAdjustments;
+    @Autowired DebtRiskConfigRepository debtRiskConfigs;
+    @Autowired DeliveryTripRepository deliveryTrips;
+    @Autowired OrderDraftRepository orderDrafts;
+    @Autowired PaymentReminderLogRepository paymentReminderLogs;
     @Autowired AuditLogRepository auditLogs;
 
     @BeforeEach
@@ -131,7 +141,7 @@ class DemoDataSeederTest {
         assertThat(dealers.findAll()).allMatch(dealer -> dealer.getAssignedUser() == null);
         assertThat(assignments.count()).isZero();
         assertThat(products.count()).isEqualTo(8);
-        assertThat(orders.count()).isEqualTo(7);
+        assertThat(orders.count()).isEqualTo(14);
     }
 
     @Test
@@ -145,19 +155,41 @@ class DemoDataSeederTest {
                 Map.entry("conversions", 8L), Map.entry("dealers", 5L), Map.entry("deliveryPoints", 6L),
                 Map.entry("assignments", 5L), Map.entry("priceLists", 3L), Map.entry("priceItems", 24L),
                 Map.entry("priceHistory", 8L), Map.entry("policies", 3L), Map.entry("tiers", 5L),
-                Map.entry("orders", 7L), Map.entry("vouchers", 8L), Map.entry("inventories", 12L)));
+                Map.entry("orders", 14L), Map.entry("vouchers", 17L), Map.entry("inventories", 13L),
+                Map.entry("transfers", 2L), Map.entry("locations", 6L), Map.entry("locationProducts", 16L),
+                Map.entry("debtPayments", 2L), Map.entry("invoiceAdjustments", 1L), Map.entry("debtRiskConfigs", 1L),
+                Map.entry("orderDrafts", 1L), Map.entry("paymentReminderLogs", 1L)));
         assertThat(categories.findAll()).allSatisfy(category ->
                 assertThat(category.getLevel()).isEqualTo(category.getParent() == null ? 1 : category.getParent().getLevel() + 1));
         assertThat(priceLists.findAll()).allMatch(price -> Boolean.TRUE.equals(price.getHasOrders()));
         assertThat(vouchers.findByTypeOrderByRecordedAtDesc(WarehouseVoucherType.IMPORT))
                 .allMatch(voucher -> voucher.getSupplier() != null);
-        assertThat(orders.findByStatus("RECORDED")).hasSize(4);
+        assertThat(orders.findByStatus("RECORDED")).hasSize(11);
         assertThat(orders.findByStatus("PENDING_APPROVAL")).hasSize(1);
         assertThat(orders.findByStatus("CANCELLED")).hasSize(1);
         assertThat(orders.findByStatus("REJECTED")).hasSize(1);
         assertThat(orders.findByOrderCode("DEMO-DH-DOUONG").orElseThrow().getDiscountAmount()).isPositive();
         assertThat(orders.findByOrderCode("DEMO-DH-HANOI").orElseThrow().getDiscountAmount()).isPositive();
+        assertThat(orders.findByOrderCode("DEMO-DH-DIENTU").orElseThrow().getRecordedAt())
+                .isBefore(java.time.LocalDateTime.now().minusDays(19));
+        assertThat(orders.findByOrderCode("DEMO-DH-HANOI").orElseThrow().getRecordedAt())
+                .isBefore(java.time.LocalDateTime.now().minusDays(79));
+        assertThat(orders.findByOrderCode("DEMO-DH-QUAHAN-HN-01").orElseThrow().getRecordedAt())
+                .isBefore(java.time.LocalDateTime.now().minusDays(79));
         assertThat(orders.findByOrderCode("DEMO-DH-CHODUYET").orElseThrow().getRequiresApproval()).isTrue();
+        assertThat(locations.findAll()).allMatch(location -> location.getWarehouse() != null);
+        assertThat(locationProducts.count()).isEqualTo(16);
+        assertThat(debtPaymentAllocations.count()).isEqualTo(2);
+        assertThat(invoiceAdjustments.findByAdjustmentCode("DEMO-HDDC-00000001")).isPresent();
+        assertThat(debtRiskConfigs.findFirstByOrderByIdAsc()).isPresent();
+        assertThat(deliveryTrips.findByTripCode("DEMO-CHUYEN-GIAO-HCM-001").orElseThrow().getStops())
+                .allSatisfy(stop -> assertThat(stop.getItems()).isNotEmpty());
+        assertThat(deliveryTrips.findByTripCode("DEMO-CHUYEN-GIAO-HCM-DONE-001").orElseThrow().getStops())
+                .anySatisfy(stop -> assertThat(stop.getSignedProof()).isNotEmpty());
+        assertThat(deliveryTrips.findByTripCode("DEMO-CHUYEN-GIAO-HN-FAILED-001").orElseThrow().getStops())
+                .anySatisfy(stop -> assertThat(stop.getReturnedToWarehouse()).isFalse());
+        assertThat(orderDrafts.findByUsername("sales.demo")).isPresent();
+        assertThat(paymentReminderLogs.findAll()).anyMatch(log -> log.getNote().contains("không phát email"));
         assertThat(auditLogs.findAll()).anyMatch(log -> "INVENTORY".equals(log.getEntityType()))
                 .anyMatch(log -> "INVOICE".equals(log.getEntityType()));
 
@@ -166,11 +198,20 @@ class DemoDataSeederTest {
             BigDecimal expected = BigDecimal.ZERO;
             for (WarehouseVoucher voucher : movements) {
                 if (!voucher.getWarehouse().getId().equals(inventory.getWarehouse().getId())) continue;
+                if (!"RECORDED".equals(voucher.getStatus())) continue;
                 for (WarehouseVoucherItem item : voucher.getItems()) {
                     assertThat(item.getBaseQuantity()).isEqualByComparingTo(item.getQuantity().multiply(item.getConversionFactor()));
                     if (!item.getProduct().getId().equals(inventory.getProduct().getId())) continue;
                     expected = voucher.getType() == WarehouseVoucherType.IMPORT
                             ? expected.add(item.getBaseQuantity()) : expected.subtract(item.getBaseQuantity());
+                }
+            }
+            for (WarehouseTransfer transfer : transfers.findAll()) {
+                if (!transfer.getFromWarehouse().getId().equals(inventory.getWarehouse().getId())) continue;
+                for (WarehouseTransferItem item : transfer.getItems()) {
+                    if (item.getProduct().getId().equals(inventory.getProduct().getId())) {
+                        expected = expected.subtract(item.getBaseQuantity());
+                    }
                 }
             }
             assertThat(inventory.getBaseQuantity()).isEqualByComparingTo(expected).isNotNegative();
@@ -249,6 +290,7 @@ class DemoDataSeederTest {
         assertThat(territories.count()).isZero();
         assertThat(products.count()).isZero();
         assertThat(vouchers.count()).isZero();
+        assertThat(transfers.count()).isZero();
         assertThat(auditLogs.count()).isZero();
     }
 
@@ -271,6 +313,14 @@ class DemoDataSeederTest {
         counts.put("tiers", tiers.count());
         counts.put("orders", orders.count());
         counts.put("vouchers", vouchers.count());
+        counts.put("transfers", transfers.count());
+        counts.put("locations", locations.count());
+        counts.put("locationProducts", locationProducts.count());
+        counts.put("debtPayments", debtPayments.count());
+        counts.put("invoiceAdjustments", invoiceAdjustments.count());
+        counts.put("debtRiskConfigs", debtRiskConfigs.count());
+        counts.put("orderDrafts", orderDrafts.count());
+        counts.put("paymentReminderLogs", paymentReminderLogs.count());
         counts.put("inventories", inventories.count());
         counts.put("auditLogs", auditLogs.count());
         return counts;
