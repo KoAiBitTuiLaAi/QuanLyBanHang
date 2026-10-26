@@ -37,7 +37,7 @@ test('Quy đổi tồn khả dụng theo đơn vị tính với hệ số quy đ
   assert.equal(OrderInventory.convertStockToUnit(50, -5), 0);
 });
 
-test('Tính tổng tồn giữ chỗ cho SKU từ các đơn hàng có trạng thái ghi nhận/chờ duyệt', () => {
+test('Chỉ đơn đã duyệt giữ chỗ, không giữ chỗ cho đơn chờ duyệt', () => {
   const orders = [
     {
       id: 1,
@@ -70,8 +70,8 @@ test('Tính tổng tồn giữ chỗ cho SKU từ các đơn hàng có trạng t
     },
   ];
 
-  // SKU 10: 48 (đơn 1) + 24 (đơn 2) = 72 lon
-  assert.equal(OrderInventory.calculateReservedByProduct(orders, 10), 72);
+  // SKU 10: 48 từ đơn đã ghi nhận; đơn chờ duyệt không giữ chỗ.
+  assert.equal(OrderInventory.calculateReservedByProduct(orders, 10), 48);
 
   // SKU 20: 5 lon
   assert.equal(OrderInventory.calculateReservedByProduct(orders, 20), 5);

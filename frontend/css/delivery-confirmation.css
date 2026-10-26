@@ -1,0 +1,15 @@
+/* S6-08 internal components; the common app navigation owns the outer frame. */
+.delivery-page [hidden] { display: none !important; }
+.dc-table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.dc-live-table { width: 100%; min-width: 900px; border-collapse: collapse; text-align: left; font-size: .875rem; }
+.dc-live-table th, .dc-live-table td { padding: 12px; vertical-align: top; border-bottom: 1px solid var(--line); }
+.dc-live-table th { background: var(--surface); }
+.dc-live-table small { display: block; margin-top: 5px; color: var(--ink-600); }
+.dc-live-table button { min-height: 40px; }
+.delivery-page .pick-panel .pick-panel { box-shadow: none; }
+.delivery-page label { min-width: 0; }
+.delivery-page input, .delivery-page select { max-width: 100%; min-width: 0; }
+#dc-preview, #dc-stored-proof { display: block; max-width: 100%; max-height: 420px; margin-top: 16px; object-fit: contain; }
+.dc-check { display: flex !important; align-items: flex-start; gap: 10px; margin-block: 16px; }
+.dc-check input { width: auto; min-height: auto; }
+

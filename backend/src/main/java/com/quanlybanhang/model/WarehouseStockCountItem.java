@@ -45,6 +45,17 @@ public class WarehouseStockCountItem {
     @Builder.Default
     private BigDecimal bookQuantity = BigDecimal.ZERO;
 
+    // Internal snapshot metadata. Old drafts without this marker must be recreated.
+    @Column(name = "snapshot_captured", nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private boolean snapshotCaptured = false;
+
+    @Column(name = "snapshot_inventory_id")
+    private Long snapshotInventoryId;
+
+    @Column(name = "snapshot_inventory_version")
+    private Long snapshotInventoryVersion;
+
     /**
      * Số lượng đếm thực tế (theo đơn vị cơ sở).
      */
@@ -58,7 +69,7 @@ public class WarehouseStockCountItem {
     @Column(name = "difference_quantity", precision = 15, scale = 4)
     private BigDecimal differenceQuantity;
 
-    @Column(name = "note", length = 255)
+    @Column(name = "note", length = 500)
     private String note;
 
     public void calculateDifference() {

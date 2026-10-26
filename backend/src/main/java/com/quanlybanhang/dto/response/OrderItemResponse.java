@@ -87,6 +87,8 @@ public class OrderItemResponse {
      * Số lượng thực giao theo đơn vị đặt hàng (S5-01).
      */
     private BigDecimal deliveredQuantity;
+    private BigDecimal exportedQuantity;
+    private BigDecimal remainingExportQuantity;
 
     /**
      * Số lượng thực giao quy về đơn vị cơ sở (S5-01).

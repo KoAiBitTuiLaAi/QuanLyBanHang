@@ -18,6 +18,8 @@ import com.quanlybanhang.security.UserDetailsImpl;
 import com.quanlybanhang.security.UserDetailsServiceImpl;
 import com.quanlybanhang.service.DealerDebtService;
 import com.quanlybanhang.service.DealerDeliveryPointService;
+import com.quanlybanhang.service.InvoicePdfService;
+import com.quanlybanhang.service.InvoiceService;
 import com.quanlybanhang.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,13 +28,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -43,12 +48,11 @@ import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(DealerPortalController.class)
 @Import({SecurityConfig.class, RestAccessDeniedHandler.class, AuthEntryPointJwt.class, GlobalExceptionHandler.class})
-@DisplayName("DealerPortalController - Cổng tự đặt hàng dành cho Đại lý (S4-10)")
+@DisplayName("DealerPortalController - Cổng dành cho Đại lý (S4-10, S5-02, S7-07)")
 class DealerPortalControllerTest {
 
     @Autowired
@@ -82,6 +86,12 @@ class DealerPortalControllerTest {
     private OrderService orderService;
 
     @MockBean
+    private InvoiceService invoiceService;
+
+    @MockBean
+    private InvoicePdfService invoicePdfService;
+
+    @MockBean
     private UserDetailsServiceImpl userDetailsService;
 
     @MockBean
@@ -105,6 +115,7 @@ class DealerPortalControllerTest {
                 .name("Đại lý Minh Phát")
                 .customerGroup(CustomerGroup.DAI_LY_CAP_1)
                 .debtLimit(new BigDecimal("50000000"))
+                .maxDebtDays(30)
                 .locked(false)
                 .build();
 
@@ -167,7 +178,7 @@ class DealerPortalControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/portal/debt: Đại lý tra cứu công nợ còn lại -> 200 OK")
+    @DisplayName("GET /api/portal/debt: Đại lý tra cứu tổng còn nợ và hạn mức còn lại -> 200 OK")
     void getDebtInfo_Dealer_Returns200() throws Exception {
         when(userRepository.findByUsername("dealer.demo")).thenReturn(Optional.of(dealerUser));
         when(dealerDebtService.getDealerDebtInfo(any(Dealer.class))).thenReturn(
@@ -176,6 +187,7 @@ class DealerPortalControllerTest {
                         .debtLimit(new BigDecimal("50000000"))
                         .currentDebt(new BigDecimal("20000000"))
                         .remainingLimit(new BigDecimal("30000000"))
+                        .availableOrderLimit(new BigDecimal("30000000"))
                         .isBlocked(false)
                         .build()
         );
@@ -184,7 +196,156 @@ class DealerPortalControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.debtLimit").value(50000000))
                 .andExpect(jsonPath("$.data.currentDebt").value(20000000))
-                .andExpect(jsonPath("$.data.remainingLimit").value(30000000));
+                .andExpect(jsonPath("$.data.remainingLimit").value(30000000))
+                .andExpect(jsonPath("$.data.availableOrderLimit").value(30000000));
+    }
+
+    @Test
+    @DisplayName("S7-07 GET /api/portal/debt/summary: Hiển thị tổng còn nợ, hạn mức còn lại và danh sách hóa đơn -> 200 OK")
+    void getDebtSummary_Dealer_Returns200() throws Exception {
+        InvoiceResponse inv = InvoiceResponse.builder()
+                .id(501L)
+                .invoiceNumber("00000001")
+                .invoiceCode("HD-00000001")
+                .invoiceDate(LocalDateTime.of(2026, 10, 1, 10, 0))
+                .dueDate(LocalDate.of(2026, 10, 31))
+                .status(InvoiceStatus.ISSUED)
+                .statusLabel("Đã phát hành")
+                .totalAmount(new BigDecimal("20000000"))
+                .adjustedTotalAmount(new BigDecimal("20000000"))
+                .paidAmount(new BigDecimal("5000000"))
+                .remainingAmount(new BigDecimal("15000000"))
+                .paymentStatus("PARTIALLY_PAID")
+                .paymentStatusLabel("Thanh toán một phần")
+                .isOverdue(false)
+                .build();
+
+        when(dealerDebtService.getDealerDebtInfo(any(Dealer.class))).thenReturn(
+                DealerDebtResponse.builder()
+                        .dealerId(100L)
+                        .dealerCode("DL-TEST")
+                        .dealerName("Đại lý Minh Phát")
+                        .debtLimit(new BigDecimal("50000000"))
+                        .currentDebt(new BigDecimal("15000000"))
+                        .remainingLimit(new BigDecimal("35000000"))
+                        .availableOrderLimit(new BigDecimal("35000000"))
+                        .totalPaid(new BigDecimal("5000000"))
+                        .totalInvoicedAmount(new BigDecimal("20000000"))
+                        .totalInvoiceCount(1)
+                        .unpaidInvoiceCount(1)
+                        .invoices(List.of(inv))
+                        .isBlocked(false)
+                        .build()
+        );
+
+        mvc.perform(get("/api/portal/debt/summary").with(authentication(dealerAuth)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentDebt").value(15000000))
+                .andExpect(jsonPath("$.data.debtLimit").value(50000000))
+                .andExpect(jsonPath("$.data.remainingLimit").value(35000000))
+                .andExpect(jsonPath("$.data.availableOrderLimit").value(35000000))
+                .andExpect(jsonPath("$.data.invoices[0].invoiceCode").value("HD-00000001"))
+                .andExpect(jsonPath("$.data.invoices[0].dueDate").value("2026-10-31"))
+                .andExpect(jsonPath("$.data.invoices[0].paymentStatus").value("PARTIALLY_PAID"));
+    }
+
+    @Test
+    @DisplayName("S7-07 GET /api/portal/debt/summary: Thu hồi quyền FINANCE_VIEW_DEBT -> 403 Forbidden")
+    void getDebtSummary_RevokedFinanceViewDebt_Returns403() throws Exception {
+        UsernamePasswordAuthenticationToken noFinanceAuth = new UsernamePasswordAuthenticationToken(
+                "dealer.demo", null, List.of(
+                new SimpleGrantedAuthority("ROLE_DEALER"),
+                new SimpleGrantedAuthority("ORDER_VIEW"),
+                new SimpleGrantedAuthority("ORDER_CREATE"),
+                new SimpleGrantedAuthority("PRODUCT_VIEW")
+        ));
+
+        mvc.perform(get("/api/portal/debt/summary").with(authentication(noFinanceAuth)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/portal/debt").with(authentication(noFinanceAuth)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("S7-07 GET /api/portal/invoices: Danh sách hóa đơn kèm số tiền, hạn thanh toán, trạng thái -> 200 OK")
+    void getMyInvoices_Dealer_Returns200() throws Exception {
+        InvoiceResponse inv = InvoiceResponse.builder()
+                .id(501L)
+                .invoiceNumber("00000001")
+                .invoiceCode("HD-00000001")
+                .invoiceDate(LocalDateTime.of(2026, 10, 1, 10, 0))
+                .dueDate(LocalDate.of(2026, 10, 31))
+                .status(InvoiceStatus.ISSUED)
+                .statusLabel("Đã phát hành")
+                .totalAmount(new BigDecimal("12000000"))
+                .adjustedTotalAmount(new BigDecimal("12000000"))
+                .paidAmount(BigDecimal.ZERO)
+                .remainingAmount(new BigDecimal("12000000"))
+                .paymentStatus("UNPAID")
+                .paymentStatusLabel("Chưa thanh toán")
+                .isOverdue(false)
+                .build();
+
+        when(invoiceService.getDealerInvoices(eq(100L), any(), any(), any(), any(), any(), eq(0), eq(20)))
+                .thenReturn(new PageImpl<>(List.of(inv)));
+
+        mvc.perform(get("/api/portal/invoices").with(authentication(dealerAuth)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].invoiceCode").value("HD-00000001"))
+                .andExpect(jsonPath("$.data.content[0].totalAmount").value(12000000))
+                .andExpect(jsonPath("$.data.content[0].dueDate").value("2026-10-31"))
+                .andExpect(jsonPath("$.data.content[0].status").value("ISSUED"))
+                .andExpect(jsonPath("$.data.content[0].paymentStatus").value("UNPAID"));
+    }
+
+    @Test
+    @DisplayName("S7-07 GET /api/portal/invoices: Thu hồi quyền INVOICE_VIEW -> 403 Forbidden")
+    void getMyInvoices_RevokedInvoiceView_Returns403() throws Exception {
+        UsernamePasswordAuthenticationToken noInvoiceAuth = new UsernamePasswordAuthenticationToken(
+                "dealer.demo", null, List.of(
+                new SimpleGrantedAuthority("ROLE_DEALER"),
+                new SimpleGrantedAuthority("FINANCE_VIEW_DEBT"),
+                new SimpleGrantedAuthority("ORDER_VIEW")
+        ));
+
+        mvc.perform(get("/api/portal/invoices").with(authentication(noInvoiceAuth)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("S7-07 GET /api/portal/invoices/{id}/pdf: Xem và tải lại PDF hóa đơn đã phát hành của chính mình -> 200 OK")
+    void downloadMyInvoicePdf_Success() throws Exception {
+        InvoiceResponse inv = InvoiceResponse.builder()
+                .id(501L)
+                .invoiceNumber("00000001")
+                .invoiceCode("HD-00000001")
+                .dealerId(100L)
+                .status(InvoiceStatus.ISSUED)
+                .build();
+
+        byte[] dummyPdf = "%PDF-1.4 dealer invoice".getBytes();
+        when(invoiceService.getDealerInvoiceById(100L, 501L)).thenReturn(inv);
+        when(invoicePdfService.generateInvoicePdf(501L, "dealer.demo")).thenReturn(dummyPdf);
+
+        mvc.perform(get("/api/portal/invoices/501/pdf").param("download", "true").with(authentication(dealerAuth)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(result -> {
+                    var disposition = org.springframework.http.ContentDisposition.parse(result.getResponse().getHeader("Content-Disposition"));
+                    org.junit.jupiter.api.Assertions.assertEquals("attachment", disposition.getType());
+                    org.junit.jupiter.api.Assertions.assertEquals("hoa-don-00000001.pdf", disposition.getFilename());
+                });
+    }
+
+    @Test
+    @DisplayName("S7-07 GET /api/portal/invoices/{id}/pdf: Chặn tải hóa đơn của đại lý khác -> 403 Forbidden")
+    void downloadMyInvoicePdf_OtherDealer_Returns403() throws Exception {
+        when(invoiceService.getDealerInvoiceById(100L, 999L))
+                .thenThrow(new AccessDeniedException("Bạn chỉ có quyền xem và tải hóa đơn của chính đại lý mình"));
+
+        mvc.perform(get("/api/portal/invoices/999/pdf").with(authentication(dealerAuth)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

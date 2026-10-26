@@ -58,6 +58,10 @@ public class OrderDebtCheckResponse {
 
     /** Lý do chặn tạo đơn hoàn toàn. */
     private String blockReason;
+    private Boolean isDebtFlagged;
+    private com.quanlybanhang.model.DebtFlagType debtFlagType;
+    private String debtFlagReason;
+    private com.quanlybanhang.model.DebtFlagAction effectiveAction;
 
     /** Thông điệp cảnh báo hiển thị trên giao diện tạo đơn. */
     private String warningMessage;

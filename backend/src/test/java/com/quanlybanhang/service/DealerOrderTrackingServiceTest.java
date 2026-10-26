@@ -59,6 +59,15 @@ class DealerOrderTrackingServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private OrderStatusHistoryRepository orderStatusHistoryRepository;
+
+    @Mock
+    private WarehouseVoucherRepository warehouseVoucherRepository;
+
+    @Mock
+    private DeliveryTripStopRepository deliveryTripStopRepository;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -73,7 +82,12 @@ class DealerOrderTrackingServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(orderRepository.findByIdForUpdate(org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(call -> orderRepository.findById(call.getArgument(0)));
         orderService.setUserRepository(userRepository);
+        orderService.setOrderStatusHistoryRepository(orderStatusHistoryRepository);
+        orderService.setWarehouseVoucherRepository(warehouseVoucherRepository);
+        orderService.setDeliveryTripStopRepository(deliveryTripStopRepository);
 
         dealerMinhPhat = Dealer.builder()
                 .id(1L)
@@ -356,5 +370,158 @@ class DealerOrderTrackingServiceTest {
 
         config.updateRolePermissions(ERole.ROLE_DEALER, Set.of());
         assertThat(config.getPermissions(ERole.ROLE_DEALER)).isEmpty();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // S6-09: THEO DÕI TRẠNG THÁI GIAO HÀNG (5 MỐC & THỰC GIAO TỪNG DÒNG)
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    @Test void partialStopDoesNotForgeWholeOrderDeliveryAndLegacyDateDoesNotInventMidnight(){
+        var order=createTestOrder(55L,"DH-PARTIAL",dealerMinhPhat,"SHIPPING",BigDecimal.TEN,BigDecimal.ONE,BigDecimal.TEN,BigDecimal.ONE);
+        when(orderRepository.findById(55L)).thenReturn(Optional.of(order));
+        var trip=DeliveryTrip.builder().id(2L).status(DeliveryTripStatus.IN_PROGRESS).departureTime(LocalDateTime.now().minusHours(2)).build();
+        var stop=DeliveryTripStop.builder().id(3L).order(order).trip(trip).status(DeliveryStopStatus.DELIVERED).deliveredAt(LocalDateTime.now().minusHours(1)).build();
+        when(deliveryTripStopRepository.findByOrderIdOrderByIdDesc(55L)).thenReturn(List.of(stop));
+        var tracking=orderService.getDealerOrderDeliveryTracking(55L,1L);
+        assertThat(tracking.getDeliveredAt()).isNull();assertThat(tracking.getMilestones().get(3).getStatus()).isEqualTo("CURRENT");
+        assertThat(tracking.getMilestones().get(4).getStatus()).isEqualTo("PENDING");
+        order.setStatus("DELIVERED");order.setActualDeliveryDate(LocalDate.of(2026,10,22));
+        when(deliveryTripStopRepository.findByOrderIdOrderByIdDesc(55L)).thenReturn(List.of());
+        assertThat(orderService.getDealerOrderDeliveryTracking(55L,1L).getDeliveredAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("S6-09: Hiển thị đầy đủ 5 mốc thời gian: đã duyệt, đang soạn, đã xuất, đang giao, đã giao")
+    void getDealerOrderDeliveryTracking_FiveMilestonesPresentAndOrdered() {
+        Order order = createTestOrder(55L, "DH-S609-001", dealerMinhPhat, "DELIVERED",
+                new BigDecimal("10"), new BigDecimal("8"), new BigDecimal("5"), new BigDecimal("5"));
+        order.setApprovedAt(LocalDateTime.of(2026, 10, 20, 8, 30, 0));
+        order.setApprovedBy("qlkd.demo");
+        order.setActualDeliveryDate(LocalDate.of(2026, 10, 22));
+
+        when(orderRepository.findById(55L)).thenReturn(Optional.of(order));
+
+        // Lịch sử soạn hàng (PICKING)
+        OrderStatusHistory pickHist = OrderStatusHistory.builder()
+                .order(order)
+                .previousStatus("APPROVED")
+                .newStatus("PICKING")
+                .statusDisplayName("Đang soạn hàng")
+                .changedBy("staff.kho")
+                .changedAt(LocalDateTime.of(2026, 10, 20, 14, 0, 0))
+                .build();
+        when(orderStatusHistoryRepository.findByOrderIdOrderByChangedAtAsc(55L))
+                .thenReturn(List.of(pickHist));
+
+        // Phiếu xuất kho (EXPORTED)
+        WarehouseVoucher voucher = WarehouseVoucher.builder()
+                .id(101L)
+                .voucherCode("PXK-20261021-001")
+                .recordedAt(LocalDateTime.of(2026, 10, 21, 9, 15, 0))
+                .build();
+        when(warehouseVoucherRepository.findByShipmentOrderIdOrderByIdAsc(55L))
+                .thenReturn(List.of(voucher));
+
+        // Chuyến giao hàng (SHIPPING, DELIVERED)
+        DeliveryTrip trip = DeliveryTrip.builder()
+                .id(201L)
+                .tripCode("TRIP-20261022-01")
+                .driverName("Nguyễn Văn Tài")
+                .driverPhone("0909123456")
+                .vehiclePlate("29C-888.99")
+                .departureTime(LocalDateTime.of(2026, 10, 22, 7, 0, 0))
+                .expectedCompletionTime(LocalDateTime.of(2026, 10, 22, 11, 30, 0))
+                .actualCompletionTime(LocalDateTime.of(2026, 10, 22, 10, 45, 0))
+                .status(DeliveryTripStatus.COMPLETED)
+                .build();
+
+        DeliveryTripStop stop = DeliveryTripStop.builder()
+                .id(301L)
+                .trip(trip)
+                .order(order)
+                .orderCode(order.getOrderCode())
+                .stopOrder(1)
+                .status(DeliveryStopStatus.DELIVERED)
+                .deliveredAt(LocalDateTime.of(2026, 10, 22, 10, 15, 0))
+                .receiverName("Trần Thị Nhận")
+                .receiverPhone("0988777666")
+                .deliveryAddress("123 Lê Lợi, Q.1, TP.HCM")
+                .build();
+        when(deliveryTripStopRepository.findByOrderIdOrderByIdDesc(55L))
+                .thenReturn(List.of(stop));
+
+        var response = orderService.getDealerOrderDeliveryTracking(55L, 1L);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getOrderId()).isEqualTo(55L);
+        assertThat(response.getOrderCode()).isEqualTo("DH-S609-001");
+        assertThat(response.getDealerId()).isEqualTo(1L);
+
+        // Kiểm tra 5 mốc thời gian cốt lõi
+        assertThat(response.getApprovedAt()).isEqualTo(LocalDateTime.of(2026, 10, 20, 8, 30, 0));
+        assertThat(response.getPickingAt()).isEqualTo(LocalDateTime.of(2026, 10, 20, 14, 0, 0));
+        assertThat(response.getExportedAt()).isEqualTo(LocalDateTime.of(2026, 10, 21, 9, 15, 0));
+        assertThat(response.getShippingAt()).isEqualTo(LocalDateTime.of(2026, 10, 22, 7, 0, 0));
+        assertThat(response.getDeliveredAt()).isEqualTo(LocalDateTime.of(2026, 10, 22, 10, 15, 0));
+
+        // Kiểm tra danh sách 5 mốc theo thứ tự chuẩn
+        assertThat(response.getMilestones()).hasSize(5);
+        assertThat(response.getMilestones().get(0).getMilestoneKey()).isEqualTo("approved");
+        assertThat(response.getMilestones().get(0).getLabel()).isEqualTo("Đã duyệt");
+        assertThat(response.getMilestones().get(0).getTimestamp()).isNotNull();
+
+        assertThat(response.getMilestones().get(1).getMilestoneKey()).isEqualTo("picking");
+        assertThat(response.getMilestones().get(1).getLabel()).isEqualTo("Đang soạn");
+        assertThat(response.getMilestones().get(1).getTimestamp()).isNotNull();
+
+        assertThat(response.getMilestones().get(2).getMilestoneKey()).isEqualTo("exported");
+        assertThat(response.getMilestones().get(2).getLabel()).isEqualTo("Đã xuất");
+        assertThat(response.getMilestones().get(2).getTimestamp()).isNotNull();
+
+        assertThat(response.getMilestones().get(3).getMilestoneKey()).isEqualTo("shipping");
+        assertThat(response.getMilestones().get(3).getLabel()).isEqualTo("Đang giao");
+        assertThat(response.getMilestones().get(3).getTimestamp()).isNotNull();
+
+        assertThat(response.getMilestones().get(4).getMilestoneKey()).isEqualTo("delivered");
+        assertThat(response.getMilestones().get(4).getLabel()).isEqualTo("Đã giao");
+        assertThat(response.getMilestones().get(4).getTimestamp()).isNotNull();
+
+        // Kiểm tra thông tin chuyến xe & tài xế giúp đại lý chủ động bố trí người nhận
+        assertThat(response.getDeliveryTrip()).isNotNull();
+        assertThat(response.getDeliveryTrip().getDriverName()).isEqualTo("Nguyễn Văn Tài");
+        assertThat(response.getDeliveryTrip().getDriverPhone()).isEqualTo("0909123456");
+        assertThat(response.getDeliveryTrip().getVehiclePlate()).isEqualTo("29C-888.99");
+        assertThat(response.getDeliveryTrip().getDepartureTime()).isEqualTo(LocalDateTime.of(2026, 10, 22, 7, 0, 0));
+        assertThat(response.getDeliveryTrip().getExpectedCompletionTime()).isEqualTo(LocalDateTime.of(2026, 10, 22, 11, 30, 0));
+        assertThat(response.getDeliveryTrip().getReceiverName()).isEqualTo("Trần Thị Nhận");
+        assertThat(response.getDeliveryTrip().getDeliveryAddress()).isEqualTo("123 Lê Lợi, Q.1, TP.HCM");
+
+        // Kiểm tra số lượng thực giao từng dòng hàng
+        assertThat(response.getItems()).hasSize(2);
+        var item1 = response.getItems().get(0);
+        assertThat(item1.getQuantity()).isEqualByComparingTo("10");
+        assertThat(item1.getDeliveredQuantity()).isEqualByComparingTo("8");
+        assertThat(item1.getShortageQuantity()).isEqualByComparingTo("2");
+        assertThat(item1.getIsShortage()).isTrue();
+
+        var item2 = response.getItems().get(1);
+        assertThat(item2.getQuantity()).isEqualByComparingTo("5");
+        assertThat(item2.getDeliveredQuantity()).isEqualByComparingTo("5");
+        assertThat(item2.getShortageQuantity()).isEqualByComparingTo("0");
+        assertThat(item2.getIsShortage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("S6-09: Đại lý không thể xem theo dõi giao hàng của đại lý khác -> 403 AccessDenied")
+    void getDealerOrderDeliveryTracking_DifferentDealer_ThrowsAccessDenied() {
+        Order order = createTestOrder(55L, "DH-S609-001", dealerMinhPhat, "DELIVERED",
+                new BigDecimal("10"), new BigDecimal("10"), new BigDecimal("5"), new BigDecimal("5"));
+
+        when(orderRepository.findById(55L)).thenReturn(Optional.of(order));
+
+        // Đại lý Tân Bình (ID 2L) cố tình truy cập đơn của Đại lý Minh Phát (ID 1L)
+        assertThatThrownBy(() -> orderService.getDealerOrderDeliveryTracking(55L, 2L))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Đơn hàng không thuộc đại lý đang chọn");
     }
 }

@@ -43,9 +43,23 @@ public class WarehouseVoucherItemResponse {
 
     private BigDecimal price;
     private BigDecimal totalAmount;
+    private BigDecimal lossValue;
     private String lotNumber;
     private java.time.LocalDate expiryDate;
     private java.time.LocalDate manufacturingDate;
+
+    /**
+     * Số lô hệ thống gợi ý theo FEFO (S6-04).
+     */
+    private String suggestedLotNumber;
+
+    /**
+     * Lý do chọn lô khác lô gợi ý FEFO (S6-04).
+     */
+    private String overrideReason;
+
     private Boolean manageLot;
+    private Boolean overrideExpiredLot;
+    private String expiredLotOverrideReason;
     private String note;
 }

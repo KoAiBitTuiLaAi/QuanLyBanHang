@@ -14,7 +14,9 @@ const product = { id: 101, sku: 'SKU-101', name: 'Sản phẩm kiểm thử', ba
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   const errors = [];
   async function setup(roles, permissions, handler) {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    // Isolate business flows from native cross-document transition cancellation on context teardown.
+    // navigation.browser.cjs separately checks native motion/back/forward/reload.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
     const user = { id: 12, username: 'test-user', fullName: 'Người dùng kiểm thử', roles, permissions, warehouses: [], territories: [] };
     const rights = { permissions: [...permissions] };
     await context.addInitScript(({ user, token }) => {

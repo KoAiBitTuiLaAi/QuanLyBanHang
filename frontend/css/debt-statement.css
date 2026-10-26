@@ -1,0 +1,454 @@
+/**
+ * debt-statement.css — Giao diện Sổ chi tiết công nợ đại lý (S8-10).
+ * Tuân thủ quy định layout chung trong app-navigation.css, không ghi đè container chính.
+ */
+
+.statement-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Header & Title */
+.statement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.statement-title h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-color, #0f172a);
+  margin: 0 0 4px 0;
+}
+
+.statement-title p {
+  font-size: 0.875rem;
+  color: var(--text-muted, #64748b);
+  margin: 0;
+}
+
+/* Notice & Alert Banners */
+.statement-notice {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.statement-notice--info {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+}
+
+.statement-notice--error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.statement-notice--warning {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+/* Filter Card */
+.statement-filter-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.statement-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+  flex: 1 1 200px;
+}
+
+.filter-group label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-color, #334155);
+}
+
+.filter-group input,
+.filter-group select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: #ffffff;
+  color: var(--text-color, #0f172a);
+  transition: border-color 0.15s ease;
+}
+
+.filter-group input:focus,
+.filter-group select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.quick-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.btn-chip {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-chip:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.btn-chip--active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+/* Button Variants */
+.btn-export-excel {
+  background: #059669;
+  color: #ffffff;
+  border: 1px solid #059669;
+}
+
+.btn-export-excel:hover:not(:disabled) {
+  background: #047857;
+  border-color: #047857;
+}
+
+.btn-export-pdf {
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #dc2626;
+}
+
+.btn-export-pdf:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+/* Metric KPI Cards */
+.statement-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metric-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted, #64748b);
+}
+
+.metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-color, #0f172a);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-value--increase {
+  color: #dc2626;
+}
+
+.metric-value--decrease {
+  color: #059669;
+}
+
+.metric-value--credit {
+  color: #0284c7;
+}
+
+.metric-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+/* Dealer Summary Banner */
+.dealer-summary-banner {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #2563eb;
+  border-radius: 6px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dealer-info-title {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.dealer-period-badge {
+  font-size: 0.8125rem;
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* Table Area */
+.statement-table-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.statement-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.statement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.statement-table th {
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 600;
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+.statement-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #1e293b;
+}
+
+.statement-table tr:hover {
+  background: #f8fafc;
+}
+
+/* Number Alignments */
+.text-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* Special Rows */
+.row-opening {
+  background: #fafafa;
+  font-weight: 600;
+  color: #475569;
+}
+
+.row-total {
+  background: #f8fafc;
+  font-weight: 700;
+  border-top: 2px solid #cbd5e1;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+.amount-increase {
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.amount-decrease {
+  color: #059669;
+  font-weight: 500;
+}
+
+.amount-balance {
+  font-weight: 600;
+}
+
+.amount-balance--credit {
+  color: #0284c7;
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.badge--order {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.badge--payment {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.badge--adjustment {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+.badge--default {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.doc-link {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.doc-link:hover {
+  text-decoration: underline;
+}
+
+/* Empty & Loading States */
+.statement-empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-muted, #64748b);
+}
+
+.statement-empty p {
+  margin: 8px 0 0 0;
+  font-size: 0.9375rem;
+}
+
+.statement-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .statement-filter-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-actions button {
+    width: 100%;
+  }
+}
+
+/* Combined S7-03 / S8-10 workspace. */
+.debt-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border-color, #dbe3ec); }
+.debt-tab { appearance: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted, #64748b); cursor: pointer; font: inherit; font-weight: 600; padding: 10px 14px; }
+.debt-tab:hover { color: var(--text-color, #0f172a); }
+.debt-tab[aria-selected="true"] { color: #059669; border-bottom-color: #10b981; }
+.debt-tab:focus-visible { outline: 3px solid rgba(16, 185, 129, .35); outline-offset: 2px; }
+.debt-tab-panel { min-width: 0; }
+.debt-tab-panel[hidden], .debt-tabs[hidden] { display: none !important; }
+.ds-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.ds-heading h2 { margin: 0; font-size: 1.25rem; color: var(--text-color, #0f172a); }
+.ds-heading p, .ds-help { margin: .35rem 0 0; color: var(--text-muted, #64748b); font-size: .875rem; }
+.ds-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ds-error { padding: .75rem 1rem; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #991b1b; }
+.ds-error[hidden] { display: none !important; }
+.ds-filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 1rem; padding: 1rem; margin: 1rem 0; background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 10px; }
+.ds-filters label { display: flex; flex-direction: column; gap: .35rem; min-width: 180px; color: var(--text-muted, #64748b); font-size: .8125rem; }
+.ds-filters input[type="search"], .ds-filters input[type="date"] { min-height: 40px; padding: 8px 10px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 6px; color: var(--text-color, #0f172a); background: #fff; }
+.ds-filters input:focus-visible { outline: 3px solid rgba(16, 185, 129, .25); border-color: #10b981; }
+.ds-filters .ds-check { min-width: auto; flex-direction: row; align-items: center; padding: 10px 0; cursor: pointer; }
+.ds-filters button { min-height: 40px; }
+.ds-panel { overflow: hidden; border: 1px solid var(--border-color, #e2e8f0); border-radius: 10px; background: var(--card-bg, #fff); }
+.ds-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ds-scroll table { width: 100%; border-collapse: collapse; font-size: .875rem; white-space: nowrap; }
+.ds-scroll th, .ds-scroll td { padding: 11px 12px; border-bottom: 1px solid var(--border-color, #e2e8f0); text-align: left; }
+.ds-scroll th { background: #f1f5f9; color: #475569; font-weight: 600; }
+.ds-scroll td:nth-child(n+3), .ds-scroll th:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
+.ds-scroll tbody tr:hover { background: #f8fafc; }
+.ds-scroll tfoot td { background: #f8fafc; font-weight: 700; }
+.ds-overdue-row td:nth-child(5), .ds-overdue-row td:nth-child(9) { color: #b91c1c; font-weight: 600; }
+.ds-overdue-badge { display: inline-block; margin-left: 7px; padding: 2px 6px; border-radius: 999px; background: #fef2f2; color: #b91c1c; font-size: .7rem; font-weight: 600; }
+.ds-empty { padding: 28px 16px !important; color: var(--text-muted, #64748b); text-align: center !important; }
+.ds-progress { padding: 14px; color: var(--text-muted, #64748b); }
+@media (max-width: 640px) {
+  .debt-tabs { gap: 0; }
+  .debt-tab { flex: 1; padding-inline: 8px; }
+  .ds-filters { align-items: stretch; flex-direction: column; }
+  .ds-filters label { min-width: 0; }
+  .ds-filters button { width: 100%; }
+}
+

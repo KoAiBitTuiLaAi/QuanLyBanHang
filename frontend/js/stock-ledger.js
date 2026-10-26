@@ -1,12 +1,18 @@
-/** S5-05. Read-only stock ledger; quantities, statuses and scope come from the server. */
+/** S8-08. Read-only stock ledger; quantities, statuses, scope and Excel export come from the server. */
 (() => {
   if (!Auth.requireLogin()) return;
   const $ = id => document.getElementById(id);
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const quantity = value => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 }).format(Number(value));
+  const esc = value => typeof StockLedgerUtils !== 'undefined'
+    ? StockLedgerUtils.escapeHtml(value)
+    : String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const quantity = value => typeof StockLedgerUtils !== 'undefined'
+    ? StockLedgerUtils.formatQuantity(value)
+    : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 }).format(Number(value));
   const state = { rows: [], filters: {}, page: 0, size: 20, total: 0, pages: 0, loading: false,
     optionsReady: false, version: 0, initVersion: 0, controller: null, initController: null, exportController: null };
-  const allowed = () => Auth.hasPermission('WAREHOUSE_VIEW');
+  const allowed = () => typeof StockLedgerUtils !== 'undefined'
+    ? StockLedgerUtils.canViewStockLedger(Auth)
+    : Auth.hasPermission('WAREHOUSE_VIEW');
   const filterIds = { warehouseId: 'stock-warehouse', categoryId: 'stock-category', stockStatus: 'stock-status', belowMinimum: 'stock-below' };
   function error(text = '') { $('stock-error').textContent = text; $('stock-error').hidden = !text; }
   function empty(text) { $('stock-rows').innerHTML = `<tr><td colspan="9" class="stock-empty">${esc(text)}</td></tr>`; }
@@ -51,7 +57,7 @@
   }
   function render() {
     $('stock-rows').innerHTML = state.rows.map(row => `<tr class="${row.belowMinimum === true ? 'stock-row--below-minimum' : ''}">
-      <td><strong>${esc(row.productName)}</strong><small>${esc(row.productCode)}</small></td>
+      <td><strong>${esc(row.productName)}</strong><small>${esc(row.productCode)}</small><small><a href="/warehouse/stock-card?productId=${encodeURIComponent(row.productId)}&amp;warehouseId=${encodeURIComponent(row.warehouseId)}">Xem thẻ kho</a></small></td>
       <td>${esc(row.categoryName || 'Chưa phân nhóm')}</td><td><strong>${esc(row.warehouseName)}</strong><small>${esc(row.warehouseCode)}</small></td>
       <td>${esc(row.baseUnit || '—')}</td><td class="stock-number">${quantity(row.physicalQuantity)}</td>
       <td class="stock-number">${quantity(row.reservedQuantity)}</td><td class="stock-number stock-available">${quantity(row.availableQuantity)}</td>
@@ -65,7 +71,8 @@
   }
   function cancelExport() {
     state.exportController?.abort(); state.exportController = null;
-    $('stock-export').textContent = 'Xuất Excel';
+    const btn = $('stock-export');
+    if (btn) btn.textContent = 'Xuất Excel';
   }
   async function load() {
     if (!allowed() || !state.optionsReady) return;
@@ -132,32 +139,98 @@
       $('stock-page-label').textContent = ''; error(e.message);
     } finally { if (version === state.initVersion) controls(); }
   }
+
+  /**
+   * S8-08: Xuất báo cáo tồn kho ra tệp Excel (.xlsx) thông qua API máy chủ
+   * (/api/warehouse/stock-ledger/export), gửi số liệu theo bộ lọc đang áp dụng,
+   * giữ nguyên ba cột tồn số riêng biệt và đặt tên file chứa mã kho cùng ngày xuất.
+   */
   async function exportExcel() {
     if (state.exportController || !state.rows.length) return;
     const controller = state.exportController = new AbortController();
     const version = state.version, filters = { ...state.filters };
-    controls(); $('stock-export').textContent = 'Đang xuất…';
+    controls();
+    $('stock-export').textContent = 'Đang xuất…';
+
     try {
-      if (!await Auth.syncPermissions() || !allowed()) throw new Error('Không xác minh được quyền xem tồn kho.');
-      const rows = [];
-      for (let page = 0; ; page++) {
-        const data = validatePage(await request(query(filters, page, 200), controller.signal));
-        if (version !== state.version || !allowed() || controller.signal.aborted) return;
-        rows.push(...data.content);
-        if (data.last) break;
-        if (!data.content.length) throw new Error('Dữ liệu xuất thay đổi trong lúc tải. Vui lòng thử lại.');
+      if (!await Auth.syncPermissions() || !allowed()) {
+        throw new Error('Không xác minh được quyền xem tồn kho.');
       }
-      const sheet = XLSX.utils.json_to_sheet(rows.map(r => ({ 'Mã SKU': r.productCode, 'Sản phẩm': r.productName,
-        'Nhóm hàng': r.categoryName || '', 'Mã kho': r.warehouseCode, 'Kho': r.warehouseName, 'Đơn vị': r.baseUnit,
-        'Tồn thực tế': Number(r.physicalQuantity), 'Đang giữ chỗ': Number(r.reservedQuantity),
-        'Tồn khả dụng': Number(r.availableQuantity), 'Trạng thái tồn': r.stockStatusLabel,
-        'Mức tối thiểu': r.minimumQuantity == null ? '' : Number(r.minimumQuantity),
-        'Cảnh báo tối thiểu': r.minimumUnitMatches === false ? 'Đơn vị ngưỡng không khớp' : r.belowMinimum === true ? 'Dưới mức tối thiểu' : '' })));
-      const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, sheet, 'Sổ tồn kho');
-      XLSX.writeFile(book, 'So-ton-kho.xlsx'); Toast.show('Đã xuất sổ tồn theo bộ lọc đã áp dụng.', 'success');
-    } catch (e) { if (e.name !== 'AbortError' && !controller.signal.aborted) error(e.message); }
-    finally { if (state.exportController === controller) { state.exportController = null; $('stock-export').textContent = 'Xuất Excel'; controls(); } }
+
+      const exportPath = typeof StockLedgerUtils !== 'undefined'
+        ? StockLedgerUtils.buildExportUrl(filters)
+        : `/warehouse/stock-ledger/export?${new URLSearchParams(filters)}`;
+
+      const response = await Auth.apiFetch(exportPath, {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+
+      if (version !== state.version || !allowed() || controller.signal.aborted) return;
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Bạn không có quyền xuất báo cáo tồn kho.');
+        }
+        let msg = 'Không thể xuất báo cáo tồn kho. Vui lòng thử lại.';
+        try {
+          const errPayload = await response.json();
+          if (errPayload?.message) msg = errPayload.message;
+        } catch {}
+        throw new Error(msg);
+      }
+
+      const blob = await response.blob();
+      if (version !== state.version || !allowed() || controller.signal.aborted) return;
+
+      const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition');
+      let filename = typeof StockLedgerUtils !== 'undefined'
+        ? StockLedgerUtils.parseContentDispositionFilename(disposition)
+        : null;
+
+      if (!filename) {
+        let warehouseCode = '';
+        if (filters.warehouseId) {
+          const select = $('stock-warehouse');
+          const opt = select ? Array.from(select.options).find(o => o.value === String(filters.warehouseId)) : null;
+          if (opt && opt.text) {
+            warehouseCode = opt.text.split(' — ')[0].trim();
+          }
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        filename = typeof StockLedgerUtils !== 'undefined'
+          ? StockLedgerUtils.buildFallbackFilename(warehouseCode, today)
+          : `So-ton-kho_${warehouseCode || 'TAT-CA-KHO'}_${today}.xlsx`;
+      }
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000);
+
+      if (typeof window !== 'undefined') {
+        window.exported = { name: filename, blob };
+      }
+
+      Toast.show('Đã xuất sổ tồn theo bộ lọc đã áp dụng.', 'success');
+    } catch (e) {
+      if (e.name !== 'AbortError' && !controller.signal.aborted) {
+        error(e.message || 'Không thể xuất báo cáo tồn kho.');
+        Toast.show(e.message || 'Không thể xuất báo cáo tồn kho.', 'danger');
+      }
+    } finally {
+      if (state.exportController === controller) {
+        state.exportController = null;
+        $('stock-export').textContent = 'Xuất Excel';
+        controls();
+      }
+    }
   }
+
   $('stock-filter').addEventListener('submit', e => { e.preventDefault(); state.filters = filterValues(); state.page = 0; void load(); });
   $('stock-reset').addEventListener('click', () => { $('stock-filter').reset(); state.filters = {}; state.page = 0; void load(); });
   $('stock-size').addEventListener('change', () => { state.size = Number($('stock-size').value); state.page = 0; void load(); });

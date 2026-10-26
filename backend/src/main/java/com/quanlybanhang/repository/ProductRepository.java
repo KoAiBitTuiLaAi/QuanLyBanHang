@@ -61,4 +61,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Product> findByCodeUpperIn(@Param("codes") Collection<String> codes);
 
     List<Product> findByActiveTrueOrderByNameAsc();
+
+    List<Product> findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(String code, String name);
 }

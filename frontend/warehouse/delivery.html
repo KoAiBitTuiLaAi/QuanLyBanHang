@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Xác nhận giao hàng | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/warehouse-picking.css"><link rel="stylesheet" href="/css/delivery-confirmation.css">
+  <link rel="stylesheet" href="/css/app-navigation.css"><script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content picking-page delivery-page">
+  <header class="pick-heading"><div><h1>Xác nhận giao hàng</h1><p>Ghi nhận từng điểm giao theo phiếu xuất, lưu ảnh ký nhận và xử lý hàng giao không thành công.</p></div><button id="dc-reload" class="btn btn--secondary" type="button">Tải lại</button></header>
+  <p class="pick-note">Giao không thành công chưa cộng lại tồn. Chỉ nhập trả khi thủ kho thực nhận hàng; hàng nhập trả giữ đúng lô và quy đổi của phiếu xuất. Giao đủ đơn mới mở điều kiện phát hành hóa đơn; trang này không tự phát hành.</p>
+  <p id="dc-denied" class="pick-error" hidden>Bạn chưa có quyền xem chuyến giao. Liên hệ quản trị viên để kiểm tra quyền.</p>
+  <p id="dc-error" class="pick-error" role="alert" hidden></p><p id="dc-notice" class="pick-note" role="status" hidden></p>
+  <section class="pick-panel" id="dc-workspace" aria-label="Danh sách giao nhận">
+    <form id="dc-filter" class="pick-grid" role="search">
+      <label>Kho<select id="dc-warehouse"><option value="">Tất cả kho được giao</option></select></label>
+      <label>Trạng thái chuyến<select id="dc-trip-status"><option value="">Tất cả trạng thái</option></select></label>
+      <label>Mã chuyến, tài xế hoặc biển số xe<input id="dc-keyword" type="search" maxlength="150"></label>
+      <button type="submit" class="btn btn--primary">Lọc</button>
+    </form>
+    <p id="dc-count" role="status"></p>
+    <div class="dc-table-scroll" tabindex="0" role="region" aria-label="Các điểm giao trên trang chuyến">
+      <table class="dc-live-table"><thead><tr><th>Chuyến / Phiếu xuất</th><th>Người nhận / Địa chỉ</th><th>Tiền hàng</th><th>Trạng thái điểm</th><th>Kết quả đơn hàng</th><th>Thao tác</th></tr></thead><tbody id="dc-rows"></tbody></table>
+    </div>
+    <footer class="pick-actions"><button id="dc-prev" class="btn btn--secondary" type="button">Trước</button><span id="dc-page"></span><button id="dc-next" class="btn btn--secondary" type="button">Sau</button></footer>
+  </section>
+  <section id="dc-detail" class="pick-panel" aria-labelledby="dc-detail-title" hidden>
+    <header class="pick-heading"><div><h2 id="dc-detail-title" tabindex="-1"></h2><p id="dc-detail-info"></p></div><div class="pick-actions"><button id="dc-detail-reload" type="button" class="btn btn--secondary">Tải lại điểm giao</button><button id="dc-close" type="button" class="btn btn--secondary">Đóng</button></div></header>
+    <p id="dc-detail-error" class="pick-error" role="alert" hidden></p><p id="dc-detail-state" class="pick-note"></p>
+    <div id="dc-lines" class="pick-lines"></div>
+    <form id="dc-confirm-form" class="pick-panel" hidden>
+      <h3>Giao thành công</h3>
+      <div class="pick-grid">
+        <label>Người nhận thực tế<input id="dc-receiver" maxlength="100" required autocomplete="name"></label>
+        <label>Thời điểm giao<input id="dc-delivered-at" type="datetime-local" step="1" required></label>
+        <label>Ảnh biên bản có chữ ký<input id="dc-proof-file" type="file" accept="image/png,image/jpeg" required></label>
+      </div>
+      <p id="dc-proof-policy" class="pick-hint"></p><img id="dc-preview" alt="Ảnh biên bản đang chọn, chưa lưu" hidden>
+      <button id="dc-confirm" type="submit" class="btn btn--primary">Lưu xác nhận giao hàng</button>
+    </form>
+    <form id="dc-fail-form" class="pick-panel" hidden>
+      <h3>Giao không thành công</h3>
+      <div class="pick-grid"><label>Lý do<select id="dc-fail-reason" required></select></label><label>Chi tiết lý do<input id="dc-fail-detail" maxlength="400" required></label></div>
+      <p class="pick-hint">Hàng vẫn thuộc trách nhiệm chuyến cho đến khi thủ kho xác nhận nhập trả.</p>
+      <button id="dc-fail" class="btn btn--secondary" type="submit">Ghi nhận giao không thành công</button>
+    </form>
+    <form id="dc-return-form" class="pick-panel" hidden>
+      <h3>Thủ kho xác nhận nhận lại hàng</h3>
+      <label>Lý do nhập trả<input id="dc-return-reason" maxlength="500" required></label>
+      <label class="dc-check"><input id="dc-return-checked" type="checkbox" required> Tôi đã thực nhận đủ số hàng của điểm giao này tại kho xuất phát.</label>
+      <button id="dc-return" class="btn btn--secondary" type="submit">Xác nhận nhập trả kho</button>
+    </form>
+    <div id="dc-proof-actions" class="pick-panel" hidden><h3>Chứng từ đã lưu</h3><p id="dc-signed-info"></p><button id="dc-view-proof" class="btn btn--secondary" type="button">Xem ảnh ký nhận</button> <a id="dc-download-proof" class="btn btn--secondary" download hidden>Tải ảnh</a><img id="dc-stored-proof" alt="Ảnh biên bản ký nhận đã lưu trên hệ thống" hidden></div>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/toast.js"></script><script src="/js/delivery-confirmation.js"></script>
+</body></html>
+

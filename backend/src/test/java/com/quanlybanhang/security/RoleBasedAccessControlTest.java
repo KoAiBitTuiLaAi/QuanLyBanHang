@@ -126,6 +126,9 @@ class RoleBasedAccessControlTest {
     @MockBean
     private com.quanlybanhang.service.AuditLogService auditLogService;
 
+    @MockBean
+    private com.quanlybanhang.service.DealerDebtService dealerDebtService;
+
     @org.junit.jupiter.api.BeforeEach
     void setUp() throws Exception {
         org.mockito.Mockito.doAnswer(invocation -> {

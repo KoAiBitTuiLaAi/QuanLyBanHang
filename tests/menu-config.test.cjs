@@ -8,6 +8,146 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/js/menu-config.
 const menu = vm.runInNewContext(`${source}\nMenuConfig;`, { URLSearchParams });
 const ids = user => Array.from(menu.getMenuForUser(user), item => item.id);
 
+test('S7-07 dealer debt page allows either independent permission and hides after both are revoked', () => {
+  for (const permission of ['FINANCE_VIEW_DEBT', 'INVOICE_VIEW']) {
+    assert.ok(ids({roles:['ROLE_DEALER'], permissions:[permission]}).includes('dealer-invoices'));
+    assert.ok(!ids({roles:['ROLE_ACCOUNTANT'], permissions:[permission]}).includes('dealer-invoices'));
+  }
+  assert.ok(!ids({roles:['ROLE_DEALER'], permissions:['ORDER_VIEW']}).includes('dealer-invoices'));
+  assert.ok(ids({roles:['ROLE_ADMIN'], permissions:[]}).includes('dealer-invoices'));
+});
+
+test('S8-02 financial returns allow VIEW or ADJUST, no extra dealer or finance grant and no accountant fallback',()=>{
+ for(const role of ['ROLE_VIEWER','ROLE_ACCOUNTANT','ROLE_SALES']){
+  assert.ok(!ids({roles:[role],permissions:[]}).includes('debt-adjustment'));
+  assert.ok(!ids({roles:[role],permissions:['FINANCE_VIEW_DEBT','FINANCE_MANAGE']}).includes('debt-adjustment'));
+  for(const permission of ['INVOICE_VIEW','INVOICE_ADJUST'])assert.ok(ids({roles:[role],permissions:[permission]}).includes('debt-adjustment'));
+ }
+ assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('debt-adjustment'));
+ assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['INVOICE_ADJUST','INVOICE_VIEW']}).includes('debt-adjustment'));
+ assert.equal(menu.getPageForLocation(new URL('http://test/finance/debt-adjustment')).id,'debt-adjustment');
+});
+
+test('S8-09 aging report uses only REPORT_FINANCE matrix, no accountant fallback',()=>{
+  for(const role of ['ROLE_VIEWER','ROLE_ACCOUNTANT','ROLE_SALES_MANAGER']){
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('debt-aging'));
+    assert.ok(!ids({roles:[role],permissions:['FINANCE_VIEW_DEBT','FINANCE_MANAGE','DASHBOARD_VIEW']}).includes('debt-aging'));
+    assert.ok(ids({roles:[role],permissions:['REPORT_FINANCE']}).includes('debt-aging'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('debt-aging'));
+  assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['REPORT_FINANCE']}).includes('debt-aging'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/reports/debt-aging')).id,'debt-aging');
+});
+
+test('S8-05 dashboard follows DASHBOARD_VIEW without locking the generic landing or debt view', () => {
+  for (const role of ['ROLE_VIEWER','ROLE_SALES_MANAGER','ROLE_ACCOUNTANT','ROLE_WAREHOUSE_MANAGER']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('operations-dashboard'));
+    assert.ok(!ids({roles:[role],permissions:['REPORT_SALES','FINANCE_VIEW_DEBT']}).includes('operations-dashboard'));
+    assert.ok(ids({roles:[role],permissions:['DASHBOARD_VIEW']}).includes('operations-dashboard'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('operations-dashboard'));
+  assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['DASHBOARD_VIEW']}).includes('operations-dashboard'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/reports/dashboard')).id,'operations-dashboard');
+  assert.notEqual(menu.getPageForLocation(new URL('http://test/dashboard')).id,'operations-dashboard');
+  assert.notEqual(menu.getPageForLocation(new URL('http://test/dashboard?view=debt-limits')).id,'operations-dashboard');
+});
+
+test('S8-01 returns follow existing read matrix, including IMPORT-only, with no role grant', () => {
+  for (const role of ['ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_MANAGER','ROLE_WAREHOUSE_STAFF']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('dealer-returns'));
+    assert.ok(!ids({roles:[role],permissions:['ORDER_CANCEL']}).includes('dealer-returns'));
+    for (const permission of ['ORDER_VIEW','ORDER_CREATE','INVOICE_VIEW','WAREHOUSE_VIEW','WAREHOUSE_APPROVE','WAREHOUSE_IMPORT'])
+      assert.ok(ids({roles:[role],permissions:[permission]}).includes('dealer-returns'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('dealer-returns'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/warehouse/dealer-returns')).id,'dealer-returns');
+});
+
+test('S7-05 menu follows each collection permission and revocations, not finance roles', () => {
+  for (const role of ['ROLE_SALES','ROLE_ACCOUNTANT','ROLE_VIEWER','ROLE_WAREHOUSE_STAFF']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('cash-collections'));
+    assert.ok(!ids({roles:[role],permissions:['FINANCE_MANAGE','FINANCE_VIEW_DEBT']}).includes('cash-collections'));
+    for (const permission of ['COLLECTION_CREATE','COLLECTION_CONFIRM','COLLECTION_RECONCILE'])
+      assert.ok(ids({roles:[role],permissions:[permission]}).includes('cash-collections'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('cash-collections'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/cash-collections')).id, 'cash-collections');
+});
+
+test('S7-01 invoices use INVOICE_VIEW matrix, not accountant role or unrelated finance grants',()=>{
+  for(const role of ['ROLE_ACCOUNTANT','ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_STAFF']){
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('invoices'));
+    assert.ok(!ids({roles:[role],permissions:['FINANCE_VIEW_DEBT','INVOICE_CREATE']}).includes('invoices'));
+    assert.ok(ids({roles:[role],permissions:['INVOICE_VIEW']}).includes('invoices'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('invoices'));
+  assert.ok(!ids({roles:['ROLE_DEALER'],permissions:['INVOICE_VIEW']}).includes('invoices'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/invoices')).id,'invoices');
+});
+
+test('S6-08 delivery and stocktaking remain separate and follow their own matrix grants',()=>{
+  assert.ok(menu.menuItems.some(i=>i.id==='delivery-confirmation'&&i.href==='/warehouse/delivery'));
+  const has=permissions=>ids({roles:['ROLE_VIEWER'],permissions}).includes('delivery-confirmation');
+  assert.equal(has(['ORDER_VIEW','WAREHOUSE_EXPORT']),true);
+  assert.equal(has(['ORDER_VIEW']),false);assert.equal(has(['WAREHOUSE_EXPORT']),true);
+  assert.equal(has(['WAREHOUSE_VIEW']),true);assert.equal(has([]),false);
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('delivery-confirmation'));
+  
+});
+
+test('S6-03 picking menu uses live VIEW/EXPORT matrix for every internal role, ADMIN always allowed', () => {
+  for (const role of ['ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_STAFF','ROLE_WAREHOUSE_MANAGER']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('warehouse-picking'));
+    for (const permission of ['WAREHOUSE_VIEW','WAREHOUSE_EXPORT'])
+      assert.ok(ids({roles:[role],permissions:[permission]}).includes('warehouse-picking'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('warehouse-picking'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/warehouse/picking')).id, 'warehouse-picking');
+});
+
+test('S6-02 stock card is VIEW only, ADMIN allowed, no hardcoded warehouse role grant',()=>{
+  for(const role of ['ROLE_VIEWER','ROLE_SALES','ROLE_WAREHOUSE_MANAGER','ROLE_WAREHOUSE_STAFF']){
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('warehouse-stock-card'));
+    assert.ok(ids({roles:[role],permissions:['WAREHOUSE_VIEW']}).includes('warehouse-stock-card'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('warehouse-stock-card'));
+  assert.equal(menu.getPageForLocation(new URL('http://test/warehouse/stock-card?productId=2')).id,'warehouse-stock-card');
+});
+
+test('S6-01 menu grants/revocations follow VIEW or MANAGE, never warehouse role fallback', () => {
+  for(const role of ['ROLE_VIEWER','ROLE_WAREHOUSE_MANAGER','ROLE_WAREHOUSE_STAFF']) {
+    assert.ok(!ids({roles:[role],permissions:[]}).includes('warehouse-lots'));
+    for(const permission of ['WAREHOUSE_VIEW','WAREHOUSE_MANAGE'])
+      assert.ok(ids({roles:[role],permissions:[permission]}).includes('warehouse-lots'));
+  }
+  assert.ok(ids({roles:['ROLE_ADMIN'],permissions:[]}).includes('warehouse-lots'));
+});
+
+test('S5-08 merge preserves stock minimums and warehouse transfers as distinct menus', () => {
+  const pages = [
+    ['warehouse-lots', '/warehouse/lots'],
+    ['product-units', '/warehouse/units?tab=units'],
+    ['stock-minimums', '/warehouse/minimums'],
+    ['warehouse-transfers', '/warehouse/transfers'],
+  ];
+  const adminMenu = ids({ roles: ['ROLE_ADMIN'], permissions: [] });
+  for (const [id, href] of pages) {
+    assert.equal(menu.menuItems.filter(item => item.id === id).length, 1, id);
+    assert.ok(adminMenu.includes(id), id);
+    assert.equal(menu.getPageForLocation(new URL(href, 'http://localhost')).id, id);
+  }
+});
+
+test('product-units menu follows warehouse permission matrix grants and revocations without role fallback', () => {
+  for (const role of ['ROLE_WAREHOUSE_MANAGER', 'ROLE_WAREHOUSE_STAFF', 'ROLE_VIEWER', 'ROLE_SALES']) {
+    for (const permission of ['WAREHOUSE_VIEW', 'WAREHOUSE_MANAGE', 'WAREHOUSE_IMPORT', 'WAREHOUSE_EXPORT', 'WAREHOUSE_ADJUST']) {
+      assert.ok(ids({ roles: [role], permissions: [permission] }).includes('product-units'), `${role}: ${permission}`);
+    }
+    assert.ok(!ids({ roles: [role], permissions: [] }).includes('product-units'), role);
+  }
+  assert.ok(ids({ roles: ['ROLE_ADMIN'], permissions: [] }).includes('product-units'));
+});
+
 test('admin can reach implemented account, audit and catalog pages', () => {
   const visible = ids({roles:['ROLE_ADMIN'], permissions:['USER_VIEW', 'PRODUCT_VIEW', 'WAREHOUSE_VIEW', 'WAREHOUSE_IMPORT']});
   for (const id of ['dashboard', 'profile', 'users', 'audit-logs', 'products', 'product-groups', 'suppliers', 'price-lists', 'discount-policies', 'orders', 'order-approval']) assert.ok(visible.includes(id));
@@ -125,8 +265,8 @@ test('special dashboard view wins over the generic dashboard, independent of unr
   assert.equal(pageAt('/dashboard/').id, 'dashboard');
 });
 
-test('warehouse views resolve distinct sidebar entries with a stable default', () => {
-  for (const [tab, expected] of [['units', 'product-units'], ['receipts', 'import-export'], ['ledger', 'warehouse-ledger'], ['inventory', 'warehouse']]) {
+test('warehouse views resolve sidebar entries with units as the common hub and warehouse for inventory', () => {
+  for (const [tab, expected] of [['units', 'product-units'], ['receipts', 'product-units'], ['ledger', 'product-units'], ['stocktake', 'product-units'], ['inventory', 'warehouse']]) {
     assert.equal(pageAt(`/warehouse/units?warehouseId=4&tab=${tab}`).id, expected);
   }
   assert.equal(pageAt('/warehouse/units').id, 'product-units');
@@ -169,6 +309,6 @@ test('group labels remain correct when earlier menu items are hidden by permissi
   assert.equal(sales.find(item => item.id === 'create-order').section, 'Kinh doanh');
   const warehouse = menu.getMenuForUser({ roles: ['ROLE_VIEWER'], permissions: ['WAREHOUSE_VIEW'] });
   assert.ok(warehouse.some(item => item.id === 'product-units'));
-  assert.equal(warehouse.find(item => item.id === 'warehouse-ledger').section, 'Kho hàng');
-  assert.ok(!warehouse.some(item => item.id === 'import-export'));
+  assert.equal(warehouse.find(item => item.id === 'product-units').section, 'Kho hàng');
+  assert.equal(warehouse.find(item => item.id === 'delivery-confirmation').section, 'Kho hàng');
 });

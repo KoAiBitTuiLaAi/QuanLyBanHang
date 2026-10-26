@@ -1,14 +1,53 @@
 /**
- * order-inventory.js — Quản lý tồn khả dụng và kiểm soát vượt tồn (S4-03).
+ * order-inventory.js — Quản lý tồn khả dụng, giữ chỗ và kiểm soát vượt tồn (S4-03 / S5-06).
  *
- * Nghiệp vụ:
+ * Tiện ích tương thích/kiểm thử mô phỏng; không nạp trên màn hình tạo đơn.
+ * Luồng thật phải dùng /orders/check-inventory và cờ giữ chỗ từ backend.
+ * Các phép suy luận cho dữ liệu cũ bên dưới không tạo/nhả giữ chỗ trong database.
+ *
+ * Nghiệp vụ S5-06:
  * 1. Tồn khả dụng = Tồn thực tế − Tồn đang giữ chỗ cho các đơn hàng khác.
- * 2. Đơn vị quy đổi: Tồn khả dụng theo đơn vị đóng gói = floor(tồn cơ sở / hệ số quy đổi).
- * 3. Chặn đặt vượt tồn khả dụng, gợi ý số lượng tối đa còn đặt được.
- * 4. Kiểm tra tồn tức thời trước khi chốt đơn và xử lý xung đột đồng thời để tránh âm tồn.
+ * 2. Đơn chuyển sang Đã duyệt (APPROVED / RECORDED) thì tồn tương ứng được giữ chỗ ngay, không ai đặt được nữa.
+ * 3. Huỷ đơn (CANCELLED) hoặc đơn quá hạn giữ chỗ thì tồn được nhả tự động.
+ * 4. Đơn vị quy đổi: Tồn khả dụng theo đơn vị đóng gói = floor(tồn cơ sở / hệ số quy đổi).
+ * 5. Chặn đặt vượt tồn khả dụng, gợi ý số lượng tối đa còn đặt được.
+ * 6. Kiểm tra tồn tức thời trước khi chốt đơn và xử lý xung đột đồng thời để tránh âm tồn.
  */
 const OrderInventory = (() => {
-  const HOLDING_ORDER_STATUSES = new Set(['RECORDED', 'PENDING_APPROVAL', 'APPROVED', 'PROCESSING']);
+  const HOLDING_ORDER_STATUSES = new Set(['RECORDED', 'APPROVED', 'PICKING', 'PROCESSING']);
+
+  /**
+   * Kiểm tra xem một đơn hàng có đang giữ chỗ tồn kho hợp lệ hay không (S5-06).
+   * - Đơn đã duyệt (APPROVED, RECORDED, PROCESSING) giữ chỗ tồn tương ứng.
+   * - Huỷ đơn (CANCELLED) hoặc từ chối (REJECTED) hoặc trả lại (RETURNED) thì nhả tồn.
+   * - Đơn quá hạn giữ chỗ (reservationExpiresAt <= now hoặc cờ reservationExpired = true) thì nhả tồn tự động.
+   * @param {Object} order Đơn hàng cần kiểm tra
+   * @param {Date|number|string} now Mốc thời gian đối soát
+   * @returns {boolean} true nếu đơn đang giữ chỗ tồn kho
+   */
+  function isOrderReservationActive(order, now = new Date()) {
+    if (!order) return false;
+    const status = String(order.status || '').toUpperCase();
+    if (!HOLDING_ORDER_STATUSES.has(status)) return false;
+    if (typeof order.inventoryReserved === 'boolean') return order.inventoryReserved;
+
+    // Cờ quá hạn giữ chỗ trực tiếp
+    if (order.reservationExpired === true || order.isExpired === true) {
+      return false;
+    }
+
+    // Thời hạn giữ chỗ (reservationExpiresAt, holdExpiresAt, expiresAt)
+    const expiresAt = order.reservationExpiresAt || order.holdExpiresAt || order.expiresAt;
+    if (expiresAt) {
+      const expireTime = new Date(expiresAt).getTime();
+      const currentTime = now instanceof Date ? now.getTime() : new Date(now).getTime();
+      if (!isNaN(expireTime) && expireTime <= currentTime) {
+        return false; // Quá hạn giữ chỗ -> tự động nhả tồn
+      }
+    }
+
+    return true;
+  }
 
   /**
    * Tính tồn khả dụng theo đơn vị cơ sở.
@@ -39,19 +78,20 @@ const OrderInventory = (() => {
   }
 
   /**
-   * Tính tổng tồn giữ chỗ cho một sản phẩm từ danh sách các đơn hàng đang hoạt động.
+   * Tính tổng tồn giữ chỗ cho một sản phẩm từ danh sách các đơn hàng đang hoạt động (S5-06).
+   * Tự động nhả tồn cho đơn bị huỷ hoặc quá hạn giữ chỗ.
    * @param {Array} orders Danh sách đơn hàng
    * @param {number|string} productId ID sản phẩm
    * @param {number|string|null} excludeOrderId ID đơn cần loại trừ (nếu đang sửa đơn)
+   * @param {Date|number|string} now Thời điểm đối soát hạn giữ chỗ
    * @returns {number} Tổng số lượng giữ chỗ (theo đơn vị cơ sở)
    */
-  function calculateReservedByProduct(orders, productId, excludeOrderId = null) {
+  function calculateReservedByProduct(orders, productId, excludeOrderId = null, now = new Date()) {
     if (!Array.isArray(orders)) return 0;
     let total = 0;
     for (const order of orders) {
       if (excludeOrderId && String(order.id) === String(excludeOrderId)) continue;
-      const status = String(order.status || '').toUpperCase();
-      if (!HOLDING_ORDER_STATUSES.has(status)) continue;
+      if (!isOrderReservationActive(order, now)) continue;
       if (!Array.isArray(order.items)) continue;
 
       for (const item of order.items) {
@@ -107,6 +147,33 @@ const OrderInventory = (() => {
       valid: true,
       maxAllowed,
       message: '',
+    };
+  }
+
+  /**
+   * Lấy chi tiết thông tin tồn (thực tế, giữ chỗ, khả dụng, cảnh báo) cho một sản phẩm theo đơn vị tính.
+   * @param {Map<number, Object>} inventoryMap Bảng tồn kho tổng hợp
+   * @param {number|string} productId ID sản phẩm
+   * @param {number} conversionFactor Hệ số quy đổi đơn vị tính
+   * @returns {Object} Chi tiết tồn kho
+   */
+  function getProductStockInfo(inventoryMap, productId, conversionFactor = 1) {
+    const factor = Number(conversionFactor) || 1;
+    const record = inventoryMap instanceof Map ? inventoryMap.get(Number(productId)) : null;
+    const physicalBase = record?.physicalBase || 0;
+    const reservedBase = record?.reservedBase || 0;
+    const availableBase = record?.availableBase != null ? record.availableBase : Math.max(0, physicalBase - reservedBase);
+    const availableInUnit = convertStockToUnit(availableBase, factor);
+    const baseUnit = record?.baseUnit || 'cái';
+
+    return {
+      physicalBase,
+      reservedBase,
+      availableBase,
+      availableInUnit,
+      baseUnit,
+      isOutOfStock: availableBase <= 0,
+      isLowStock: availableInUnit > 0 && availableInUnit <= 5,
     };
   }
 
@@ -194,12 +261,14 @@ const OrderInventory = (() => {
   }
 
   /**
-   * Tính toán bảng tổng hợp tồn kho (thực tế, giữ chỗ, khả dụng) cho tất cả sản phẩm trong kho.
+   * Tính toán bảng tổng hợp tồn kho (thực tế, giữ chỗ, khả dụng) cho tất cả sản phẩm trong kho (S5-06).
+   * Tự động nhả tồn cho các đơn bị huỷ hoặc quá hạn giữ chỗ.
    * @param {Array} inventoryList Dữ liệu tồn thực tế từ kho
    * @param {Array} ordersList Danh sách đơn hàng
+   * @param {Date|number|string} now Mốc thời gian đối soát
    * @returns {Map<number, { physicalBase: number, reservedBase: number, availableBase: number, baseUnit: string }>}
    */
-  function buildInventoryMap(inventoryList = [], ordersList = []) {
+  function buildInventoryMap(inventoryList = [], ordersList = [], now = new Date()) {
     const map = new Map();
 
     // 1. Nạp tồn thực tế
@@ -211,18 +280,18 @@ const OrderInventory = (() => {
         const baseUnit = item.baseUnit || 'cái';
         map.set(pId, {
           physicalBase: physical,
-          reservedBase: 0,
-          availableBase: physical,
+          reservedBase: item.reservedQuantity != null ? Math.max(0, Number(item.reservedQuantity) || 0) : 0,
+          availableBase: item.availableQuantity != null ? Math.max(0, Number(item.availableQuantity) || 0) : physical,
+          fromServer: item.reservedQuantity != null || item.availableQuantity != null,
           baseUnit,
         });
       }
     }
 
-    // 2. Tính tồn giữ chỗ từ các đơn hàng
+    // 2. Tính tồn giữ chỗ từ các đơn hàng (chỉ tính đơn còn hiệu lực giữ chỗ S5-06)
     if (Array.isArray(ordersList)) {
       for (const order of ordersList) {
-        const status = String(order.status || '').toUpperCase();
-        if (!HOLDING_ORDER_STATUSES.has(status)) continue;
+        if (!isOrderReservationActive(order, now)) continue;
         if (!Array.isArray(order.items)) continue;
 
         for (const it of order.items) {
@@ -235,6 +304,7 @@ const OrderInventory = (() => {
 
           if (Number.isFinite(baseQty) && baseQty > 0) {
             let record = map.get(pId);
+            if (record?.fromServer) continue;
             if (!record) {
               record = { physicalBase: 0, reservedBase: 0, availableBase: 0, baseUnit: it.baseUnit || 'cái' };
               map.set(pId, record);
@@ -247,17 +317,19 @@ const OrderInventory = (() => {
 
     // 3. Tính tồn khả dụng = thực tế - giữ chỗ (tối thiểu 0)
     for (const record of map.values()) {
-      record.availableBase = Math.max(0, record.physicalBase - record.reservedBase);
+      if (!record.fromServer) record.availableBase = Math.max(0, record.physicalBase - record.reservedBase);
     }
 
     return map;
   }
 
   return {
+    isOrderReservationActive,
     calculateAvailable,
     convertStockToUnit,
     calculateReservedByProduct,
     validateStock,
+    getProductStockInfo,
     resolveServingWarehouse,
     fetchWarehouseOptions,
     fetchWarehouseInventory,

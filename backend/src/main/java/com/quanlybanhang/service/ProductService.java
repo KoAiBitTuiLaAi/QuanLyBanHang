@@ -18,6 +18,11 @@ public interface ProductService {
 
     ProductResponse updateStatus(Long id, boolean active);
 
+    /**
+     * Bật hoặc tắt quản lý lô theo từng SKU, có thể cấu hình kèm ngưỡng cảnh báo (S6-01).
+     */
+    ProductResponse toggleManageLot(Long id, Boolean manageLot, Integer expiryWarningDays);
+
     ProductResponse getById(Long id);
 
     List<ProductResponse> getAll(Long categoryId);

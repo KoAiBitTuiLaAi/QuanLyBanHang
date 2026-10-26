@@ -39,6 +39,10 @@ public class WarehouseLocationRequest {
     @Size(max = 500, message = "Mô tả không được vượt quá 500 ký tự")
     private String description;
 
+    @jakarta.validation.constraints.Min(0)
+    @jakarta.validation.constraints.Max(1000000)
+    private Integer pickingSequence;
+
     /** Trạng thái vị trí: true = Đang dùng, false = Tạm ngừng */
     private Boolean active;
 }

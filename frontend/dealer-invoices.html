@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Công nợ của tôi | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/app-navigation.css">
+  <link rel="stylesheet" href="/css/dealer-invoices.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body>
+  <div data-app-content>
+    <main class="content dealer-invoices-page">
+      <!-- Header -->
+      <header class="di-heading">
+        <div>
+          <p class="di-eyebrow">Cổng đại lý</p>
+          <h1 class="di-title">Công nợ của tôi</h1>
+          <p class="di-subtitle">Theo dõi công nợ, hạn mức còn được lấy hàng và danh sách hóa đơn bán hàng đã phát hành.</p>
+        </div>
+        <div class="di-actions">
+          <!-- Admin dealer switcher -->
+          <div class="di-switcher" id="dp-dealer-switcher-wrap" hidden>
+            <label for="dp-dealer-select"><strong>Đại lý:</strong></label>
+            <select id="dp-dealer-select" aria-label="Chọn đại lý hỗ trợ"></select>
+          </div>
+          <button id="btn-reload" class="btn btn--secondary" type="button">Tải lại</button>
+          <button id="btn-export" class="btn btn--secondary" type="button" disabled>Xuất Excel trang này</button>
+        </div>
+      </header>
+
+      <!-- Access Denied Notice -->
+      <p id="di-access-denied" class="di-notice di-notice--danger" role="status" hidden>
+        Bạn chưa có quyền xem hóa đơn hoặc công nợ. Liên hệ quản trị viên để kiểm tra quyền INVOICE_VIEW hoặc FINANCE_VIEW_DEBT trong ma trận quyền.
+      </p>
+
+      <!-- Main Workspace -->
+      <section id="di-workspace">
+        <div id="di-alert" class="di-alert" role="alert" hidden></div>
+
+        <!-- Overdue or Blocked Warning Banner -->
+        <div id="di-blocked-banner" class="di-warning-banner" hidden>
+          <div class="di-warning-banner__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <div class="di-warning-banner__content">
+            <div class="di-warning-banner__title" id="di-blocked-title">Cảnh báo công nợ</div>
+            <div id="di-blocked-message">Đại lý có khoản nợ quá hạn hoặc bị tạm chặn đặt đơn hàng mới. Vui lòng thanh toán các hóa đơn quá hạn để tiếp tục đặt hàng.</div>
+          </div>
+        </div>
+
+        <!-- Section 1: Financial & Debt Summary Cards (S7-07: Hiển thị tổng còn nợ và hạn mức còn lại) -->
+        <section class="di-summary-cards" aria-label="Tổng quan công nợ và hạn mức">
+          <!-- Card 1: Tổng còn nợ -->
+          <div class="di-card" id="card-current-debt">
+            <span class="di-card__label">Tổng còn nợ</span>
+            <strong class="di-card__value" id="val-current-debt">—</strong>
+            <div class="di-card__meta">
+              <span id="val-unpaid-invoices">Chưa thanh toán: —</span>
+              <span id="val-overdue-tag" class="di-card__badge di-card__badge--danger" hidden>Quá hạn: <span id="val-overdue-invoices">0</span></span>
+            </div>
+          </div>
+
+          <!-- Card 2: Hạn mức công nợ -->
+          <div class="di-card" id="card-debt-limit">
+            <span class="di-card__label">Hạn mức công nợ</span>
+            <strong class="di-card__value" id="val-debt-limit">—</strong>
+            <div class="di-card__meta">
+              <span>Thời hạn nợ tối đa: <strong id="val-max-debt-days">—</strong> ngày</span>
+            </div>
+          </div>
+
+          <!-- Card 3: Hạn mức còn lại -->
+          <div class="di-card" id="card-remaining-limit">
+            <span class="di-card__label">Hạn mức còn lại</span>
+            <strong class="di-card__value" id="val-remaining-limit">—</strong>
+            <div class="di-card__meta">
+              <span>Đã dùng: <strong id="val-limit-used-percent">—</strong></span>
+            </div>
+          </div>
+
+          <!-- Card 4: Còn được lấy hàng (availableOrderLimit) -->
+          <div class="di-card di-card--highlight" id="card-available-order-limit">
+            <span class="di-card__label">Còn được lấy hàng</span>
+            <strong class="di-card__value" id="val-available-order-limit">—</strong>
+            <div class="di-card__meta">
+              <span id="val-order-status-badge" class="di-card__badge di-card__badge--success">Có thể đặt hàng</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 2: Invoices Panel (S7-07: Danh sách hoá đơn kèm số tiền, hạn thanh toán, trạng thái) -->
+        <section class="di-panel" id="di-invoices-panel" aria-labelledby="di-invoices-heading">
+          <div class="di-panel__header">
+            <div>
+              <h2 class="di-panel__title" id="di-invoices-heading">Danh sách hóa đơn bán hàng</h2>
+            </div>
+            <span class="di-panel__count" id="di-invoices-count"></span>
+          </div>
+
+          <!-- Filter Toolbar -->
+          <form id="di-filter-form" class="di-filters" role="search">
+            <div class="di-field">
+              <label for="di-keyword">Tìm kiếm</label>
+              <input type="search" id="di-keyword" placeholder="Mã hoặc số hóa đơn..." maxlength="100">
+            </div>
+            <div class="di-field">
+              <label for="di-payment-status">Trạng thái thanh toán</label>
+              <select id="di-payment-status">
+                <option value="">Tất cả trạng thái thanh toán</option>
+                <option value="UNPAID">Chưa thanh toán</option>
+                <option value="PARTIALLY_PAID">Thanh toán một phần</option>
+                <option value="PAID">Đã thanh toán đủ</option>
+                <option value="OVERDUE">Quá hạn thanh toán</option>
+              </select>
+            </div>
+            <div class="di-field">
+              <label for="di-status">Trạng thái hóa đơn</label>
+              <select id="di-status">
+                <option value="">Tất cả trạng thái phát hành</option>
+                <option value="ISSUED">Đã phát hành</option>
+                <option value="ADJUSTED">Đã điều chỉnh</option>
+                <option value="CANCELLED">Đã hủy</option>
+              </select>
+            </div>
+            <div class="di-field">
+              <label for="di-start-date">Từ ngày</label>
+              <input type="date" id="di-start-date">
+            </div>
+            <div class="di-field">
+              <label for="di-end-date">Đến ngày</label>
+              <input type="date" id="di-end-date">
+            </div>
+            <div class="di-filters__actions">
+              <button type="submit" class="btn btn--secondary" id="btn-filter">Lọc</button>
+              <button type="button" class="btn btn--secondary" id="btn-reset-filter">Đặt lại</button>
+            </div>
+          </form>
+
+          <!-- Invoices Table -->
+          <div class="di-table-wrap" role="region" aria-label="Bảng hóa đơn bán hàng" tabindex="0">
+            <table class="di-table">
+              <thead>
+                <tr>
+                  <th scope="col">Số hóa đơn</th>
+                  <th scope="col">Ngày phát hành</th>
+                  <th scope="col">Hạn thanh toán</th>
+                  <th scope="col" class="num">Giá trị phải thu</th>
+                  <th scope="col" class="num">Đã trả</th>
+                  <th scope="col" class="num">Còn nợ</th>
+                  <th scope="col">TT thanh toán</th>
+                  <th scope="col">TT hóa đơn</th>
+                  <th scope="col">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="di-invoice-rows">
+                <tr>
+                  <td colspan="9" class="di-loading">Đang tải danh sách hóa đơn…</td>
+                </tr>
+              </tbody>
+              <tfoot id="di-totals" hidden>
+                <tr>
+                  <td colspan="3">Tổng cộng trang hiện tại</td>
+                  <td class="num" id="di-t-total">—</td>
+                  <td class="num" id="di-t-paid">—</td>
+                  <td class="num" id="di-t-remain">—</td>
+                  <td colspan="3"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="di-pagination">
+            <span id="di-page-summary">Đang tải…</span>
+            <div class="di-pagination__controls">
+              <button type="button" id="di-prev-page" class="di-btn-sm" disabled>Trước</button>
+              <span id="di-page-info" class="di-pagination__page" role="status">Trang 1</span>
+              <button type="button" id="di-next-page" class="di-btn-sm" disabled>Sau</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- Invoice Detail Modal (S7-07: Xem chi tiết hóa đơn đã phát hành) -->
+      <div id="di-detail-modal" class="di-modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="di-detail-title">
+        <div class="di-modal">
+          <header class="di-modal__header">
+            <div>
+              <h3 class="di-modal__title" id="di-detail-title">Chi tiết hóa đơn</h3>
+            </div>
+            <button type="button" class="di-modal__close" id="btn-close-detail" aria-label="Đóng chi tiết">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </header>
+          <div class="di-modal__body" id="di-detail-body">
+            <!-- Rendered by JS -->
+          </div>
+          <footer class="di-modal__footer">
+            <button type="button" class="btn btn--secondary" id="btn-print-preview">Xem bản in</button>
+            <button type="button" class="btn btn--primary" id="btn-download-pdf">Tải PDF</button>
+            <button type="button" class="btn btn--secondary" id="btn-modal-close">Đóng</button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Print Preview Modal -->
+      <div id="di-print-modal" class="di-modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="di-print-title">
+        <div class="di-modal" style="max-width: 900px;">
+          <header class="di-modal__header">
+            <h3 class="di-modal__title" id="di-print-title">Bản in hóa đơn</h3>
+            <button type="button" class="di-modal__close" id="btn-close-print" aria-label="Đóng bản in">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </header>
+          <div class="di-modal__body" style="padding: 12px;">
+            <iframe id="di-print-frame" class="di-print-frame" sandbox="allow-same-origin allow-modals" title="Bản in hóa đơn"></iframe>
+          </div>
+          <footer class="di-modal__footer">
+            <button type="button" class="btn btn--primary" id="btn-print-frame-now">In bản này</button>
+            <button type="button" class="btn btn--secondary" id="btn-close-print-btn">Đóng</button>
+          </footer>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/menu-config.js"></script>
+  <script src="/js/app-shell.js"></script>
+  <script src="/js/app-navigation.js"></script>
+  <script src="/js/dealer-portal-context.js"></script>
+  <script src="/js/vendor/xlsx.full.min.js"></script>
+  <script src="/js/dealer-invoices.js"></script>
+</body>
+</html>
+

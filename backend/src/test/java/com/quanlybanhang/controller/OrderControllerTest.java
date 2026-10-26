@@ -14,6 +14,11 @@ import com.quanlybanhang.dto.response.OrderItemResponse;
 import com.quanlybanhang.dto.response.OrderLineItemPricingResponse;
 import com.quanlybanhang.dto.response.OrderResponse;
 import com.quanlybanhang.dto.response.OrderTrackingResponse;
+import com.quanlybanhang.dto.response.DealerDeliveryTrackingItemResponse;
+import com.quanlybanhang.dto.response.DealerDeliveryTrackingResponse;
+import com.quanlybanhang.dto.response.DealerDeliveryTripResponse;
+import com.quanlybanhang.dto.response.DeliveryMilestoneResponse;
+import java.time.LocalDateTime;
 import com.quanlybanhang.exception.GlobalExceptionHandler;
 import com.quanlybanhang.model.CustomerGroup;
 import com.quanlybanhang.repository.OrderDraftRepository;
@@ -836,6 +841,41 @@ class OrderControllerTest {
     @DisplayName("[S4-08] GET /api/orders/{id}/pdf không có quyền ORDER_VIEW -> 403 Forbidden")
     void getOrderPdf_NoPermission_Returns403() throws Exception {
         mockMvc.perform(get("/api/orders/100/pdf"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(username = "staff01", authorities = {"ROLE_SALES", "ORDER_VIEW"})
+    @DisplayName("[S6-09] GET /api/orders/{id}/delivery-tracking - Nhân viên xem thông tin theo dõi giao hàng 5 mốc -> 200 OK")
+    void getOrderDeliveryTrackingForStaff_WithOrderView_Returns200() throws Exception {
+        DealerDeliveryTrackingResponse response = DealerDeliveryTrackingResponse.builder()
+                .orderId(100L)
+                .orderCode("DH20261016-0001")
+                .status("SHIPPING")
+                .statusDisplayName("Đang giao")
+                .milestones(List.of(
+                        DeliveryMilestoneResponse.builder().milestoneKey("approved").label("Đã duyệt").status("COMPLETED").build(),
+                        DeliveryMilestoneResponse.builder().milestoneKey("picking").label("Đang soạn").status("COMPLETED").build(),
+                        DeliveryMilestoneResponse.builder().milestoneKey("exported").label("Đã xuất").status("COMPLETED").build(),
+                        DeliveryMilestoneResponse.builder().milestoneKey("shipping").label("Đang giao").status("CURRENT").build(),
+                        DeliveryMilestoneResponse.builder().milestoneKey("delivered").label("Đã giao").status("PENDING").build()
+                ))
+                .build();
+
+        when(orderService.getOrderDeliveryTrackingForStaff(eq(100L), any())).thenReturn(response);
+
+        mockMvc.perform(get("/api/orders/100/delivery-tracking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.orderCode").value("DH20261016-0001"))
+                .andExpect(jsonPath("$.data.milestones.length()").value(5));
+    }
+
+    @Test
+    @WithMockUser(username = "guest", authorities = {"ROLE_GUEST"})
+    @DisplayName("[S6-09] GET /api/orders/{id}/delivery-tracking - Không có quyền ORDER_VIEW -> 403 Forbidden")
+    void getOrderDeliveryTrackingForStaff_WithoutOrderView_Returns403() throws Exception {
+        mockMvc.perform(get("/api/orders/100/delivery-tracking"))
                 .andExpect(status().isForbidden());
     }
 }

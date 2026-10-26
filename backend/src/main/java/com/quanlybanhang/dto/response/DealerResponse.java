@@ -54,6 +54,14 @@ public class DealerResponse {
     private Boolean isBlockedDueToDebt;
     private Integer maxOverdueDays;
 
+    /** Thông tin gắn cờ rủi ro công nợ tự động (S7-04). */
+    private Boolean debtFlagged;
+    private com.quanlybanhang.model.DebtFlagType debtFlagType;
+    private String debtFlagReason;
+    private LocalDateTime debtFlaggedAt;
+    private LocalDateTime lastDebtEvaluatedAt;
+    private com.quanlybanhang.model.DebtFlagAction debtActionConfig;
+
     /** Trạng thái khoá giao dịch (S3-07): true = Bị khoá, false = Đang mở */
     private Boolean locked;
     private String lockReason;

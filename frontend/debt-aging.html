@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Công nợ theo tuổi nợ | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/debt-aging.css"><link rel="stylesheet" href="/css/app-navigation.css">
+  <script src="/js/app-transition.js"></script>
+</head>
+<body><div data-app-content><main class="content aging-page">
+  <header class="aging-heading"><div><h1>Công nợ theo tuổi nợ</h1><p>Xem phần nợ đã quá hạn và đại lý cần ưu tiên xử lý.</p></div><div class="aging-actions"><button id="aging-reload" class="btn btn--secondary" type="button">Tải lại bộ lọc</button><button id="aging-export" class="btn btn--primary" type="button" disabled>Xuất Excel</button></div></header>
+  <p id="aging-access" class="aging-notice" role="status" hidden>Bạn chưa có quyền xem báo cáo tài chính. Liên hệ quản trị viên để cấp REPORT_FINANCE trong ma trận quyền.</p>
+  <section id="aging-workspace" hidden aria-busy="false">
+    <div id="aging-pending" class="aging-notice" role="status" hidden><strong>Báo cáo đang chờ kết nối</strong><p>Chưa thể tải dữ liệu. Dấu “—” là chưa có số liệu, không phải công nợ bằng 0.</p></div>
+    <p id="aging-error" class="aging-error" role="alert" hidden></p>
+    <form id="aging-filters" class="aging-panel aging-filters">
+      <label>Ngày chốt báo cáo<input id="aging-as-of" type="date" required disabled></label>
+      <label>Nhân viên phụ trách<select id="aging-employee" disabled><option value="all">Chờ danh sách nhân viên</option></select></label>
+      <button id="aging-load" class="btn btn--primary" type="submit" disabled>Xem báo cáo</button>
+      <p class="aging-help">Ngày chốt, nhóm tuổi nợ và phạm vi nhân viên lấy từ máy chủ; không tính theo đồng hồ thiết bị.</p>
+    </form>
+    <p id="aging-snapshot" class="aging-meta" role="status">Chưa có báo cáo để hiển thị.</p>
+    <dl class="aging-metrics" aria-label="Tổng hợp công nợ quá hạn">
+      <div><dt>Tổng tiền quá hạn</dt><dd id="aging-total">—</dd></div>
+      <div><dt>Đại lý còn nợ quá hạn</dt><dd id="aging-count">—</dd></div>
+      <div><dt>Quá hạn lớn nhất</dt><dd id="aging-oldest">—</dd></div>
+    </dl>
+    <section class="aging-panel aging-priority" aria-labelledby="aging-priority-title"><h2 id="aging-priority-title">Ưu tiên xử lý</h2><p id="aging-risk-basis" class="aging-help">Chờ tiêu chí và thứ hạng rủi ro từ máy chủ, không tự suy đoán từ số tiền.</p><div id="aging-priority"><p class="aging-empty">Chưa có dữ liệu đánh giá rủi ro.</p></div></section>
+    <section class="aging-panel" aria-labelledby="aging-group-title">
+      <header class="aging-heading"><h2 id="aging-group-title">Tổng hợp công nợ</h2><label class="aging-inline">Xem theo<select id="aging-group"><option value="bucket">Nhóm tuổi nợ</option><option value="employee">Nhân viên phụ trách</option></select></label></header>
+      <div id="aging-bucket-view"><p class="aging-help">Một đại lý có thể có nợ ở nhiều nhóm; không cộng số đại lý giữa các nhóm.</p><div class="aging-scroll" role="region" aria-label="Công nợ theo nhóm tuổi nợ" tabindex="0"><table><thead><tr><th scope="col">Nhóm tuổi nợ</th><th scope="col">Tiền quá hạn</th><th scope="col">Số đại lý</th></tr></thead><tbody id="aging-buckets"><tr><td colspan="3">Chưa có định nghĩa nhóm và số liệu từ máy chủ.</td></tr></tbody></table></div></div>
+      <div id="aging-employee-view" hidden><div class="aging-scroll" role="region" aria-label="Công nợ theo nhân viên phụ trách" tabindex="0"><table><thead id="aging-employees-head"><tr><th scope="col">Nhân viên</th><th scope="col">Số đại lý</th><th scope="col">Tiền quá hạn</th></tr></thead><tbody id="aging-employees"><tr><td colspan="3">Chưa có dữ liệu theo nhân viên.</td></tr></tbody></table></div></div>
+    </section>
+    <section class="aging-panel" aria-labelledby="aging-dealers-title">
+      <header class="aging-heading"><div><h2 id="aging-dealers-title">Đại lý theo mức ưu tiên</h2><p>Thứ tự và mức rủi ro do máy chủ cung cấp, trong phạm vi bộ lọc đã áp dụng.</p></div><span id="aging-dealer-count" class="aging-help"></span></header>
+      <div class="aging-scroll" role="region" aria-label="Đại lý theo thứ hạng rủi ro" tabindex="0"><table class="aging-dealers-table"><thead id="aging-dealers-head"><tr><th scope="col">Hạng rủi ro</th><th scope="col">Đại lý</th><th scope="col">Nhân viên</th><th scope="col">Tiền quá hạn</th><th scope="col">Quá hạn lớn nhất</th></tr></thead><tbody id="aging-dealers"><tr><td colspan="5">Chưa có báo cáo để hiển thị.</td></tr></tbody></table></div>
+      <footer class="aging-pagination"><label class="aging-inline">Số dòng<select id="aging-size"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label><div class="aging-actions"><button id="aging-prev" class="btn btn--secondary" type="button" disabled>Trước</button><span id="aging-page" role="status">Chưa có trang</span><button id="aging-next" class="btn btn--secondary" type="button" disabled>Sau</button></div></footer>
+      <p class="aging-help">Excel gồm toàn bộ đại lý trong báo cáo đã tải, không chỉ trang đang xem. Tiền trong Excel lưu dạng văn bản để giữ chính xác chữ số.</p>
+    </section>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script>
+<script src="/js/vendor/xlsx.full.min.js"></script><script src="/js/debt-aging-utils.js"></script><script src="/js/debt-aging-api.js"></script><script src="/js/debt-aging.js"></script>
+</body></html>

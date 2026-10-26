@@ -43,6 +43,15 @@ import java.util.stream.Collectors;
 public class ProductServiceImpl implements ProductService {
 
     private final ProductRepository productRepository;
+
+    private final com.quanlybanhang.repository.WarehouseLotInventoryRepository lotInventoryRepository;
+
+    private void validateLotSettings(Product product, Boolean manageLot, Integer warningDays) {
+        if (warningDays != null && warningDays < 1) throw new IllegalArgumentException("Ngưỡng cảnh báo phải ít nhất 1 ngày");
+        if (Boolean.FALSE.equals(manageLot)
+                && lotInventoryRepository.existsByProductIdAndBaseQuantityGreaterThan(product.getId(), BigDecimal.ZERO))
+            throw new IllegalArgumentException("SKU còn tồn theo lô. Cần xử lý hết tồn lô trước khi tắt quản lý lô để không bỏ qua kiểm tra hạn sử dụng.");
+    }
     private final CategoryRepository categoryRepository;
     private final ProductPriceHistoryRepository productPriceHistoryRepository;
     private final AuditLogService auditLogService;
@@ -85,6 +94,7 @@ public class ProductServiceImpl implements ProductService {
                 .imageUrl(request.getImageUrl() != null ? request.getImageUrl().trim() : null)
                 .active(request.getActive() != null ? request.getActive() : true)
                 .manageLot(request.getManageLot() != null ? request.getManageLot() : false)
+                .expiryWarningDays(request.getExpiryWarningDays() != null ? request.getExpiryWarningDays() : 30)
                 .build();
 
         if (request.getUnitConversions() != null && !request.getUnitConversions().isEmpty()) {
@@ -177,10 +187,30 @@ public class ProductServiceImpl implements ProductService {
         if (request.getActive() != null) {
             product.setActive(request.getActive());
         }
+        validateLotSettings(product, request.getManageLot(), request.getExpiryWarningDays());
         if (request.getManageLot() != null) {
             product.setManageLot(request.getManageLot());
         }
+        if (request.getExpiryWarningDays() != null) {
+            product.setExpiryWarningDays(request.getExpiryWarningDays());
+        }
 
+        Product saved = productRepository.save(product);
+        return mapToResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public ProductResponse toggleManageLot(Long id, Boolean manageLot, Integer expiryWarningDays) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy sản phẩm với ID: " + id));
+        validateLotSettings(product, manageLot, expiryWarningDays);
+        if (manageLot != null) {
+            product.setManageLot(manageLot);
+        }
+        if (expiryWarningDays != null) {
+            product.setExpiryWarningDays(expiryWarningDays);
+        }
         Product saved = productRepository.save(product);
         return mapToResponse(saved);
     }
@@ -715,6 +745,7 @@ public class ProductServiceImpl implements ProductService {
                 .imageUrl(product.getImageUrl())
                 .active(product.getActive())
                 .manageLot(product.getManageLot() != null ? product.getManageLot() : false)
+                .expiryWarningDays(product.getExpiryWarningDays() != null ? product.getExpiryWarningDays() : 30)
                 .unitConversions(conversions)
                 .status(Boolean.TRUE.equals(product.getActive()) ? "Đang kinh doanh" : "Ngừng kinh doanh")
                 .hasTransactions(hasTrans)

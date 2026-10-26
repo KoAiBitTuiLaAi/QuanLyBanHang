@@ -76,6 +76,23 @@ class OrderLifecycleServiceTest {
     @InjectMocks
     private OrderServiceImpl orderService;
 
+    @Test
+    void tripOrderCannotBypassSignedConfirmation() {
+        var stops = mock(DeliveryTripStopRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "deliveryTripStopRepository", stops);
+        var order = Order.builder().id(99L).status("EXPORTED").build();
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "admin", "", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        when(orderRepository.findById(99L)).thenReturn(Optional.of(order));
+        when(stops.existsByOrderId(99L)).thenReturn(true);
+        assertThatThrownBy(() -> orderService.updateOrderDelivery(99L,
+                new com.quanlybanhang.dto.request.OrderDeliveryUpdateRequest(), "admin"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("confirm-delivery");
+        assertThatThrownBy(() -> orderService.updateOrderStatus(99L, "DELIVERED", null, "admin"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("confirm-delivery");
+        verify(orderRepository, never()).save(any());
+    }
+
     private Warehouse warehouse;
     private Product product;
     private Dealer dealer;
@@ -84,6 +101,8 @@ class OrderLifecycleServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(orderRepository.findByIdForUpdate(org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(call -> orderRepository.findById(call.getArgument(0)));
         warehouse = Warehouse.builder()
                 .id(1L)
                 .code("KHO-TONG")

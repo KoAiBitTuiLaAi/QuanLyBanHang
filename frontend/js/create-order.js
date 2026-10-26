@@ -826,8 +826,13 @@
         refreshPricingPreview();
       });
       row.querySelector('[data-field="qty"]').addEventListener('change', (e) => {
-        item.qty = Math.max(1, Number(e.target.value) || 1);
+        const quantity = Math.max(1, Number(e.target.value) || 1);
+        const changed = item.qty !== quantity;
+        item.qty = quantity;
         e.target.value = item.qty;
+        // The input listener already scheduled validation. Do not remove the max-suggestion
+        // button during blur between pointer-down and click when quantity hasn't changed.
+        if (!changed) return;
         refreshRowTotal(row, item);
         scheduleInventoryCheck(item, true);
         updateSummary();
@@ -951,6 +956,8 @@
 
   function scheduleInventoryCheck(item, immediate = false) {
     clearTimeout(item.inventoryTimer);
+    // Invalidate an older response immediately, including the debounce window.
+    item.inventoryRequestId = (item.inventoryRequestId || 0) + 1;
     item.inventory = null;
     item.inventoryError = '';
     item.inventoryLoading = true;

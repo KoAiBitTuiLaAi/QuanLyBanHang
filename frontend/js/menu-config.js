@@ -1,4 +1,4 @@
-/**
+﻿/**
  * menu-config.js — Cấu hình menu theo vai trò (S1-06).
  *
  * Mục menu không thuộc quyền thì không hiển thị.
@@ -98,6 +98,24 @@ const MenuConfig = (() => {
       roles: ["ROLE_ADMIN", "ROLE_DEALER"],
     },
     {
+      id: "dealer-notifications",
+      section: "Kinh doanh",
+      label: "Thông báo của tôi",
+      icon: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+      href: "/dealer-notifications",
+      permission: "NOTIFICATION_VIEW",
+      roles: ["ROLE_ADMIN", "ROLE_DEALER"],
+    },
+    {
+      id: "dealer-invoices",
+      section: "Kinh doanh",
+      label: "Công nợ của tôi",
+      icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+      href: "/dealer-invoices",
+      permissions: ["INVOICE_VIEW", "FINANCE_VIEW_DEBT"],
+      roles: ["ROLE_ADMIN", "ROLE_DEALER"],
+    },
+    {
       id: "price-lists",
       section: "Kinh doanh",
       label: "Bảng giá",
@@ -116,6 +134,15 @@ const MenuConfig = (() => {
       roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER"],
     },
     {
+      id: "sales-report",
+      section: "Kinh doanh",
+      label: "Báo cáo doanh số",
+      icon: '<path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 4-9"/>',
+      href: "/reports/sales",
+      permissions: ["REPORT_SALES", "ORDER_VIEW"],
+      roles: ALL_ROLES,
+    },
+    {
       id: "dealers",
       section: "Kinh doanh",
       label: "Đại lý",
@@ -123,6 +150,22 @@ const MenuConfig = (() => {
       href: "/dealers",
       permissions: ["CUSTOMER_VIEW", "ORDER_VIEW"],
       // Cho phép ma trận cấp quyền truy cập hồ sơ đại lý cho mọi role phù hợp.
+      roles: ALL_ROLES,
+    },
+    {
+      id: "product-units",
+      section: "Kho hàng",
+      label: "Đơn vị tính",
+      icon: '<path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>',
+      href: "/warehouse/units?tab=units",
+      permissions: [
+        "WAREHOUSE_VIEW",
+        "WAREHOUSE_MANAGE",
+        "WAREHOUSE_IMPORT",
+        "WAREHOUSE_EXPORT",
+        "WAREHOUSE_APPROVE",
+        "WAREHOUSE_ADJUST",
+      ],
       roles: ALL_ROLES,
     },
     {
@@ -164,41 +207,67 @@ const MenuConfig = (() => {
       ],
     },
     {
-      id: "product-units",
+      id: "delivery-routes",
       section: "Kho hàng",
-      label: "Đơn vị tính",
-      icon: '<path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>',
-      href: "/warehouse/units?tab=units",
+      label: "Phân tuyến giao hàng",
+      icon: '<circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/>',
+      href: "/warehouse/delivery-routes",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
+      id: "delivery-trips",
+      section: "Kho hàng",
+      label: "Theo dõi chuyến giao",
+      icon: '<path d="M3 4h11v13H3zM14 9h4l3 4v4h-7M7 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4M17 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/>',
+      href: "/warehouse/delivery-trips",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
+      id: "delivery-confirmation",
+      section: "Kho hàng",
+      label: "Xác nhận giao hàng",
+      icon: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><rect x="7" y="14" width="7" height="4" rx="1"/><path d="M14 8h5l3 3v6a1 1 0 0 1-1 1h-2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
+      href: "/warehouse/delivery",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
+      id: "warehouse-stock-card",
+      section: "Kho hàng",
+      label: "Thẻ kho sản phẩm",
+      icon: '<path d="M4 3h16v18H4zM8 8h8M8 12h8M8 16h5"/>',
+      href: "/warehouse/stock-card",
+      permissions: ["WAREHOUSE_VIEW"],
+      roles: ALL_ROLES,
+    },
+    {
+      id: "warehouse-picking",
+      section: "Kho hàng",
+      label: "Phiếu soạn hàng",
+      icon: '<path d="M9 3h6v4H9zM7 5H4v16h16V5h-3M8 12l2 2 4-4M8 18h8"/>',
+      href: "/warehouse/picking",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
+      id: "warehouse-order-shipments",
+      section: "Kho hàng",
+      label: "Xuất kho theo đơn",
+      icon: '<path d="M4 3h16v18H4zM8 8h8M8 12h8M8 16h5"/>',
+      href: "/warehouse/order-shipments",
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_EXPORT"],
+      roles: ALL_ROLES,
+    },
+    {
+      id: "warehouse-lots",
+      section: "Kho hàng",
+      label: "Lô & hạn sử dụng",
+      icon: '<path d="M4 4h16v17H4zM8 2v4M16 2v4M4 9h16M9 14h6M12 11v6"/>',
+      href: "/warehouse/lots",
       permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_MANAGE"],
-      roles: [
-        "ROLE_ADMIN",
-        "ROLE_SALES_MANAGER",
-        "ROLE_WAREHOUSE_MANAGER",
-        "ROLE_WAREHOUSE_STAFF",
-        "ROLE_VIEWER",
-      ],
-    },
-    {
-      id: "import-export",
-      section: "Kho hàng",
-      label: "Nhập / Xuất kho",
-      icon: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
-      href: "/warehouse/units?tab=receipts",
-      permissions: ["WAREHOUSE_IMPORT", "WAREHOUSE_EXPORT"],
-      roles: [
-        "ROLE_ADMIN",
-        "ROLE_WAREHOUSE_MANAGER",
-        "ROLE_WAREHOUSE_STAFF",
-      ],
-    },
-    {
-      id: "warehouse-ledger",
-      section: "Kho hàng",
-      label: "Sổ cái kho",
-      icon: '<path d="M4 3h16v18H4zM8 7h8M8 12h8M8 17h5"/>',
-      href: "/warehouse/units?tab=ledger",
-      permission: "WAREHOUSE_VIEW",
-      roles: ["ROLE_ADMIN", "ROLE_SALES_MANAGER", "ROLE_WAREHOUSE_MANAGER", "ROLE_WAREHOUSE_STAFF", "ROLE_VIEWER"],
+      roles: ALL_ROLES,
     },
     {
       id: "stock-minimums",
@@ -219,6 +288,24 @@ const MenuConfig = (() => {
       roles: ALL_ROLES,
     },
     {
+      id: "dealer-returns",
+      section: "Kho hàng",
+      label: "Trả hàng đại lý",
+      icon: '<path d="M9 5 4 10l5 5M4 10h11a5 5 0 0 1 0 10H9M14 3h7v8"/>',
+      href: "/warehouse/dealer-returns",
+      roles: ALL_ROLES,
+      permissions: ["ORDER_VIEW", "ORDER_CREATE", "INVOICE_VIEW", "WAREHOUSE_VIEW", "WAREHOUSE_APPROVE", "WAREHOUSE_IMPORT"],
+    },
+    {
+      id: "warehouse-adjustments",
+      section: "Kho hàng",
+      label: "Phiếu điều chỉnh",
+      icon: '<path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+      href: "/warehouse/adjustments",
+      roles: ALL_ROLES,
+      permissions: ["WAREHOUSE_VIEW", "WAREHOUSE_ADJUST", "WAREHOUSE_APPROVE"],
+    },
+    {
       id: "debt-limits",
       section: "Tài chính",
       label: "Hạn mức công nợ",
@@ -226,6 +313,96 @@ const MenuConfig = (() => {
       href: "/dashboard?view=debt-limits",
       roles: ALL_ROLES,
       permission: "FINANCE_VIEW_DEBT",
+    },
+    {
+      id: "debt-payments",
+      section: "Tài chính",
+      label: "Ghi nhận thanh toán",
+      icon: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
+      href: "/finance/debt-payments",
+      roles: ALL_ROLES,
+      permission: "FINANCE_VIEW_DEBT",
+    },
+    {
+      id: "debt-adjustment",
+      section: "Tài chính",
+      label: "Điều chỉnh công nợ",
+      icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+      href: "/finance/debt-adjustment",
+      roles: ALL_ROLES,
+      permissions: ["INVOICE_VIEW", "INVOICE_ADJUST"],
+    },
+    {
+      id: "debt-reconciliation",
+      section: "Tài chính",
+      label: "Đối chiếu công nợ",
+      icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+      href: "/finance/debt-reconciliation",
+      roles: ALL_ROLES,
+      permission: "FINANCE_VIEW_DEBT",
+    },
+    {
+      id: "debt-statement",
+      section: "Tài chính",
+      label: "Sổ công nợ",
+      icon: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10M6 14h6"/>',
+      href: "/finance/debt-statement",
+      roles: ALL_ROLES,
+      permission: "FINANCE_VIEW_DEBT",
+    },
+    {
+      id: "cash-collections",
+      section: "Tài chính",
+      label: "Thu tiền theo tuyến",
+      icon: '<path d="M3 6h18v14H3zM7 6V3h10v3M7 11h10M7 15h6"/>',
+      href: "/cash-collections",
+      roles: ALL_ROLES,
+      permissions: ["COLLECTION_CREATE", "COLLECTION_CONFIRM", "COLLECTION_RECONCILE"],
+    },
+    {
+      id: "invoices",
+      section: "Tài chính",
+      label: "Hóa đơn bán hàng",
+      icon: '<path d="M5 3h14v18l-3-2-4 2-4-2-3 2zM8 7h8M8 11h8M8 15h5"/>',
+      href: "/invoices",
+      roles: ALL_ROLES,
+      permission: "INVOICE_VIEW",
+    },
+    {
+      id: "sales-targets",
+      section: "Kinh doanh",
+      label: "Chỉ tiêu doanh số",
+      icon: '<path d="M12 20V10M18 20V4M6 20v-4"/><path d="M2 20h20"/>',
+      href: "/sales-targets",
+      permissions: ["SALES_TARGET_VIEW", "SALES_TARGET_MANAGE", "SALES_TARGET_VIEW_OWN"],
+      roles: ALL_ROLES,
+    },
+    {
+      id: "operations-dashboard",
+      section: "Báo cáo",
+      label: "Dashboard điều hành",
+      icon: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 21v-7h7M17 21v-4h4"/>',
+      href: "/reports/dashboard",
+      roles: ALL_ROLES,
+      permission: "DASHBOARD_VIEW",
+    },
+    {
+      id: "debt-aging",
+      section: "Báo cáo",
+      label: "Công nợ theo tuổi nợ",
+      icon: '<path d="M4 3h16v18H4zM8 7h8M8 11h8M8 15h3M15 15v3M18 13v5"/>',
+      href: "/reports/debt-aging",
+      roles: ALL_ROLES,
+      permission: "REPORT_FINANCE",
+    },
+    {
+      id: "inventory-turnover",
+      section: "Báo cáo",
+      label: "Tồn kho & Vòng quay",
+      icon: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+      href: "/reports/inventory-turnover",
+      roles: ALL_ROLES,
+      permission: "REPORT_INVENTORY",
     },
     {
       id: "users",
@@ -263,8 +440,8 @@ const MenuConfig = (() => {
     return menuItems.filter((item) => {
       if (isAdmin) return true;
       // Tài khoản chỉ là đại lý truy cập dữ liệu của chính mình qua cổng.
-      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal"].includes(item.id)) return false;
-      if (["dealer-orders", "dealer-portal", "audit-logs"].includes(item.id)
+      if (dealerOnly && !["dashboard", "profile", "dealer-orders", "dealer-portal", "dealer-invoices", "debt-reconciliation", "dealer-notifications"].includes(item.id)) return false;
+      if (["dealer-orders", "dealer-portal", "dealer-invoices", "dealer-notifications", "audit-logs"].includes(item.id)
           && !item.roles.some((role) => roles.includes(role))) return false;
       if (item.requiredPermissions && !item.requiredPermissions.every(permission => permissions.includes(permission))) return false;
       if (item.permission) return permissions.includes(item.permission);
@@ -288,8 +465,7 @@ const MenuConfig = (() => {
       return menuItems.find(item => item.id === "warehouse");
     }
     if (pathname === "/warehouse/units") {
-      const validTabs = ["units", "receipts", "ledger", "inventory"];
-      if (!validTabs.includes(query.get("tab"))) query.set("tab", "units");
+      return menuItems.find(item => item.id === "product-units");
     }
 
     let currentPage = null;

@@ -56,6 +56,9 @@ class ProductServiceTest {
     @Mock
     private com.quanlybanhang.repository.WarehouseVoucherItemRepository warehouseVoucherItemRepository;
 
+    @Mock
+    private com.quanlybanhang.repository.WarehouseLotInventoryRepository lotInventoryRepository;
+
     @InjectMocks
     private ProductServiceImpl productService;
 

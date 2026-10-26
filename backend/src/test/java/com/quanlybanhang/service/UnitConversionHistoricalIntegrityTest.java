@@ -62,9 +62,20 @@ class UnitConversionHistoricalIntegrityTest {
     @InjectMocks
     private OrderServiceImpl orderService;
 
+    @org.junit.jupiter.api.BeforeEach
+    void authorize() { org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("admin", "", java.util.List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")))); }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuth() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+
+    @Mock private SupplierRepository supplierRepository;
+
     @Test
     @DisplayName("Đổi hệ số quy đổi (thùng từ 24 lon thành 20 lon) không làm sai lệch phiếu kho và đơn hàng đã lập trước đó")
     void changeConversionFactor_DoesNotDistortPastTransactions() {
+        when(supplierRepository.findById(5L)).thenReturn(Optional.of(Supplier.builder().id(5L).name("Supplier").active(true).build()));
         // GIAI ĐOẠN 1: Sản phẩm có đơn vị cơ sở "lon", 1 thùng = 24 lon
         Warehouse warehouse = Warehouse.builder().id(1L).code("KHO-HCM").name("Kho HCM").build();
         Product product = Product.builder()
@@ -76,6 +87,7 @@ class UnitConversionHistoricalIntegrityTest {
                 .build();
 
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse));
+        when(warehouseRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(warehouse));
         when(warehouseRepository.findAllByActiveTrueOrderByNameAsc()).thenReturn(List.of(warehouse));
         when(productRepository.findById(10L)).thenReturn(Optional.of(product));
 
@@ -90,7 +102,8 @@ class UnitConversionHistoricalIntegrityTest {
                 .baseQuantity(BigDecimal.ZERO)
                 .baseUnit("lon")
                 .build();
-        when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.of(inventory));
+        when(inventoryRepository.findByWarehouseIdAndProductIdForUpdate(1L, 10L)).thenReturn(Optional.of(inventory));
+        org.mockito.Mockito.lenient().when(inventoryRepository.findByWarehouseIdAndProductId(1L, 10L)).thenReturn(Optional.of(inventory));
         when(inventoryRepository.findByWarehouseIdAndProductIdInForUpdate(eq(1L), any())).thenReturn(List.of(inventory));
         when(voucherRepository.save(any(WarehouseVoucher.class))).thenAnswer(inv -> inv.getArgument(0));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -98,7 +111,7 @@ class UnitConversionHistoricalIntegrityTest {
         // 1. Lập phiếu nhập kho 10 thùng tại thời điểm T1
         WarehouseVoucherRequest importReq = WarehouseVoucherRequest.builder()
                 .warehouseId(1L)
-                .voucherCode("PNK-T1")
+                .voucherCode("PNK-T1").supplierId(5L).documentNumber("DOC-T1").voucherDate(java.time.LocalDateTime.now())
                 .items(List.of(WarehouseVoucherItemRequest.builder()
                         .productId(10L)
                         .unit("thùng")

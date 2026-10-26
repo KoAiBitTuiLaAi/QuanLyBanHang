@@ -89,8 +89,14 @@ public class ProductRequest {
     /**
      * Cờ quản lý theo số lô và hạn sử dụng (S5-04).
      */
-    @Builder.Default
-    private Boolean manageLot = false;
+    // Omitted on an ordinary product edit means preserve the current lot setting.
+    private Boolean manageLot;
+
+    /**
+     * Ngưỡng cảnh báo sắp hết hạn (số ngày) (S6-01).
+     */
+    @jakarta.validation.constraints.Min(1)
+    private Integer expiryWarningDays;
 
     /**
      * Danh sách đơn vị quy đổi khai báo kèm sản phẩm (S2-07).

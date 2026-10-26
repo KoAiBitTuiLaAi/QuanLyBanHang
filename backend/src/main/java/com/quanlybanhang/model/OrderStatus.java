@@ -3,8 +3,8 @@ package com.quanlybanhang.model;
 import lombok.Getter;
 
 /**
- * Định nghĩa vòng đời chuẩn của đơn hàng (S4-06):
- * Nháp -> Chờ duyệt -> Đã duyệt -> Đang soạn hàng -> Đã xuất -> Đã giao -> Đóng, và nhánh Huỷ.
+ * Định nghĩa vòng đời chuẩn của đơn hàng (S4-06, S6-09):
+ * Nháp -> Chờ duyệt -> Đã duyệt -> Đang soạn hàng -> Đã xuất -> Đang giao -> Đã giao -> Đóng, và nhánh Huỷ.
  */
 @Getter
 public enum OrderStatus {
@@ -22,20 +22,25 @@ public enum OrderStatus {
     /** 4. Kho đang soạn hàng và đóng gói */
     PICKING("Đang soạn hàng", 4, true, false, "Kho đang thực hiện soạn hàng và đóng gói"),
 
-    /** 5. Đã xuất kho, đang vận chuyển đến đại lý (ĐÃ XUẤT KHO THÌ KHÔNG THỂ HUỶ) */
-    EXPORTED("Đã xuất", 5, false, true, "Đã xuất kho, đang vận chuyển đến đại lý"),
+    /** 5. Đã xuất kho, sẵn sàng vận chuyển đến đại lý (ĐÃ XUẤT KHO THÌ KHÔNG THỂ HUỶ) */
+    EXPORTED("Đã xuất", 5, false, true, "Đã xuất kho, sẵn sàng hoặc đang vận chuyển đến đại lý"),
 
-    /** 6. Đã giao hàng thành công tới đại lý */
-    DELIVERED("Đã giao", 6, false, true, "Đã giao hàng thành công đến đại lý"),
+    /** 6. Đang vận chuyển giao hàng đến đại lý trên đường (S6-09) */
+    SHIPPING("Đang giao", 6, false, true, "Đang vận chuyển giao hàng đến đại lý"),
 
-    /** 7. Đơn hàng hoàn tất và đóng */
-    CLOSED("Đóng", 7, false, true, "Đơn hàng đã hoàn tất toàn bộ chu trình và đóng"),
+    /** 7. Đã giao hàng thành công tới đại lý */
+    DELIVERED("Đã giao", 7, false, true, "Đã giao hàng thành công đến đại lý"),
+
+    /** 8. Đơn hàng hoàn tất và đóng */
+    CLOSED("Đóng", 8, false, true, "Đơn hàng đã hoàn tất toàn bộ chu trình và đóng"),
 
     /** Nhánh Huỷ: Đơn hàng bị huỷ trước khi xuất kho (bắt buộc có lý do, tự động nhả tồn) */
     CANCELLED("Huỷ", -1, false, false, "Đơn hàng đã bị huỷ"),
 
     /** Nhánh Từ chối: Quản lý từ chối đơn hàng khi ở trạng thái Chờ duyệt */
-    REJECTED("Từ chối duyệt", -2, false, false, "Đơn hàng bị từ chối duyệt");
+    REJECTED("Từ chối duyệt", -2, false, false, "Đơn hàng bị từ chối duyệt"),
+
+    EXPIRED("Hết hạn giữ chỗ", -3, false, false, "Đơn hàng quá hạn giữ chỗ, tồn đã được nhả");
 
     private final String displayName;
     private final int stepOrder;
@@ -61,6 +66,7 @@ public enum OrderStatus {
         } catch (IllegalArgumentException e) {
             if ("PROCESSING".equals(s)) return "Đang soạn hàng";
             if ("SHIPPED".equals(s)) return "Đã xuất";
+            if ("SHIPPING".equals(s)) return "Đang giao";
             if ("COMPLETED".equals(s)) return "Đóng";
             return status;
         }
@@ -84,7 +90,7 @@ public enum OrderStatus {
             return false;
         }
         String s = status.trim().toUpperCase();
-        if ("SHIPPED".equals(s) || "COMPLETED".equals(s)) return true;
+        if ("SHIPPED".equals(s) || "COMPLETED".equals(s) || "SHIPPING".equals(s)) return true;
         try {
             return valueOf(s).isExported();
         } catch (IllegalArgumentException e) {
@@ -102,6 +108,6 @@ public enum OrderStatus {
      * approved orders remain debt-bearing throughout their fulfillment lifecycle. */
     public static java.util.List<String> debtBearingStatuses() {
         return java.util.List.of("APPROVED", "RECORDED", "PICKING", "PROCESSING",
-                "EXPORTED", "SHIPPED", "DELIVERED", "CLOSED", "COMPLETED");
+                "EXPORTED", "SHIPPED", "SHIPPING", "DELIVERED", "CLOSED", "COMPLETED");
     }
 }

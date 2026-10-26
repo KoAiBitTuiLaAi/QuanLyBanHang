@@ -14,6 +14,7 @@ import java.util.List;
 public class WarehouseVoucherResponse {
 
     private Long id;
+    private Long version;
     private String voucherCode;
     private String documentNumber;
     private LocalDateTime voucherDate;
@@ -28,6 +29,13 @@ public class WarehouseVoucherResponse {
     private Long referenceVoucherId;
     private String referenceVoucherCode;
     private String adjustmentReason;
+    private java.math.BigDecimal adjustmentLossValue;
+    private String approvedBy;
+    private LocalDateTime approvedAt;
+    private String rejectedBy;
+    private String rejectionReason;
+    private Boolean overrideExpiredLot;
+    private String expiredLotOverrideReason;
     private String note;
     private String createdBy;
     private LocalDateTime recordedAt;

@@ -46,6 +46,8 @@ class OrderApprovalServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock private com.quanlybanhang.repository.UserRepository userRepository;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -54,6 +56,11 @@ class OrderApprovalServiceTest {
 
     @BeforeEach
     void setUp() {
+        orderService.setUserRepository(userRepository);
+        org.mockito.Mockito.lenient().when(userRepository.findByUsername(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(call -> Optional.of(com.quanlybanhang.model.User.builder().id(99L).username(call.getArgument(0)).build()));
+        org.mockito.Mockito.lenient().when(orderRepository.findByIdForUpdate(org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(call -> orderRepository.findById(call.getArgument(0)));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
                 new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("manager01", "",
                         List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ORDER_APPROVE"))));

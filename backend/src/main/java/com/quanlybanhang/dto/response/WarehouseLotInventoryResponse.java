@@ -25,4 +25,29 @@ public class WarehouseLotInventoryResponse {
     private BigDecimal baseQuantity;
     private String baseUnit;
     private LocalDateTime updatedAt;
+
+    /**
+     * Ngưỡng cảnh báo áp dụng (số ngày) (S6-01).
+     */
+    private Integer warningThresholdDays;
+
+    /**
+     * Số ngày còn lại đến hạn sử dụng. Âm nếu đã quá hạn.
+     */
+    private Long daysUntilExpiry;
+
+    /**
+     * true nếu lô đã quá hạn sử dụng.
+     */
+    private Boolean isExpired;
+
+    /**
+     * true nếu lô sắp hết hạn (trong ngưỡng cảnh báo).
+     */
+    private Boolean isExpiringSoon;
+
+    /**
+     * Trạng thái hạn dùng: "EXPIRED", "EXPIRING_SOON", "ACTIVE".
+     */
+    private String status;
 }

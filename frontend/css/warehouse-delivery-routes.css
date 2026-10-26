@@ -1,0 +1,736 @@
+/* warehouse-delivery-routes.css — Phân tuyến giao hàng và In danh sách điểm giao (S6-06) */
+
+.routes-page [hidden] {
+  display: none !important;
+}
+
+.routes-page {
+  overflow-wrap: anywhere;
+}
+
+/* ── Heading & Actions ── */
+.routes-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.routes-heading h1 {
+  font-size: 1.65rem;
+  margin-bottom: 6px;
+  color: var(--ink-900);
+}
+
+.routes-heading h2 {
+  font-size: 1.15rem;
+  color: var(--ink-900);
+}
+
+.routes-heading p,
+.routes-muted {
+  color: var(--ink-600);
+  line-height: 1.6;
+}
+
+.routes-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ── Banners & Alerts ── */
+.routes-note {
+  padding: 14px 16px;
+  line-height: 1.65;
+  border-left: 3px solid var(--teal);
+  background: var(--teal-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: 20px;
+}
+
+.routes-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  line-height: 1.6;
+  margin-block: 12px;
+}
+
+.routes-success {
+  color: var(--teal-deep);
+  background: var(--teal-soft);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  line-height: 1.6;
+  margin-block: 12px;
+}
+
+.routes-panel {
+  padding: 22px;
+  margin-block: 20px;
+  min-width: 0;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* ── Top Filter Bar ── */
+.routes-filter-bar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+}
+
+.routes-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.routes-filter-group label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-700);
+}
+
+.routes-page input:not([type=checkbox]),
+.routes-page select,
+.routes-page textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  background: var(--white);
+  color: var(--ink-900);
+  font: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.routes-page input:focus-visible,
+.routes-page select:focus-visible,
+.routes-page textarea:focus-visible,
+.routes-page button:focus-visible {
+  outline: 2px solid var(--teal-deep);
+  outline-offset: 2px;
+}
+
+/* ── Area Filter Chips ── */
+.routes-area-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.routes-chip {
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-700);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.routes-chip:hover {
+  background: var(--line);
+}
+
+.routes-chip--active {
+  background: var(--teal-deep);
+  color: var(--white);
+  border-color: var(--teal-deep);
+}
+
+/* ── Two Columns Workspace Layout ── */
+.routes-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.2fr) minmax(340px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .routes-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Eligible Orders Column ── */
+.routes-subpanel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  background: var(--white);
+}
+
+.routes-subpanel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.routes-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.routes-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.routes-order-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  position: relative;
+}
+
+.routes-order-card:hover {
+  border-color: var(--teal);
+  background: #fbfdfe;
+}
+
+.routes-order-card--selected {
+  border-color: var(--teal-deep);
+  background: var(--teal-soft);
+}
+
+.routes-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.routes-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+
+.routes-card-area {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-700);
+}
+
+.routes-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.routes-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  font-size: 0.875rem;
+}
+
+/* ── Staged Route & Vehicle Assignment Column ── */
+.routes-staged-header {
+  background: #f8fafc;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+
+.routes-kpi-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.routes-kpi-item {
+  flex: 1 1 120px;
+}
+
+.routes-kpi-item dt {
+  font-size: 0.75rem;
+  color: var(--ink-600);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.routes-kpi-item dd {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--teal-deep);
+  margin-top: 4px;
+}
+
+.routes-stops-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.routes-stop-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+}
+
+.routes-stop-index {
+  flex: 0 0 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--teal-deep);
+  color: var(--white);
+  font-size: 0.875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.routes-stop-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.routes-stop-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink-900);
+  margin-bottom: 4px;
+}
+
+.routes-stop-details {
+  font-size: 0.85rem;
+  color: var(--ink-600);
+  line-height: 1.45;
+}
+
+.routes-stop-note-input {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  min-height: 34px !important;
+  padding: 6px 10px !important;
+}
+
+.routes-stop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.routes-btn-icon {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink-700);
+  transition: all 0.15s ease;
+}
+
+.routes-btn-icon:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--ink-900);
+}
+
+.routes-btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Driver & Vehicle Form ── */
+.routes-form-section {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+
+.routes-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.routes-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-700);
+}
+
+.req {
+  color: var(--danger);
+}
+
+/* ── Recent Trips Table ── */
+.routes-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-top: 14px;
+}
+
+.routes-table {
+  width: 100%;
+  min-width: 650px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.routes-table th,
+.routes-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.routes-table th {
+  background: var(--surface);
+  color: var(--ink-700);
+  font-weight: 600;
+}
+
+.routes-table tr:hover {
+  background: #fbfdfe;
+}
+
+/* ── Modal Dialog ── */
+.routes-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.routes-modal-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.routes-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.routes-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.routes-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/* ── Printable Manifest Document Styles ── */
+.manifest-document {
+  background: var(--white);
+  color: #111827;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: 24px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+}
+
+.manifest-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid #111827;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.manifest-brand .company-name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin: 0;
+  color: #0f172a;
+}
+
+.manifest-brand .company-sub {
+  font-size: 0.85rem;
+  color: #4b5563;
+  margin: 4px 0 0 0;
+}
+
+.manifest-code-block {
+  text-align: right;
+}
+
+.manifest-trip-code {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-family: monospace;
+  color: #0f172a;
+}
+
+.manifest-date {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.manifest-title {
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin: 14px 0 16px 0;
+  color: #0f172a;
+}
+
+.manifest-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 24px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  margin-bottom: 16px;
+}
+
+.meta-item {
+  display: flex;
+  gap: 8px;
+}
+
+.meta-label {
+  color: #4b5563;
+  flex: 0 0 145px;
+}
+
+.meta-value {
+  color: #0f172a;
+}
+
+.manifest-note {
+  font-size: 0.875rem;
+  padding: 8px 12px;
+  background: #fefce8;
+  border-left: 3px solid #eab308;
+  margin-bottom: 16px;
+}
+
+.manifest-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 24px;
+}
+
+.manifest-table th,
+.manifest-table td {
+  border: 1px solid #94a3b8;
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+.manifest-table th {
+  background: #f1f5f9;
+  font-weight: 700;
+  color: #0f172a;
+  text-align: center;
+}
+
+.manifest-table .text-center {
+  text-align: center;
+}
+
+.manifest-table .text-right {
+  text-align: right;
+}
+
+.manifest-table .font-bold {
+  font-weight: 700;
+}
+
+.manifest-table .font-mono {
+  font-family: monospace;
+}
+
+.manifest-table .sub-text {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.manifest-table .sig-cell {
+  height: 36px;
+}
+
+.manifest-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  text-align: center;
+  margin-top: 28px;
+  page-break-inside: avoid;
+}
+
+.sig-role {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.sig-note {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-style: italic;
+  margin: 2px 0 0 0;
+}
+
+.sig-space {
+  height: 60px;
+}
+
+.sig-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* ── Print Media Optimization ── */
+@media print {
+  /* Hide UI elements, sidebar, topbar, buttons */
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .sidebar,
+  .topbar,
+  .routes-heading,
+  .routes-filter-bar,
+  .routes-grid,
+  .routes-recent-trips-panel,
+  .routes-modal-header,
+  .routes-modal-footer,
+  .routes-note,
+  .routes-actions,
+  #routes-access-denied,
+  #routes-error,
+  #routes-success {
+    display: none !important;
+  }
+
+  .routes-modal-backdrop {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+
+  .routes-modal-card {
+    box-shadow: none !important;
+    border: none !important;
+    max-height: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .routes-modal-body {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .manifest-document {
+    border: none !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .manifest-table th {
+    background: #e2e8f0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .manifest-meta-grid {
+    background: #f1f5f9 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

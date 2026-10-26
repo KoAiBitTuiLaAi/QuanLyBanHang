@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phiếu soạn hàng | SaleStock</title>
+  <link rel="icon" href="/assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/dashboard.css"><link rel="stylesheet" href="/css/app-shell.css">
+  <link rel="stylesheet" href="/css/toast.css"><link rel="stylesheet" href="/css/warehouse-picking.css">
+  <link rel="stylesheet" href="/css/app-navigation.css"><script src="/js/app-transition.js"></script>
+</head>
+<body>
+<div data-app-content><main class="content picking-page">
+  <header class="pick-heading"><div><h1>Phiếu soạn hàng</h1><p>Gộp đơn cùng kho, đi theo khu/kệ và ghi nhận số lượng thực soạn.</p></div>
+    <div class="pick-actions"><button id="pick-reload" class="btn btn--secondary" type="button">Tải lại</button><button id="pick-new" class="btn btn--primary" type="button" hidden>Tạo lượt soạn</button></div></header>
+  <p class="pick-note">Lượt soạn không tự xuất kho hoặc thay đổi tồn giữ chỗ. Số lượng thực soạn được lưu riêng, không phải số lượng đã giao.</p>
+  <p id="pick-error" class="pick-error" role="alert" hidden></p>
+  <section id="pick-create" class="pick-panel" aria-labelledby="pick-create-title" hidden>
+    <header class="pick-heading"><h2 id="pick-create-title">Chọn đơn để soạn</h2><button id="pick-create-close" type="button" class="btn btn--secondary">Đóng</button></header>
+    <form id="pick-create-form">
+      <div class="pick-grid"><label>Kho soạn<select id="pick-source" required><option value="">Chọn kho</option></select></label>
+        <label>Mã phiếu (không bắt buộc)<input id="pick-code" maxlength="50" placeholder="Để trống để tự sinh"></label>
+        <label>Ghi chú<input id="pick-note" maxlength="500"></label></div>
+      <p id="pick-route-strategy" class="pick-hint"></p>
+      <div class="pick-search"><label>Tìm mã đơn<input id="pick-order-keyword" type="search" maxlength="150"></label><button id="pick-find-orders" type="button" class="btn btn--secondary">Tìm đơn</button></div>
+      <p class="pick-hint">Chỉ chọn được đơn đã duyệt, còn giữ chỗ và chưa thuộc lượt soạn khác. Có thể chọn nhiều trang trong cùng kho.</p>
+      <div id="pick-eligible" class="pick-order-list" aria-live="polite">Chọn kho để tải đơn.</div>
+      <div class="pick-actions"><button id="pick-order-prev" class="btn btn--secondary" type="button">Đơn trước</button><span id="pick-order-page"></span><button id="pick-order-next" class="btn btn--secondary" type="button">Đơn sau</button></div>
+      <p id="pick-selected" role="status">Chưa chọn đơn.</p><p id="pick-create-error" class="pick-error" role="alert" hidden></p>
+      <div class="pick-actions"><button id="pick-create-submit" type="submit" class="btn btn--primary" disabled>Tạo lượt soạn</button></div>
+    </form>
+  </section>
+  <section class="pick-panel" aria-labelledby="pick-list-title">
+    <form id="pick-filter" class="pick-grid" role="search"><label>Kho<select id="pick-filter-warehouse"><option value="">Tất cả kho được giao</option></select></label>
+      <label>Trạng thái<select id="pick-status"><option value="">Tất cả trạng thái</option></select></label><label>Tìm mã phiếu<input id="pick-keyword" type="search" maxlength="150"></label>
+      <div class="pick-actions"><button type="submit" class="btn btn--primary">Lọc</button><button id="pick-reset" type="button" class="btn btn--secondary">Đặt lại</button></div></form>
+    <header class="pick-heading"><h2 id="pick-list-title">Các lượt soạn</h2><span id="pick-count" role="status">Đang tải…</span></header>
+    <div id="pick-list" class="pick-batches" aria-live="polite"></div>
+    <footer class="pick-actions pick-pagination"><button id="pick-prev" class="btn btn--secondary" type="button">Trước</button><span id="pick-page"></span><button id="pick-next" class="btn btn--secondary" type="button">Sau</button></footer>
+  </section>
+  <section id="pick-detail" class="pick-panel" aria-labelledby="pick-detail-title" hidden>
+    <header class="pick-heading"><div><h2 id="pick-detail-title">Chi tiết lượt soạn</h2><p id="pick-detail-info"></p></div><div class="pick-actions"><button id="pick-detail-reload" class="btn btn--secondary" type="button">Tải lại phiếu</button><button id="pick-detail-close" class="btn btn--secondary" type="button">Đóng</button></div></header>
+    <p id="pick-blocked" class="pick-note" role="status" hidden></p><p id="pick-detail-error" class="pick-error" role="alert" hidden></p>
+    <p id="pick-progress" class="pick-progress" role="status"></p>
+    <div id="pick-lines" class="pick-lines"></div>
+    <div class="pick-completion"><p class="pick-hint">Lưu số lượng và đánh dấu đã soạn từng dòng. Thiếu hàng (kể cả thực soạn bằng 0) phải có lý do trước khi lưu.</p><button id="pick-complete" class="btn btn--primary" type="button" hidden>Hoàn tất lượt soạn</button></div>
+    <form id="pick-cancel-form" class="pick-cancel" hidden><label>Lý do hủy lượt soạn<input id="pick-cancel-reason" maxlength="500" required></label><button id="pick-cancel" class="btn btn--danger" type="submit">Hủy lượt soạn</button></form>
+  </section>
+</main></div>
+<script src="/js/auth.js"></script><script src="/js/menu-config.js"></script><script src="/js/app-shell.js"></script><script src="/js/app-navigation.js"></script><script src="/js/toast.js"></script><script src="/js/warehouse-picking.js"></script>
+</body></html>
