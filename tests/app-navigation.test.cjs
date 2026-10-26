@@ -34,7 +34,7 @@ function setup({ top = 0, from = 0, type = 'push', native = true, page = 'dashbo
     { id: 'products', href: '/products', label: 'Sản phẩm', section: 'Kinh doanh', icon: '' },
   ];
   const context = vm.createContext({
-    window: { navigation: native ? navigation : undefined, history, location: { pathname: '/' + page }, addEventListener,
+    window: { navigation: native ? navigation : undefined, history, location: { pathname: '/' + page }, addEventListener, setTimeout, clearTimeout,
       AppTransition: { navigationReady() { readySignals++; } } },
     document: {
       getElementById: id => id === 'sidebar-nav' ? nav : null,

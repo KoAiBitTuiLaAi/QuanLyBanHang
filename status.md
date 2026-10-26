@@ -1,5 +1,16 @@
 # Trạng thái sprint 1–8
 
+## Đồng bộ Hồ sơ cá nhân và ảnh đại diện ở cuối menu — 26/10/2026
+
+Sửa chung trong `app-navigation.js` cho footer HTML cũ và footer do `app-shell.js` tạo. Tên/vai trò trở thành liên kết `/profile`; avatar dạng chữ cũng mở Hồ sơ, còn nút đổi ảnh hiện hữu ở Tổng quan/Đơn vị tính giữ nguyên tác dụng. Ảnh đại diện lấy URL từ API hồ sơ tài khoản đã đăng nhập và tải ảnh bằng request có xác thực; khi đổi ảnh ở Hồ sơ hoặc Tổng quan, footer cập nhật ngay. Bỏ các bộ tải ảnh riêng để ảnh cũ/chữ viết tắt không ghi đè ảnh mới; phản hồi chậm bị loại bỏ và blob cũ được thu hồi. Làm mới khi quay lại tab hoặc quay lại trang có bộ đệm; gộp các sự kiện focus liên tiếp.
+
+| Hạng mục | Backend | Frontend | Kết nối / quyền |
+|---|---|---|---|
+| Bấm tên/vai trò cuối menu mở Hồ sơ | API hồ sơ hiện hữu | Có trên mọi footer | Hồ sơ của tài khoản đang đăng nhập; không thêm hoặc cấp thay quyền nghiệp vụ |
+| Hiển thị ảnh đã lưu và cập nhật sau tải ảnh | API hồ sơ/ảnh đại diện hiện hữu, không đổi schema/API | Có; chung cho trang cũ và app shell | Dùng API đã xác thực, đọc hồ sơ thật; không lưu dữ liệu ảnh nghiệp vụ vào browser storage |
+
+Chrome kiểm tra liên kết và ảnh có xác thực trên **43 đích menu** bằng API fixture; riêng Đơn hàng/Tạo đơn hàng chạy thêm script nghiệp vụ thật với tải script chậm, thử tải ảnh ở Hồ sơ/Tổng quan, bàn phím Enter, menu điện thoại và tài khoản chưa có ảnh. Kiểm thử Node **297/297**, route Python **13/13** và kiểm thử Chrome điều hướng click/back/forward/reload/mobile đã qua. Cập nhật vị trí S1-06/S2-03 trong FUNCTION_MAP. Backend/SMTP/MySQL nghiệp vụ không được thay đổi trong lượt sửa footer.
+
 ## Cập nhật giao diện thanh điều hướng và biểu tượng chuông thông báo — 25/10/2026
 
 Tối ưu trải nghiệm điều hướng kho hàng và biểu tượng thông báo cổng đại lý theo yêu cầu người dùng:
@@ -1287,13 +1298,23 @@ thu hồi quyền trả 403. Chưa thử trực tiếp bản sửa trên trình 
 | S6-01 | Theo dõi lô và hạn sử dụng hàng hoá | Có | Có | Đã nối API thực; xem cập nhật S6-01 đầu file | VIEW/MANAGE xem; PRODUCT_EDIT/MANAGE cấu hình; EXPORT + APPROVE/MANAGE ghi đè quá hạn có xác nhận/lý do; ADMIN toàn quyền | Đã triển khai 4 tiêu chí trong ảnh, sửa scope kho/HSD DB/audit; nghiệm thu H2 và Chrome fixtures, chưa nghiệm thu MySQL thật. |
 | S6-04 | Gợi ý lô xuất theo FEFO và xuất kho theo lô | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | Đầy đủ ma trận: `WAREHOUSE_EXPORT`/`WAREHOUSE_VIEW` gợi ý lô; `WAREHOUSE_EXPORT` xuất kho theo lô & bắt buộc nhập lý do khi chọn lô khác; ADMIN toàn quyền | Đã hoàn thành 100% backend theo 3 tiêu chí trong ảnh mô tả. Đã kiểm thử 15 test (unit, service, security MockMvc). Chưa làm frontend theo chỉ đạo "chỉ làm BE". |
 
-## Sprint 7 — Kế toán công nợ và hoá đơn
+## Sprint 7 — Kế toán công nợ và hoá đơn (rà lại 26/10/2026)
 
 | Task | Tính năng | Backend | Frontend | BE ↔ FE | Quyền BE / FE | Nghiệm thu / còn thiếu |
 |---|---|---|---|---|---|---|
-| S7-01 | Phát hành hoá đơn bán hàng từ phiếu đã giao | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | Đầy đủ ma trận: INVOICE_VIEW, INVOICE_CREATE, INVOICE_ADJUST từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend theo 5 tiêu chí user story. Sinh theo thực giao, số nhảy liên tục, gộp phiếu giao cùng đại lý, hóa đơn bất biến chỉ lập điều chỉnh, xuất PDF và HTML print preview. Đã kiểm thử 30 test mới (unit, controller, security, integration). Chưa làm FE theo yêu cầu. |
-| S7-04 | Hệ thống tự cảnh báo và khoá bán công nợ | Có | **Chưa** (chỉ làm BE theo yêu cầu) | **Đã có API sẵn sàng kết nối** | FINANCE_VIEW_DEBT, FINANCE_MANAGE từ ma trận DB; ADMIN toàn quyền | Đã hoàn thành 100% backend: tự gắn cờ đại lý quá hạn/vượt hạn mức, chặn/cần duyệt khi tạo đơn, scheduler đánh giá hàng ngày và sau thu tiền. 24 test mới. Chưa làm FE theo yêu cầu. |
-| S7-07 | Đại lý tự xem công nợ, hạn mức còn lại và tải lại hoá đơn | Có | Có | Đã kết nối, rà lại 25/10/2026 | FINANCE_VIEW_DEBT / INVOICE_VIEW độc lập; hồ sơ đại lý từ DB; ADMIN toàn quyền; ORDER_VIEW không đọc được tổng nợ | Xem mục S7-07 đầu file: sửa dữ liệu sau trả hàng, số tiền chính xác, PDF/HTML, phân trang, cấp/thu hồi quyền và phản hồi muộn. |
+| S7-01 | Phát hành hoá đơn từ phiếu đã giao | Có | Có: Hóa đơn bán hàng | Có | INVOICE_VIEW / INVOICE_CREATE / INVOICE_ADJUST; ADMIN toàn quyền | Có xem trước theo thực giao, gộp phiếu, phát hành, điều chỉnh, in/PDF; browser fixture đã qua. |
+| S7-02 | Ghi nhận thanh toán và đối trừ | Có | Có: Ghi nhận thanh toán | Có | FINANCE_VIEW_DEBT / FINANCE_MANAGE; ADMIN toàn quyền | Có FIFO/chỉ định hóa đơn, thu một phần, chặn thu vượt nợ, bất biến và điều chỉnh; kiểm tra menu, danh sách, chi tiết và form trên Chrome. Đưa hộp thoại ra ngoài khung chuyển trang để sidebar không che form; thân form cuộn riêng, nút xác nhận không bị cắt; kiểm tra 1440/768/390/320 px. |
+| S7-03 | Sổ công nợ và phân tích tuổi nợ | Có | Có: Sổ công nợ → Tổng quan công nợ | Có | FINANCE_VIEW_DEBT; ADMIN toàn quyền | Có 4 nhóm tuổi nợ, lọc quá hạn, tổng cộng và Excel; kiểm tra tab, dữ liệu và bộ lọc trên Chrome. |
+| S7-04 | Tự cảnh báo và khoá bán | Có | Có: Hạn mức công nợ → Cảnh báo & Khoá bán / Cấu hình hệ thống | Có | FINANCE_VIEW_DEBT / FINANCE_MANAGE; ADMIN toàn quyền | Tự đánh giá hằng ngày/sau thu tiền; giao diện cảnh báo, hạn mức, cấu hình và lịch sử thu đã có, sửa lại thông tin cũ ghi chỉ backend. |
+| S7-05 | Thu tiền theo tuyến và đối chiếu tiền nộp | Có | Có: Thu tiền theo tuyến | Có | COLLECTION_CREATE / COLLECTION_CONFIRM / COLLECTION_RECONCILE; ADMIN toàn quyền | Có biên lai, chờ nộp, xác nhận nhận tiền và đối chiếu nhân viên/ngày; 11 kịch bản Chrome fixture qua. |
+| S7-06 | Biên bản đối chiếu công nợ định kỳ | Có | Có: Đối chiếu công nợ | Có | FINANCE_VIEW_DEBT; lập biên bản cần thêm FINANCE_MANAGE; đại lý chỉ phản hồi biên bản của mình; ADMIN toàn quyền | Lưu snapshot theo kỳ, PDF, xác nhận/phản hồi lệch DB; browser fixture qua. |
+| S7-07 | Đại lý tự xem công nợ và hoá đơn | Có | Có: Công nợ của tôi | Có | FINANCE_VIEW_DEBT / INVOICE_VIEW độc lập; đại lý dùng hồ sơ liên kết; ADMIN toàn quyền | Tổng nợ/hạn mức, trạng thái hóa đơn, chi tiết và PDF; browser fixture qua. |
+| S7-08 | Nhắc hạn thanh toán tự động | Có | Có: Thông báo của tôi | Có | NOTIFICATION_VIEW cùng phạm vi DEALER/ADMIN; trigger FINANCE_MANAGE, log FINANCE_VIEW_DEBT; ADMIN toàn quyền | Sửa 4 test fixture lỗi; bổ sung test JWT thật cấp/thu hồi quyền, phạm vi dữ liệu và Admin. Sửa phản hồi cũ ghi đè bộ lọc, cập nhật tab chưa đọc sau thao tác, khóa bấm lặp. SMTP thật chưa được kiểm chứng. |
+| S7-09 | In/tải PDF phiếu thu | Có | Có: Ghi nhận thanh toán → In / PDF | Có | FINANCE_VIEW_DEBT; ADMIN toàn quyền | Chứng từ lấy từ backend, in/PDF; browser fixture qua. |
+
+Nhánh sửa `fix/sprint7-8`: bỏ ObjectMapper trần trong `PaymentReminderSecurityTest` để dùng cấu hình Jackson của Spring Boot, dùng PageImpl có Pageable thật và thêm bản ghi Admin vào repository giả lập. Bổ sung `PaymentReminderPermissionIntegrationTest` dùng JWT và H2 riêng: thu hồi quyền có hiệu lực trên cùng token, quyền xem log/kích hoạt nhắc tách biệt, Admin chọn đại lý và chặn nhân viên nội bộ dùng API cổng đại lý kể cả khi đã gắn hồ sơ đại lý. Test cuối tái hiện 200 trước sửa và 403 sau sửa; bộ kiểm tra quyền ở resolver được thêm vì annotation ở phương thức ghi đè annotation phạm vi ở lớp.
+
+Kiểm chứng lượt sửa: **199/199 backend được chọn**, **297/297 Node**, **7 script Chrome** cho toàn bộ các mục Sprint 7. Browser S7-08 tái hiện lỗi phản hồi cũ trước sửa; sau sửa qua cả cấp/thu hồi quyền, phản hồi chậm, lọc chưa đọc, đánh dấu đã đọc, Admin chọn đại lý, XSS và bốn kích thước 1440/768/390/320. Browser dùng giao diện thật với API fixture; backend integration dùng H2 cách ly. Không kiểm thử SMTP ngoài thực tế hoặc MySQL nghiệp vụ. Đã phối hợp Antigravity Claude Opus 4.6 Thinking rà mã; Codex đối chiếu và tái hiện góp ý trước khi sửa. Vị trí S7-04 đã cập nhật trong FUNCTION_MAP, hợp đồng quyền S7-08 bổ sung trong API_DOCUMENTATION.
 
 ## Việc cần làm tiếp
 

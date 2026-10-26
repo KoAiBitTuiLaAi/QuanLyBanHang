@@ -26,17 +26,6 @@
   const avatarImage = document.getElementById("user-avatar-image");
   const avatarFallback = document.getElementById("user-avatar-fallback");
   avatarFallback.textContent = avatarInitial;
-
-  async function renderCurrentAvatar() {
-    avatarImage.hidden = true;
-    avatarFallback.hidden = false;
-    if (user.avatarThumbnailUrl
-      && await Auth.setProtectedImage(avatarImage, user.avatarThumbnailUrl)) {
-      avatarImage.hidden = false;
-      avatarFallback.hidden = true;
-    }
-  }
-  renderCurrentAvatar();
   const roleNames = (user.roles || []).map(MenuConfig.getRoleDisplayName);
   const scope = [...(user.warehouses || []), ...(user.territories || [])].map((item) => item.name);
   document.getElementById("user-role").textContent = [roleNames.join(", "), scope.join(", ")].filter(Boolean).join(" · ");
@@ -196,7 +185,7 @@
       user.avatarUrl = result.data.avatarUrl;
       user.avatarThumbnailUrl = result.data.avatarThumbnailUrl;
       sessionStorage.setItem("user", JSON.stringify(user));
-      await renderCurrentAvatar();
+      window.dispatchEvent(new CustomEvent('auth:profile-changed'));
       setAvatarModal(false);
       showToast(result.message || "Đã cập nhật ảnh đại diện.", "success");
     } catch (error) {

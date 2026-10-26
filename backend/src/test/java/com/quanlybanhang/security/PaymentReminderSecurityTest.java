@@ -1,6 +1,5 @@
 package com.quanlybanhang.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quanlybanhang.config.RolePermissionConfig;
 import com.quanlybanhang.config.SecurityConfig;
 import com.quanlybanhang.controller.DealerNotificationController;
@@ -24,6 +23,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -41,9 +41,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @WebMvcTest({DealerNotificationController.class, PaymentReminderController.class})
-@Import({SecurityConfig.class, RolePermissionConfig.class, RestAccessDeniedHandler.class, AuthEntryPointJwt.class, GlobalExceptionHandler.class, ObjectMapper.class})
+@Import({SecurityConfig.class, RolePermissionConfig.class, RestAccessDeniedHandler.class, AuthEntryPointJwt.class, GlobalExceptionHandler.class})
 @DisplayName("PaymentReminderSecurityTest - Kiểm thử ma trận phân quyền cho tính năng Nhắc hạn thanh toán (S7-08)")
 class PaymentReminderSecurityTest {
 
@@ -94,6 +95,10 @@ class PaymentReminderSecurityTest {
                 .build();
 
         when(userRepository.findByUsername("dealer.user")).thenReturn(Optional.of(dealerUser));
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(User.builder()
+                .id(11L).username("admin").active(true)
+                .roles(Collections.singleton(Role.builder().name(ERole.ROLE_ADMIN).build()))
+                .build()));
         when(dealerRepository.findById(100L)).thenReturn(Optional.of(dealer));
     }
 
@@ -128,10 +133,12 @@ class PaymentReminderSecurityTest {
         );
 
         when(notificationService.getDealerNotifications(eq(100L), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
         mockMvc.perform(get("/api/portal/notifications").with(dealerWithPerm))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
     }
 
     @Test
@@ -142,10 +149,12 @@ class PaymentReminderSecurityTest {
         );
 
         when(notificationService.getDealerNotifications(eq(100L), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
         mockMvc.perform(get("/api/portal/notifications?dealerId=100").with(admin))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
     }
 
     @Test
@@ -182,11 +191,15 @@ class PaymentReminderSecurityTest {
                 new SimpleGrantedAuthority("FINANCE_MANAGE")
         );
 
-        when(paymentReminderService.processPaymentReminders(any(LocalDate.class)))
-                .thenReturn(PaymentReminderSummaryResponse.builder().targetDate(LocalDate.now()).build());
+        LocalDate targetDate = LocalDate.of(2026, 10, 26);
+        when(paymentReminderService.processPaymentReminders(eq(targetDate)))
+                .thenReturn(PaymentReminderSummaryResponse.builder().targetDate(targetDate).build());
 
-        mockMvc.perform(post("/api/finance/payment-reminders/trigger").with(accountant))
-                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/finance/payment-reminders/trigger")
+                        .param("targetDate", targetDate.toString()).with(accountant))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.targetDate").value(targetDate.toString()));
     }
 
     @Test
@@ -210,9 +223,11 @@ class PaymentReminderSecurityTest {
         );
 
         when(paymentReminderService.getReminderLogs(any(), any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
         mockMvc.perform(get("/api/finance/payment-reminders/logs").with(accountant))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
     }
 }

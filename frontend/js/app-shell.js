@@ -112,12 +112,4 @@
   $('btn-logout').addEventListener('click', () => Auth.logout());
   $('btn-logout-topbar').addEventListener('click', () => Auth.logout());
 
-  const avatarUrl = user.avatarThumbnailUrl || user.avatarUrl;
-  if (avatarUrl) {
-    Auth.setProtectedImage($('shell-avatar-image'), avatarUrl).then((loaded) => {
-      if (!loaded) return;
-      $('shell-avatar-image').hidden = false;
-      $('shell-avatar-fallback').hidden = true;
-    });
-  }
 })();

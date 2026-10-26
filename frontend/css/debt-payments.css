@@ -423,7 +423,15 @@
   max-width: 960px;
 }
 
+.dp-modal > form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .dp-modal-header {
+  flex-shrink: 0;
   padding: 18px 24px;
   border-bottom: 1px solid var(--line, #dce4eb);
   display: flex;
@@ -452,15 +460,18 @@
 }
 
 .dp-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 20px 24px;
   overflow-y: auto;
-  max-height: calc(100vh - 160px);
 }
 
 .dp-modal-footer {
+  flex-shrink: 0;
   padding: 16px 24px;
   border-top: 1px solid var(--line, #dce4eb);
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
   background: var(--surface, #f4f7fa);

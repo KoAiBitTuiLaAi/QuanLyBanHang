@@ -55,6 +55,8 @@
     const hasNotifView = isAdmin || Auth.hasPermission("NOTIFICATION_VIEW");
     const workspace = $("dn-workspace");
     const accessNotice = $("dn-access-denied");
+    $("btn-reload").disabled = !hasNotifView;
+    if (!hasNotifView) $("btn-read-all").disabled = true;
 
     if (!hasNotifView) {
       if (workspace) workspace.hidden = true;
@@ -70,14 +72,6 @@
     return true;
   }
 
-  if (!checkPermissions()) return;
-
-  // Lắng nghe sự kiện thu hồi/cấp quyền từ server
-  window.addEventListener("auth:permissions-changed", () => {
-    if (!checkPermissions()) return;
-    loadAll();
-  });
-
   // ── State ───────────────────────────────────────────────────
   const state = {
     notifications: [],
@@ -91,6 +85,33 @@
     unreadCount: 0,
     loading: false,
   };
+  let accessGeneration = 0;
+  let listGeneration = 0;
+  let unreadGeneration = 0;
+  let hasValidDealer = !DealerPortalContext.isAdmin;
+  let markingAll = false;
+  const pendingReads = new Set();
+  const canView = () => Auth.hasRole("ROLE_ADMIN")
+    || (Auth.hasRole("ROLE_DEALER") && Auth.hasPermission("NOTIFICATION_VIEW"));
+  const active = generation => generation === accessGeneration && canView() && hasValidDealer;
+
+  window.addEventListener("auth:permissions-changed", () => {
+    accessGeneration++;
+    listGeneration++;
+    unreadGeneration++;
+    state.notifications = [];
+    state.filteredNotifications = [];
+    state.totalElements = state.totalPages = state.currentPage = state.unreadCount = 0;
+    state.loading = false;
+    $("dn-list").innerHTML = "";
+    $("dn-unread-badge").hidden = true;
+    $("dn-unread-tab-count").textContent = "";
+    $("btn-read-all").disabled = true;
+    $("btn-reload").disabled = !canView();
+    showAlert("");
+    renderPagination();
+    if (checkPermissions()) loadAll();
+  });
 
   // ── Alert Helper ─────────────────────────────────────────────
   function showAlert(message, type = "error") {
@@ -113,7 +134,6 @@
   }
 
   // ── Admin Switcher ───────────────────────────────────────────
-  let hasValidDealer = true;
   if (DealerPortalContext.isAdmin) {
     try {
       hasValidDealer = await DealerPortalContext.init("dp-dealer-switcher-wrap", "dp-dealer-select");
@@ -139,12 +159,17 @@
 
   // ── Unread Count ─────────────────────────────────────────────
   async function loadUnreadCount() {
+    if (!canView() || !hasValidDealer) return;
+    const generation = accessGeneration;
+    const requestId = ++unreadGeneration;
+    const current = () => active(generation) && requestId === unreadGeneration;
     try {
       const endpoint = "/portal/notifications/unread-count";
       const response = await Auth.apiFetch(DealerPortalContext.url(endpoint));
-      if (!response.ok) return;
+      if (!current() || !response.ok) return;
 
       const res = await response.json();
+      if (!current()) return;
       const count = res.data?.unreadCount ?? 0;
       state.unreadCount = count;
 
@@ -158,7 +183,7 @@
           badge.hidden = false;
         }
         if (tabCount) tabCount.textContent = `(${count})`;
-        if (readAllBtn) readAllBtn.disabled = false;
+        if (readAllBtn) readAllBtn.disabled = markingAll;
       } else {
         if (badge) badge.hidden = true;
         if (tabCount) tabCount.textContent = "";
@@ -171,6 +196,10 @@
 
   // ── Notifications List ───────────────────────────────────────
   async function loadNotifications(page = 0) {
+    if (!canView() || !hasValidDealer) return;
+    const generation = accessGeneration;
+    const requestId = ++listGeneration;
+    const current = () => active(generation) && requestId === listGeneration;
     state.currentPage = page;
     state.loading = true;
 
@@ -188,6 +217,7 @@
     try {
       const endpoint = `/portal/notifications?${params.toString()}`;
       const response = await Auth.apiFetch(DealerPortalContext.url(endpoint));
+      if (!current()) return;
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -197,15 +227,20 @@
       }
 
       const res = await response.json();
+      if (!current()) return;
       const pageData = res.data || res;
 
       state.notifications = pageData.content || (Array.isArray(pageData) ? pageData : []);
       state.totalElements = pageData.totalElements ?? state.notifications.length;
       state.totalPages = pageData.totalPages ?? (Math.ceil(state.totalElements / state.pageSize) || 1);
+      if (page > 0 && page >= Math.max(1, state.totalPages)) {
+        return loadNotifications(Math.max(0, state.totalPages - 1));
+      }
 
       applyTypeFilter();
       renderPagination();
     } catch (err) {
+      if (!current()) return;
       showAlert(err.message || "Lỗi tải thông báo.", "error");
       listContainer.innerHTML = `
         <div class="dn-empty">
@@ -215,7 +250,7 @@
         </div>
       `;
     } finally {
-      state.loading = false;
+      if (current()) state.loading = false;
     }
   }
 
@@ -286,14 +321,14 @@
       let markReadBtn = "";
       if (isUnread) {
         markReadBtn = `
-          <button type="button" class="btn btn--secondary btn--sm btn-mark-read" data-id="${notif.id}" style="font-size: 0.75rem; padding: 4px 10px;">
+          <button type="button" class="btn btn--secondary btn--sm btn-mark-read" data-id="${escapeHtml(notif.id)}" style="font-size: 0.75rem; padding: 4px 10px;">
             Đã đọc
           </button>
         `;
       }
 
       return `
-        <article class="${itemClass}" data-id="${notif.id}">
+        <article class="${itemClass}" data-id="${escapeHtml(notif.id)}">
           <div class="${iconClass}" aria-hidden="true">
             ${iconSvg}
           </div>
@@ -303,7 +338,7 @@
                 ${isUnread ? '<span class="dn-dot" aria-label="Chưa đọc"></span>' : ''}
                 ${escapeHtml(notif.title || "Thông báo")}
               </h2>
-              <time class="dn-item__time" datetime="${notif.createdAt}">${formatDateTime(notif.createdAt)}</time>
+              <time class="dn-item__time" datetime="${escapeHtml(notif.createdAt)}">${formatDateTime(notif.createdAt)}</time>
             </header>
             <p class="dn-item__message">${escapeHtml(notif.message || "")}</p>
             <div class="dn-item__meta">
@@ -354,43 +389,46 @@
 
   // ── Mark as Read (1 item) ────────────────────────────────────
   async function markAsRead(id) {
-    if (!id) return;
+    if (!canView() || !hasValidDealer || !/^[1-9]\d*$/.test(String(id)) || markingAll || pendingReads.has(id)) return;
+    const generation = accessGeneration;
+    pendingReads.add(id);
+    const button = document.querySelector(`.btn-mark-read[data-id="${id}"]`);
+    if (button) button.disabled = true;
     try {
       const endpoint = `/portal/notifications/${id}/read`;
       const response = await Auth.apiFetch(DealerPortalContext.url(endpoint), {
         method: "PUT",
       });
+      if (!active(generation)) return;
 
       if (!response.ok) {
         throw new Error(`Lỗi đánh dấu đã đọc (${response.status})`);
       }
 
-      // Cập nhật trạng thái item trên giao diện ngay lập tức
-      const itemElem = document.querySelector(`.dn-item[data-id="${id}"]`);
-      if (itemElem) {
-        itemElem.classList.remove("dn-item--unread");
-        const dot = itemElem.querySelector(".dn-dot");
-        if (dot) dot.remove();
-        const btn = itemElem.querySelector(".btn-mark-read");
-        if (btn) btn.remove();
-      }
-
-      // Giảm unreadCount
-      await loadUnreadCount();
-      showAlert("Đã đánh dấu thông báo là đã đọc.", "success");
+      // Reload the filtered page so a read item disappears from the unread tab.
+      await Promise.all([loadUnreadCount(), loadNotifications(state.currentPage)]);
+      if (active(generation)) showAlert("Đã đánh dấu thông báo là đã đọc.", "success");
     } catch (err) {
-      showAlert(err.message || "Không thể cập nhật trạng thái đã đọc.", "error");
+      if (active(generation)) showAlert(err.message || "Không thể cập nhật trạng thái đã đọc.", "error");
+    } finally {
+      pendingReads.delete(id);
+      if (button) button.disabled = false;
     }
   }
 
   // ── Mark All as Read ─────────────────────────────────────────
   async function markAllAsRead() {
+    if (!canView() || !hasValidDealer || markingAll || pendingReads.size) return;
+    const generation = accessGeneration;
+    markingAll = true;
+    $("btn-read-all").disabled = true;
     try {
       showAlert("");
       const endpoint = "/portal/notifications/read-all";
       const response = await Auth.apiFetch(DealerPortalContext.url(endpoint), {
         method: "PUT",
       });
+      if (!active(generation)) return;
 
       if (!response.ok) {
         throw new Error(`Lỗi đánh dấu tất cả đã đọc (${response.status})`);
@@ -399,7 +437,10 @@
       showAlert("Đã đánh dấu toàn bộ thông báo là đã đọc.", "success");
       await loadAll();
     } catch (err) {
-      showAlert(err.message || "Không thể đánh dấu tất cả là đã đọc.", "error");
+      if (active(generation)) showAlert(err.message || "Không thể đánh dấu tất cả là đã đọc.", "error");
+    } finally {
+      markingAll = false;
+      $("btn-read-all").disabled = !canView() || state.unreadCount === 0;
     }
   }
 
@@ -436,11 +477,12 @@
   });
 
   async function loadAll() {
+    if (!canView() || !hasValidDealer) return;
     showAlert("");
     await Promise.all([loadUnreadCount(), loadNotifications(0)]);
   }
 
   // Khởi động
-  loadAll();
+  if (checkPermissions()) loadAll();
 })();
 

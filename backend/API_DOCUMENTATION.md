@@ -4931,6 +4931,23 @@ Hỗ trợ Kế toán công nợ xem báo cáo công nợ quá hạn theo tuổi
 | `GET` | `/api/reports/debt-aging` | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Báo cáo tổng hợp công nợ quá hạn theo tuổi nợ, theo nhân viên và bảng đại lý xếp hạng rủi ro |
 | `GET` | `/api/reports/debt-aging/export` (alias `/export/excel`, `/excel`) | `REPORT_FINANCE` hoặc `ROLE_ADMIN` | Xuất toàn bộ báo cáo công nợ quá hạn theo tuổi nợ ra file Excel (`.xlsx`) |
 
+# S7-08 — Nhắc hạn thanh toán và thông báo cổng đại lý
+
+Các API JSON dưới đây trả envelope `success`, `message`, `data`. Danh sách phân trang có `data.content`, `data.totalElements`, `data.totalPages`; mặc định `page=0`, `size=20`.
+
+| Method | Endpoint | Quyền và phạm vi | Dữ liệu/thao tác |
+|---|---|---|---|
+| GET | `/api/portal/notifications` | `NOTIFICATION_VIEW`, tài khoản DEALER hoặc ADMIN | Danh sách thông báo; lọc `unreadOnly`, phân trang `page`, `size`. |
+| GET | `/api/portal/notifications/unread-count` | Như trên | `data.unreadCount`. |
+| PUT | `/api/portal/notifications/{id}/read` | Như trên | Đánh dấu đã đọc thông báo thuộc đúng đại lý đang truy cập. |
+| PUT | `/api/portal/notifications/read-all` | Như trên | Đánh dấu tất cả thông báo của đại lý đang truy cập; `data.updatedCount`. |
+| POST | `/api/finance/payment-reminders/trigger` | `FINANCE_MANAGE` hoặc ADMIN | Quét nhắc hạn; `targetDate=yyyy-MM-dd` tùy chọn, mặc định ngày hiện tại của server. |
+| GET | `/api/finance/payment-reminders/logs` | `FINANCE_VIEW_DEBT` hoặc ADMIN | Lọc `dealerId`, `invoiceId`, `reminderType`; phân trang `page`, `size`. |
+
+Phạm vi cổng được kiểm tra bằng tài khoản trong database ở tất cả bốn endpoint thông báo. DEALER chỉ được xem/đánh dấu thông báo của hồ sơ đại lý liên kết; `dealerId` của đại lý khác trả 403. Nhân viên nội bộ không có vai trò DEALER/ADMIN bị 403 kể cả có `NOTIFICATION_VIEW` và liên kết hồ sơ đại lý. ADMIN luôn được phép về quyền; nếu không có hồ sơ đại lý liên kết phải chọn `dealerId`, thiếu lựa chọn trả 400. Không dùng vai trò để cấp thay quyền `NOTIFICATION_VIEW` cho đại lý. Quyền từ ma trận DB được nạp lại ở request tiếp theo của JWT hiện hành.
+
+Tác vụ hằng ngày gửi email và thông báo trong ứng dụng trước hạn 3 ngày/khi quá hạn, ghi log chống trùng hóa đơn trong ngày. Gửi email cần SMTP hợp lệ; kiểm thử tích hợp quyền thay tác vụ gửi thư bằng mock để không gửi email ngoài thực tế.
+
 # S8-03 — Phiếu điều chỉnh tồn kho có phê duyệt
 
 ## Luồng và quyền

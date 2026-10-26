@@ -34,6 +34,7 @@ const decimal = value => `${value / 100n}.${String(value % 100n).padStart(2,'0')
       let status = 200, data, message = 'Thành công';
       const has = p => admin || state.permissions.includes(p);
       if (endpoint === '/auth/permissions') data = {roles,permissions:state.permissions};
+      else if (endpoint === '/users/profile') data = user;
       else if (!allPermissions.some(has)) {status=403;message='Quyền đã bị thu hồi';}
       else if (endpoint === '/finance/cash-collections/dealers') {
         if (!has('COLLECTION_CREATE')) status=403;

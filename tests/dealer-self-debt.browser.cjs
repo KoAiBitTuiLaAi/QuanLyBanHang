@@ -39,6 +39,7 @@ async function main() {
       calls.push({ep, method: req.method(), query: Object.fromEntries(url.searchParams)});
       let data = [], status = 200, message = '';
       if (ep === '/auth/permissions') data = {roles: user.roles, permissions: user.permissions};
+      else if (ep === '/users/profile') data = user;
       else if (ep === '/portal/dealers') data = [{id: 1, code: 'DL-01', name: 'Đại lý Nguyễn Ánh'}];
       else if (ep === '/portal/debt/summary') {
         if (user.permissions.includes('FINANCE_VIEW_DEBT') || user.roles.includes('ROLE_ADMIN')) data = summary;

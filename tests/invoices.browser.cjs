@@ -26,6 +26,7 @@ const token='fixture.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/100
       let data,status=200,message='Thành công';
       const permission=method==='GET'?'INVOICE_VIEW':endpoint.endsWith('/adjustments')?'INVOICE_ADJUST':'INVOICE_CREATE';
       if(endpoint==='/auth/permissions')data={roles,permissions:rights.permissions};
+      else if(endpoint==='/users/profile')data=user;
       else if(!admin&&!rights.permissions.includes(permission)){status=403;message='Quyền đã bị thu hồi';}
       else if(endpoint==='/invoices'&&method==='GET'){if(state.failList){status=500;message='Lỗi tải danh sách kiểm thử';}else data={content:state.issued?[invoice]:[],totalPages:state.issued?1:0,totalElements:state.issued?1:0};}
       else if(endpoint==='/invoices/dealers-with-eligible-orders')data=[{dealerId:10,dealerCode:'DL10',dealerName:'Đại lý số 10',uninvoicedDeliveryCount:2},{dealerId:20,dealerCode:'DL20',dealerName:'Đại lý số 20',uninvoicedDeliveryCount:1}];

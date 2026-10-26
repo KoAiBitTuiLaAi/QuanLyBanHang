@@ -8,6 +8,11 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
+  const modalIds = ['modal-payment-create', 'modal-payment-detail', 'modal-adjustment-create',
+    'modal-order-settlements', 'modal-receipt-print'];
+  // Fixed dialogs belong to the viewport. The shared content transition creates
+  // its own stacking context, which otherwise clips them behind the sidebar.
+  modalIds.forEach(id => { if ($(id)) document.body.append($(id)); });
 
   // Trạng thái ứng dụng cục bộ trong phiên trang
   const state = {
@@ -146,7 +151,7 @@
   function closeAllModals() {
     receiptClient.close();
     state.currentReceiptPayment = null;
-    ['modal-payment-create', 'modal-payment-detail', 'modal-adjustment-create', 'modal-order-settlements', 'modal-receipt-print'].forEach((id) => {
+    modalIds.forEach((id) => {
       const el = $(id);
       if (el) el.hidden = true;
     });

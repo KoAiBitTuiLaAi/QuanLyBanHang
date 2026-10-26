@@ -473,17 +473,7 @@
   // User Header info
   $("user-name").textContent = user.fullName || user.username;
   const avatarFallback = $("user-avatar-fallback");
-  const avatarImage = $("user-avatar-image");
   avatarFallback.textContent = (user.fullName || user.username || "K").trim().charAt(0).toUpperCase();
-
-  if (user.avatarThumbnailUrl) {
-    Auth.setProtectedImage(avatarImage, user.avatarThumbnailUrl).then((ok) => {
-      if (ok) {
-        avatarImage.hidden = false;
-        avatarFallback.hidden = true;
-      }
-    });
-  }
   $("btn-avatar")?.addEventListener("click", () => {
     window.location.href = "/profile";
   });

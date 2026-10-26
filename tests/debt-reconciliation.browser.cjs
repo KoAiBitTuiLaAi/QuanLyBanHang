@@ -38,6 +38,7 @@ async function main() {
       calls.push({ep, method: req.method()});
       let data = [], status = 200, message = '';
       if (ep === '/auth/permissions') data = {roles: user.roles, permissions: user.permissions};
+      else if (ep === '/users/profile') data = user;
       else if (!user.permissions.includes('FINANCE_VIEW_DEBT') && !user.roles.includes('ROLE_ADMIN')) {status = 403; message = 'Quyền đã bị thu hồi';}
       else if (ep.endsWith('/debt-reconciliations/options')) data = {content: [{id: 1, code: 'DL-01', name: 'Đại lý Nguyễn Ánh'}], number: 0, totalPages: 1};
       else if (ep.endsWith('/response')) {

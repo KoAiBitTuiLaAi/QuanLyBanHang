@@ -49,6 +49,13 @@ public class DealerNotificationController {
 
         boolean isAdmin = currentUser.getRoles().stream()
                 .anyMatch(r -> r.getName() == ERole.ROLE_ADMIN);
+        boolean isDealer = currentUser.getRoles().stream()
+                .anyMatch(r -> r.getName() == ERole.ROLE_DEALER);
+        // Method-level permission annotations override the class annotation.
+        // Enforce portal data scope here for every notification endpoint as well.
+        if (!isAdmin && !isDealer) {
+            throw new AccessDeniedException("Chức năng này chỉ dành cho tài khoản đại lý và quản trị viên");
+        }
 
         if (isAdmin && requestedDealerId != null) {
             return dealerRepository.findById(requestedDealerId)

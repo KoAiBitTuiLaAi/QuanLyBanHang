@@ -139,6 +139,7 @@
         avatarThumbnailUrl: result.data.avatarThumbnailUrl,
       };
       await renderProfileAvatar(currentProfile);
+      window.dispatchEvent(new CustomEvent('auth:profile-changed'));
       showAvatarMessage(result.message || "Đã cập nhật ảnh đại diện.");
     } catch (error) {
       showAvatarMessage(error.message || "Không thể tải ảnh đại diện lên.", true);
@@ -171,6 +172,7 @@
       sessionStorage.setItem("user", JSON.stringify({ ...cached, fullName, phone }));
       showMessage(result.message || "Đã cập nhật hồ sơ.");
       await loadProfile();
+      window.dispatchEvent(new CustomEvent('auth:profile-changed'));
     } catch (error) {
       showMessage(error.message || "Không thể kết nối máy chủ.", true);
     } finally {

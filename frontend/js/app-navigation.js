@@ -1,6 +1,8 @@
 /** Sidebar và breadcrumb dùng cùng một cấu hình trang trên toàn ứng dụng. */
 const AppNavigation = (() => {
   let renderedMenu = '';
+  let profileRequest = 0;
+  let profileRefreshTimer;
   const stateKey = 'saleStockNavigation';
   const navigation = window.navigation;
 
@@ -107,8 +109,76 @@ const AppNavigation = (() => {
     renderBreadcrumb(page);
   }
 
+  function connectSidebarProfile() {
+    const footer = document.querySelector('.sidebar__user');
+    if (!footer) return;
+    const linkToProfile = element => {
+      if (!element || element.tagName === 'BUTTON') return;
+      let link = element;
+      if (element.tagName !== 'A') {
+        link = document.createElement('a');
+        for (const attribute of element.attributes) link.setAttribute(attribute.name, attribute.value);
+        link.append(...element.childNodes);
+        element.replaceWith(link);
+      }
+      link.href = '/profile';
+      link.setAttribute('aria-label', 'Hồ sơ cá nhân');
+      link.title = 'Hồ sơ cá nhân';
+    };
+    linkToProfile(footer.querySelector('.sidebar__user-info'));
+    // Dashboard/warehouse avatar buttons retain their existing upload action.
+    linkToProfile(footer.querySelector('.sidebar__avatar'));
+  }
+
+  async function refreshSidebarProfile() {
+    if (!Auth.isLoggedIn() || !document.querySelector('.sidebar__user') || !Auth.apiFetch) return;
+    const requestId = ++profileRequest;
+    let profile = Auth.getUser() || {};
+    try {
+      const response = await Auth.apiFetch('/users/profile', {cache:'no-store'});
+      const result = await response.json();
+      if (response.ok && result.success && result.data && !Array.isArray(result.data)) {
+        profile = {...profile, ...result.data};
+      }
+    } catch { /* Keep the signed-in identity if the profile endpoint is unavailable. */ }
+    if (requestId !== profileRequest || !Auth.isLoggedIn()) return;
+    const candidate = document.createElement('img');
+    const url = profile.avatarThumbnailUrl || profile.avatarUrl;
+    const loaded = url ? await Auth.setProtectedImage(candidate, url) : false;
+    if (requestId !== profileRequest || !Auth.isLoggedIn()) {
+      if (candidate.dataset.objectUrl) URL.revokeObjectURL(candidate.dataset.objectUrl);
+      return;
+    }
+    const avatar = document.querySelector('.sidebar__avatar');
+    if (!avatar) {
+      if (candidate.dataset.objectUrl) URL.revokeObjectURL(candidate.dataset.objectUrl);
+      return;
+    }
+    const name = profile.fullName || profile.username || 'U';
+    const nameElement = document.getElementById('user-name');
+    if (nameElement) nameElement.textContent = name;
+    // Reuse existing image/fallback IDs so legacy avatar-upload controls keep working.
+    const image = avatar.querySelector('img') || document.createElement('img');
+    const fallback = avatar.querySelector('span') || document.createElement('span');
+    if (image.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
+    image.alt = '';
+    image.hidden = !loaded;
+    if (loaded) {
+      image.src = candidate.src;
+      image.dataset.objectUrl = candidate.dataset.objectUrl;
+    } else {
+      if (candidate.dataset.objectUrl) URL.revokeObjectURL(candidate.dataset.objectUrl);
+      image.removeAttribute('src');
+      delete image.dataset.objectUrl;
+    }
+    fallback.textContent = name.trim().split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase();
+    fallback.hidden = loaded;
+    avatar.replaceChildren(fallback, image);
+  }
+
   async function initialize() {
     if (!Auth.isLoggedIn()) return;
+    connectSidebarProfile();
     // Render the existing shell before the first await, then reconcile with DB.
     // While synchronizing, stale menu links cannot be activated.
     const nav = document.getElementById('sidebar-nav');
@@ -118,6 +188,11 @@ const AppNavigation = (() => {
     // Nạp lại permissions từ DB trước khi dựng menu để thay đổi
     // ma trận không tạo ra tình trạng menu hiện nhưng API trả 403 (hoặc ngược lại).
     await Auth.ready;
+    // Legacy page scripts still set avatar initials during startup. Render the
+    // shared saved image after those scripts have run, even on slow script loads.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', refreshSidebarProfile, {once:true});
+    } else refreshSidebarProfile();
     renderSidebar(Auth.getUser());
     refresh();
     enforcePageAccess();
@@ -169,12 +244,23 @@ const AppNavigation = (() => {
     refresh();
     enforcePageAccess();
   });
-  window.addEventListener('pageshow', () => {
+  window.addEventListener('auth:profile-changed', refreshSidebarProfile);
+  function scheduleProfileRefresh() {
+    window.clearTimeout(profileRefreshTimer);
+    profileRefreshTimer = window.setTimeout(refreshSidebarProfile, 150);
+  }
+  window.addEventListener('focus', scheduleProfileRefresh);
+  window.addEventListener('pagehide', () => {
+    window.clearTimeout(profileRefreshTimer);
+    profileRequest++;
+  });
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) scheduleProfileRefresh();
     menuScrollTop = savedScrollTop();
     const nav = document.getElementById('sidebar-nav');
     if (nav) nav.scrollTop = menuScrollTop;
     refresh();
   });
   window.addEventListener('popstate', refresh);
-  return { refresh };
+  return { refresh, refreshProfile: refreshSidebarProfile };
 })();

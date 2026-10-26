@@ -1,6 +1,6 @@
 ﻿# Vị trí chức năng theo Product Backlog
 
-Đối chiếu Product Backlog với code trên nhánh đang xem; cập nhật ngày 24/10/2026. Mỗi dòng là vị trí thao tác hiện có, không phải kết luận toàn bộ tiêu chí của story đã đạt. Menu/nút chỉ hiện khi tài khoản có quyền tương ứng.
+Đối chiếu Product Backlog với code trên nhánh đang xem; cập nhật ngày 26/10/2026. Mỗi dòng là vị trí thao tác hiện có, không phải kết luận toàn bộ tiêu chí của story đã đạt. Menu/nút chỉ hiện khi tài khoản có quyền tương ứng.
 
 `Chỉ backend`: chưa có màn hình/menu. `Một phần`: chỉ mô tả phần hiện có, không coi story đã hoàn tất.
 
@@ -11,7 +11,7 @@
 - S1-03: Trang đăng nhập → Quên mật khẩu → Nhập email → Mở liên kết đặt lại mật khẩu trong email.
 - S1-04: Tổng quan → Nút Đổi mật khẩu trên thanh trên cùng → Nhập mật khẩu hiện tại và mật khẩu mới.
 - S1-05: Hệ thống → Quản lý tài khoản → Ma trận quyền → Chọn quyền theo vai trò, Lưu ma trận quyền.
-- S1-06: Menu trái trên các trang → Các mục theo quyền; cuối menu hiển thị tên, vai trò và kho/địa bàn.
+- S1-06: Menu trái trên các trang → Các mục theo quyền; bấm tên/vai trò ở cuối menu → Hồ sơ cá nhân; hiển thị kho/địa bàn theo tài khoản.
 - S1-07: Tự mở Trang lỗi khi sai đường dẫn/thiếu quyền → Quay lại hoặc về Tổng quan.
 - S1-08: Hệ thống → Quản lý tài khoản → Tạo tài khoản, Sửa, tìm kiếm và lọc tài khoản.
 - S1-09: Hệ thống → Quản lý tài khoản → Tạo tài khoản/Sửa → Chọn vai trò, kho và địa bàn.
@@ -21,7 +21,7 @@
 
 - S2-01: Hệ thống → Quản lý tài khoản → Nhập Excel → Tải tệp mẫu, chọn tệp, xem trước, nhập dòng hợp lệ.
 - S2-02: Hồ sơ cá nhân → Thông tin liên hệ → Sửa họ tên, số điện thoại → Lưu thay đổi.
-- S2-03: Hồ sơ cá nhân → Đổi ảnh đại diện → Chọn ảnh JPG/PNG.
+- S2-03: Hồ sơ cá nhân → Đổi ảnh đại diện → Chọn ảnh JPG/PNG; ảnh đã lưu hiển thị ở cuối menu trên mọi trang.
 - S2-04: Hệ thống → Nhật ký thao tác → Lọc người dùng, đối tượng, khoảng thời gian → Xem giá trị trước/sau.
 - S2-05: Kinh doanh → Sản phẩm → Thêm/Sửa sản phẩm, tìm kiếm, ngừng kinh doanh.
 - S2-06: Kinh doanh → Nhóm hàng → Thêm nhóm gốc/nhóm con, sửa nhóm, chuyển sản phẩm sang nhóm khác.
@@ -84,7 +84,7 @@
 - S7-01: Tài chính → Hóa đơn bán hàng → Gộp phiếu đã giao, xem trước/phát hành theo thực giao, xem hóa đơn, lập chứng từ điều chỉnh, in/PDF.
 - S7-02: Tài chính → Ghi nhận thanh toán → Ghi số tiền, hình thức thu, đối trừ tự động FIFO hoặc chọn hoá đơn cụ thể, thu một phần, tra cứu nợ và lập bút toán điều chỉnh.
 - S7-03: Tài chính → Sổ công nợ → tab Tổng quan công nợ → Xem phải thu/đã thu/còn nợ theo 4 nhóm tuổi nợ, lọc đại lý/quá hạn/ngày chốt và xuất Excel.
-- S7-04: Tự đánh giá rủi ro nợ định kỳ và sau thu tiền; chỉ backend → `/api/finance/debt/config` (cấu hình), `/api/finance/debt/flagged-dealers` (cảnh báo).
+- S7-04: Tài chính → Hạn mức công nợ → Cảnh báo & Khoá bán, Cấu hình hệ thống, đánh giá lại; hệ thống tự đánh giá hằng ngày và sau thu tiền.
 - S7-05: Tài chính → Thu tiền theo tuyến → Ghi khoản thu kèm biên lai, xem chi tiết, xác nhận nhận tiền, đối chiếu theo nhân viên/ngày thu.
 - S7-06: Tài chính → Đối chiếu công nợ → Lập/lưu biên bản theo kỳ, xem lịch sử và PDF; đại lý vào cùng mục → Mở biên bản → Xác nhận khớp hoặc phản hồi lệch, lưu DB.
 - S7-07: Kinh doanh → Công nợ của tôi → Xem tổng nợ, hạn mức còn được lấy hàng, hóa đơn/số phải thu sau trả hàng, hạn thanh toán, trạng thái; xem, in và tải PDF hóa đơn/chứng từ điều chỉnh.
