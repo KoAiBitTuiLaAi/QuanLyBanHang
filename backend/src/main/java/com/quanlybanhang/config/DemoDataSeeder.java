@@ -385,8 +385,14 @@ public class DemoDataSeeder {
 
     private WarehouseVoucherItemRequest stockItem(Product product, String unit, String quantity) {
         BigDecimal factor = unitConversionService.getConversionFactor(product, unit);
-        return WarehouseVoucherItemRequest.builder().productId(product.getId()).unit(unit).quantity(decimal(quantity))
-                .price(product.getCostPrice().multiply(factor)).note(NOTE).build();
+        var builder = WarehouseVoucherItemRequest.builder().productId(product.getId()).unit(unit).quantity(decimal(quantity))
+                .price(product.getCostPrice().multiply(factor)).note(NOTE);
+        if (Boolean.TRUE.equals(product.getManageLot())) {
+            builder.lotNumber("DEMO-LOT-" + product.getCode().replace("DEMO-SP-", "") + "-001")
+                   .expiryDate(LocalDate.now().plusMonths(6))
+                   .manufacturingDate(LocalDate.now().minusMonths(1));
+        }
+        return builder.build();
     }
 
     private void importStock(String code, Warehouse warehouse, Supplier supplier, List<WarehouseVoucherItemRequest> items) {
