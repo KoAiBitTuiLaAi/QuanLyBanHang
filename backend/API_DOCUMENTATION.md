@@ -2,6 +2,20 @@
 
 Base URL: `http://localhost:8080/api`
 
+## Phiên trình duyệt dùng chung giữa các tab — 26/10/2026
+
+Frontend gửi `credentials: "include"`, `Content-Type: application/json` và `X-Browser-Session: 1` khi gọi `POST /auth/login`, `/auth/refresh`, `/auth/logout`. Các yêu cầu này phải có `Origin` khớp chính xác `app.cors.allowed-origins`; Origin thiếu/khác bị từ chối 403 khi bật chế độ cookie. API nghiệp vụ vẫn chỉ nhận Bearer JWT, không tự xác thực bằng cookie.
+
+| API | Chế độ trình duyệt |
+|---|---|
+| `POST /auth/login` | Body username/password như cũ. Đặt cookie `qlbh_refresh` với HttpOnly, SameSite=Strict, Path=/api/auth, không Domain; trả accessToken và hồ sơ/quyền hiện tại, refreshToken=null. Nếu trình duyệt có phiên cũ, thu hồi phiên đó trước khi thay cookie. |
+| `POST /auth/refresh` | Body `{}` dùng cookie; tab mới nhận accessToken/hồ sơ từ backend rồi mở lại đúng URL đang truy cập. Cookie được ưu tiên hơn refreshToken cũ trong body để tránh tab cũ đổi ngược tài khoản. Thiếu/hết hạn/thu hồi token trả 401; cookie không hợp lệ được xóa. Lỗi mạng/5xx không được coi là hết phiên. |
+| `POST /auth/logout` | Nhận access token qua Authorization nếu còn, refresh qua cookie; ghi thu hồi token và nhóm phiên `SESSION:<sid>` vào token_blacklist, xóa cookie. Access token của các tab cùng nhóm bị từ chối ngay ở request kế tiếp. Các phiên đăng nhập khác không bị thu hồi. |
+
+Cookie là cookie phiên trình duyệt; JWT refresh vẫn có hạn tuyệt đối theo `app.jwt.refresh-expiration-ms`, không quay vòng token trên từng lần refresh nên nhiều tab có thể khôi phục đồng thời. HTTPS tự bật Secure; khi qua proxy không chuyển tiếp trạng thái HTTPS, đặt `APP_AUTH_COOKIE_SECURE=true`. Môi trường local dùng frontend/backend cùng hostname, ví dụ `localhost:5500` và `localhost:8080`, vì SameSite=Strict không dùng cho hai site khác nhau.
+
+Client cũ không gửi X-Browser-Session vẫn dùng JSON refreshToken như trước. Tab cũ có refreshToken trong sessionStorage có thể gia hạn một lần để chuyển sang cookie; phiên cũ chưa chuyển và không còn tab nào giữ refreshToken cần đăng nhập lại một lần. Frontend mới không lưu refreshToken hoặc dữ liệu nghiệp vụ vào localStorage; accessToken/hồ sơ chỉ là cache theo tab, quyền và trạng thái tài khoản luôn được kiểm tại DB. BroadcastChannel chỉ gửi thông báo login/logout, không gửi token. Phản hồi cũ bị loại sau logout/đổi tài khoản, không được khôi phục cache hoặc phát lại yêu cầu nghiệp vụ dưới tài khoản khác.
+
 Mọi response nghiệp vụ dùng cấu trúc `{ "success": boolean, "message": string, "data": any }`.
 
 ## S7-03 — Sổ công nợ theo đại lý với phân tích tuổi nợ (25/10/2026)

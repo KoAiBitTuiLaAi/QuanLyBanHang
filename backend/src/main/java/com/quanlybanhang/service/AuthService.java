@@ -99,8 +99,8 @@ public class AuthService {
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            String accessToken = jwtUtils.generateAccessToken(authentication);
             String refreshToken = jwtUtils.generateRefreshToken(authentication);
+            String accessToken = jwtUtils.generateAccessTokenForRefresh(refreshToken);
 
             UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
             return buildJwtResponse(user, accessToken, refreshToken);
@@ -151,21 +151,21 @@ public class AuthService {
     public JwtResponse refreshToken(String refreshToken) {
         if (!jwtUtils.validateToken(refreshToken)
                 || !"refresh".equals(jwtUtils.getTokenType(refreshToken))) {
-            throw new RuntimeException("Refresh token không hợp lệ hoặc đã hết hạn");
+            throw new BadCredentialsException("Refresh token không hợp lệ hoặc đã hết hạn");
         }
 
         // Kiểm tra refresh token có bị blacklist không
-        if (tokenBlacklistService.isBlacklisted(refreshToken)) {
-            throw new RuntimeException("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        if (tokenBlacklistService.isBlacklisted(refreshToken) || tokenBlacklistService.isSessionRevoked(refreshToken)) {
+            throw new BadCredentialsException("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
         }
 
         String username = jwtUtils.getUsernameFromToken(refreshToken);
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+                .orElseThrow(() -> new BadCredentialsException("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."));
         if (!user.getActive() || user.getTokenVersion() != jwtUtils.getTokenVersion(refreshToken)) {
-            throw new RuntimeException("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+            throw new BadCredentialsException("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
         }
-        String newAccessToken = jwtUtils.generateAccessToken(username, user.getTokenVersion());
+        String newAccessToken = jwtUtils.generateAccessTokenForRefresh(refreshToken);
         return buildJwtResponse(user, newAccessToken, refreshToken);
     }
 
@@ -179,6 +179,7 @@ public class AuthService {
         }
         if (refreshToken != null && jwtUtils.validateToken(refreshToken)) {
             tokenBlacklistService.blacklistToken(refreshToken, "LOGOUT");
+            tokenBlacklistService.blacklistSession(refreshToken, "LOGOUT");
         }
     }
 

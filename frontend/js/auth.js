@@ -20,7 +20,66 @@ const Auth = (() => {
   let refreshRequest = null;
   let sessionExpiryHandled = false;
   let permissionRequest = null;
+  let sessionGeneration = 0;
+  let restoringPage = false;
+  let sessionChannel = null;
   const permissionBindings = [];
+
+  // Only notifications travel between tabs; credentials stay out of localStorage and messages.
+  try {
+    if (typeof BroadcastChannel !== "undefined") {
+      sessionChannel = new BroadcastChannel("qlbh-auth-session");
+      sessionChannel.onmessage = ({data}) => {
+        if (data?.type !== "logout" && data?.type !== "login") return;
+        clearSession();
+        if (data.type === "logout") {
+          sessionStorage.setItem("sessionSignedOut", "1");
+          window.location.href = getLoginPageUrl();
+        } else {
+          sessionStorage.removeItem("sessionSignedOut");
+          window.location.reload();
+        }
+      };
+    }
+  } catch { /* Backend revocation still applies when the browser disables messaging. */ }
+
+  function notifySession(type) {
+    try { sessionChannel?.postMessage({type}); } catch { /* Closing tab. */ }
+  }
+
+  function saveSession(data) {
+    if (!data?.accessToken || !data.username || !Array.isArray(data.roles)) {
+      throw new Error("Máy chủ trả phiên đăng nhập không hợp lệ.");
+    }
+    sessionStorage.setItem("accessToken", data.accessToken);
+    // New browser sessions use an HttpOnly cookie; never persist a returned refresh credential.
+    sessionStorage.removeItem("refreshToken");
+    sessionStorage.removeItem("sessionSignedOut");
+    sessionStorage.setItem("user", JSON.stringify({
+      id:data.id, username:data.username, email:data.email, fullName:data.fullName,
+      roles:data.roles, permissions:data.permissions || [], warehouses:data.warehouses || [],
+      territories:data.territories || [], mustChangePassword:Boolean(data.mustChangePassword),
+      avatarUrl:data.avatarUrl || null, avatarThumbnailUrl:data.avatarThumbnailUrl || null,
+    }));
+    sessionExpiryHandled = false;
+  }
+
+  async function login(credentials) {
+    const version = sessionGeneration;
+    const response = await fetch(`${API_BASE}/auth/login`, {
+      method:"POST", credentials:"include", cache:"no-store",
+      headers:{"Content-Type":"application/json", "X-Browser-Session":"1"},
+      body:JSON.stringify(credentials),
+    });
+    const data = await response.json().catch(() => null);
+    if (version !== sessionGeneration) throw new Error("Phiên đăng nhập đã thay đổi. Vui lòng thử lại.");
+    if (response.ok) {
+      sessionGeneration++;
+      saveSession(data);
+      notifySession("login");
+    }
+    return {response, data};
+  }
 
   function permissionKey(user) {
     return JSON.stringify([(user?.roles || []).slice().sort(), (user?.permissions || []).slice().sort()]);
@@ -53,13 +112,18 @@ const Auth = (() => {
     if (!isLoggedIn()) return false;
     if (permissionRequest) return permissionRequest;
     permissionRequest = (async () => {
+      const version = sessionGeneration;
+      const token = getAccessToken();
       try {
         const response = await fetch(`${API_BASE}/auth/permissions`, {
-          headers: { Authorization: `Bearer ${getAccessToken()}` },
+          headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
+        if (version !== sessionGeneration || token !== getAccessToken()) return false;
+        if (response.status === 401) { await refreshAccessToken(); return false; }
         if (!response.ok) return false;
         const result = await response.json();
+        if (version !== sessionGeneration || token !== getAccessToken()) return false;
         if (!result.success || !Array.isArray(result.data?.permissions)) return false;
         const previous = getUser();
         const next = { ...previous, ...result.data };
@@ -101,6 +165,7 @@ const Auth = (() => {
   }
 
   function clearSession() {
+    sessionGeneration++;
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");
@@ -130,16 +195,19 @@ const Auth = (() => {
 
   // ── Auto-refresh (S1-02) ──
 
-  async function refreshAccessToken() {
-    if (refreshRequest) return refreshRequest;
-
-    refreshRequest = performTokenRefresh();
+  async function refreshAccessToken({silent = false} = {}) {
+    if (!refreshRequest) refreshRequest = performTokenRefresh();
+    const request = refreshRequest;
     try {
-      return await refreshRequest;
+      const result = await request;
+      if (result === false && !silent) handleSessionExpired();
+      return result;
     } finally {
-      refreshRequest = null;
+      if (refreshRequest === request) refreshRequest = null;
     }
   }
+
+  function restoreSession() { return refreshAccessToken({silent:true}); }
 
   // Đồng bộ quyền hiện tại từ DB khi mở trang. Access token có thể vẫn còn hạn
   // nhưng ma trận quyền đã được quản trị viên thay đổi.
@@ -148,40 +216,30 @@ const Auth = (() => {
   }
 
   async function performTokenRefresh() {
+    const version = sessionGeneration;
     const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      handleSessionExpired();
-      return false;
-    }
 
     try {
       const response = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
+        credentials: "include", cache: "no-store",
+        headers: { "Content-Type": "application/json", "X-Browser-Session":"1" },
+        body: JSON.stringify(refreshToken ? { refreshToken } : {}),
       });
+      if (version !== sessionGeneration) return null;
 
       if (response.ok) {
         const data = await response.json();
+        if (version !== sessionGeneration) return null;
         const previousUser = getUser();
-        sessionStorage.setItem("accessToken", data.accessToken);
-        sessionStorage.setItem(
-          "user",
-          JSON.stringify({
-            id: data.id,
-            username: data.username,
-            email: data.email,
-            fullName: data.fullName,
-            roles: data.roles,
-            permissions: data.permissions || [],
-            warehouses: data.warehouses || [],
-            territories: data.territories || [],
-            mustChangePassword: Boolean(data.mustChangePassword),
-            avatarUrl: data.avatarUrl || null,
-            avatarThumbnailUrl: data.avatarThumbnailUrl || null,
-          }),
-        );
+        saveSession(data);
         const nextUser = getUser();
+        if (previousUser && previousUser.username !== nextUser.username) {
+          // Do not replay a pending business write under a different account.
+          sessionGeneration++;
+          window.location.reload();
+          return null;
+        }
         if (permissionKey(previousUser) !== permissionKey(nextUser)) {
           applyPermissionBindings();
           window.dispatchEvent(new CustomEvent("auth:permissions-changed", { detail: nextUser }));
@@ -191,7 +249,6 @@ const Auth = (() => {
 
       // Chỉ kết luận phiên hết hạn khi server từ chối refresh token.
       if (response.status >= 400 && response.status < 500) {
-        handleSessionExpired();
         return false;
       }
 
@@ -241,13 +298,17 @@ const Auth = (() => {
   async function logout() {
     const token = getAccessToken();
     const refreshToken = getRefreshToken();
-    if (token || refreshToken) {
+    clearSession();
+    sessionStorage.setItem("sessionSignedOut", "1");
+    notifySession("logout");
+    {
       try {
-        const headers = { "Content-Type": "application/json" };
+        const headers = { "Content-Type": "application/json", "X-Browser-Session":"1" };
         if (token) headers.Authorization = `Bearer ${token}`;
 
         await fetch(`${API_BASE}/auth/logout`, {
           method: "POST",
+          credentials: "include", cache: "no-store",
           headers,
           body: JSON.stringify({ refreshToken }),
         });
@@ -256,18 +317,20 @@ const Auth = (() => {
       }
     }
 
-    clearSession();
+    notifySession("logout");
     window.location.href = getLoginPageUrl();
   }
 
   // ── Authenticated fetch helper ──
 
   async function apiFetch(url, options = {}) {
+    const version = sessionGeneration;
     let token = getAccessToken();
 
     // Check if token needs refresh first
     if (token && isTokenExpiringSoon(token)) {
       const refreshed = await refreshAccessToken();
+      if (version !== sessionGeneration) throw new Error("Session changed");
       if (refreshed) {
         token = getAccessToken();
       } else if (refreshed === false) {
@@ -299,6 +362,7 @@ const Auth = (() => {
       requestUrl,
       { ...options, headers },
     );
+    if (version !== sessionGeneration) throw new Error("Session changed");
 
     // Cập nhật giao diện cả khi token chưa hết hạn nhưng quyền vừa bị thu hồi.
     if (response.status === 403) await syncPermissions();
@@ -306,6 +370,7 @@ const Auth = (() => {
     // Handle 401 — try refresh once
     if (response.status === 401) {
       const refreshed = await refreshAccessToken();
+      if (version !== sessionGeneration) throw new Error("Session changed");
       if (refreshed) {
         const retryToken = getAccessToken();
         const retryResponse = await fetch(
@@ -315,6 +380,7 @@ const Auth = (() => {
             headers: { ...headers, Authorization: `Bearer ${retryToken}` },
           },
         );
+        if (version !== sessionGeneration) throw new Error("Session changed");
         return retryResponse;
       } else if (refreshed === false) {
         throw new Error("Session expired");
@@ -357,7 +423,30 @@ const Auth = (() => {
 
   function requireLogin() {
     if (!isLoggedIn()) {
-      window.location.href = getLoginPageUrl();
+      if (sessionStorage.getItem("sessionSignedOut")) {
+        window.location.href = getLoginPageUrl();
+        return false;
+      }
+      if (!restoringPage) {
+        restoringPage = true;
+        const version = sessionGeneration;
+        restoreSession().then(restored => {
+          if (version !== sessionGeneration) return;
+          if (restored) window.location.reload();
+          else if (restored === false) window.location.href = getLoginPageUrl();
+          else {
+            // Keep the cookie on transient failures and give the page a retry action.
+            const notice = document.createElement("div");
+            notice.setAttribute("role", "alert");
+            notice.textContent = "Không thể kết nối máy chủ để kiểm tra phiên đăng nhập. ";
+            const retry = document.createElement("button");
+            retry.textContent = "Thử lại";
+            retry.onclick = () => window.location.reload();
+            notice.append(retry);
+            document.body.prepend(notice);
+          }
+        });
+      }
       return false;
     }
 
@@ -411,6 +500,8 @@ const Auth = (() => {
 
   // ── Public API ──
   return {
+    login,
+    restoreSession,
     getAccessToken,
     getRefreshToken,
     getUser,

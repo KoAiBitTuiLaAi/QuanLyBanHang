@@ -7,7 +7,7 @@
 ## Sprint 1 — Tài khoản, phân quyền và quản trị người dùng
 
 - S1-01: Trang đăng nhập → Nhập tài khoản, mật khẩu → Đăng nhập.
-- S1-02: Mọi trang đã đăng nhập → Tự gia hạn phiên; nút Đăng xuất trên thanh trên cùng hoặc cuối menu trái.
+- S1-02: Mọi trang đã đăng nhập → Tự gia hạn, mở menu bằng Ctrl+click vẫn giữ phiên; Đăng xuất trên thanh trên cùng hoặc cuối menu trái đồng bộ các tab.
 - S1-03: Trang đăng nhập → Quên mật khẩu → Nhập email → Mở liên kết đặt lại mật khẩu trong email.
 - S1-04: Tổng quan → Nút Đổi mật khẩu trên thanh trên cùng → Nhập mật khẩu hiện tại và mật khẩu mới.
 - S1-05: Hệ thống → Quản lý tài khoản → Ma trận quyền → Chọn quyền theo vai trò, Lưu ma trận quyền.

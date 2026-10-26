@@ -58,6 +58,21 @@ public class TokenBlacklistService {
         return blacklistRepository.existsByToken(token);
     }
 
+    public boolean isSessionRevoked(String token) {
+        String sessionId = jwtUtils.getSessionId(token);
+        return sessionId != null && blacklistRepository.existsByToken("SESSION:" + sessionId);
+    }
+
+    /** The refresh expiry keeps this marker alive for the whole browser session. */
+    @Transactional
+    public void blacklistSession(String refreshToken, String reason) {
+        String sessionId = jwtUtils.getSessionId(refreshToken);
+        if (sessionId == null || blacklistRepository.existsByToken("SESSION:" + sessionId)) return;
+        blacklistRepository.save(TokenBlacklist.builder().token("SESSION:" + sessionId)
+                .username(jwtUtils.getUsernameFromToken(refreshToken)).reason(reason)
+                .expiresAt(jwtUtils.getExpirationFromToken(refreshToken)).build());
+    }
+
     /**
      * Xoá các token đã hết hạn tự nhiên (cleanup — gọi từ scheduled job).
      */

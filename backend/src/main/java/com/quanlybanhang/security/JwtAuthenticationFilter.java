@@ -41,7 +41,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (jwt != null && jwtUtils.validateToken(jwt)
                     && "access".equals(jwtUtils.getTokenType(jwt))) {
                 // Kiểm tra token có bị blacklist (đăng xuất, đổi mật khẩu, khoá tài khoản)
-                if (tokenBlacklistService.isBlacklisted(jwt)) {
+                if (tokenBlacklistService.isBlacklisted(jwt) || tokenBlacklistService.isSessionRevoked(jwt)) {
                     logger.debug("Token bị blacklist, bỏ qua xác thực");
                 } else {
                     String username = jwtUtils.getUsernameFromToken(jwt);

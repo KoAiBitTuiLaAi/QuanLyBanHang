@@ -20,12 +20,16 @@ const stories = [
   assert.ok(process.env.QLBH_TEST_USERNAME && process.env.QLBH_TEST_PASSWORD, 'Set test login environment variables');
   fs.mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
-  const report = { startedAt: new Date().toISOString(), checks: [], errors: [], apiErrors: [], downloads: [] };
+  const report = { startedAt: new Date().toISOString(), checks: [], errors: [], apiErrors: [], expectedAuthResponses: [], downloads: [] };
+  let signedIn = false;
   const check = (name, data = {}) => { report.checks.push({ name, ...data }); console.log(name); };
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
     page.on('pageerror', e => report.errors.push(e.message));
     page.on('response', r => {
+      if (!signedIn && r.status() === 401 && r.url().endsWith('/api/auth/refresh')) {
+        report.expectedAuthResponses.push({url:r.url(),status:401}); return;
+      }
       if (r.url().includes(':8080/api/') && r.status() >= 400) report.apiErrors.push({ url: r.url(), status: r.status() });
     });
     await page.goto(base + '/login');
@@ -33,6 +37,7 @@ const stories = [
     await page.locator('#password').fill(process.env.QLBH_TEST_PASSWORD);
     await page.locator('#login-form button[type="submit"]').click();
     await page.waitForURL(u => !u.pathname.includes('login'));
+    signedIn = true;
     const settle = async () => { await page.waitForTimeout(100); await page.waitForLoadState('networkidle'); };
     async function open(href) {
       await page.locator(`#sidebar-nav a[href="${href}"]`).click();
