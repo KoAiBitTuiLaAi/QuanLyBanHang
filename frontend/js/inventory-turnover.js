@@ -11,6 +11,12 @@
   const state = {
     options: null,
     reportData: null,
+    reportRequest: 0,
+    optionsRequest: 0,
+    exportRequest: 0,
+    reportBusy: false,
+    exportBusy: false,
+    reportQuery: null,
     activeTab: "warehouse",
     skuPage: 1,
     skuPageSize: 20,
@@ -74,6 +80,13 @@
     const exportBtn = $("it-export");
 
     if (!allowed) {
+      state.reportRequest++;
+      state.optionsRequest++;
+      state.exportRequest++;
+      state.reportBusy = false;
+      state.exportBusy = false;
+      state.options = null;
+      clearReport();
       if (accessDeniedEl) accessDeniedEl.hidden = false;
       if (workspaceEl) workspaceEl.hidden = true;
       if (exportBtn) exportBtn.disabled = true;
@@ -82,15 +95,17 @@
 
     if (accessDeniedEl) accessDeniedEl.hidden = true;
     if (workspaceEl) workspaceEl.hidden = false;
-    if (exportBtn) exportBtn.disabled = false;
+    if (exportBtn) exportBtn.disabled = !state.reportData || state.reportBusy || state.exportBusy;
     return true;
   }
 
   async function loadOptions() {
+    const requestId = ++state.optionsRequest;
     try {
       const res = await Auth.apiFetch("/reports/inventory-turnover/options");
       if (res.ok) {
         const body = await res.json();
+        if (requestId !== state.optionsRequest || !Utils.canViewInventoryReport(Auth)) return;
         state.options = body.data || {};
 
         populateFilterOptions();
@@ -132,7 +147,7 @@
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(today.getDate() - 90);
 
-    const formatDateIso = (d) => d.toISOString().slice(0, 10);
+    const formatDateIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     if ($("it-filter-from") && !$("it-filter-from").value) {
       $("it-filter-from").value = formatDateIso(ninetyDaysAgo);
@@ -176,7 +191,27 @@
     return q;
   }
 
+  function clearReport() {
+    state.reportData = null;
+    state.reportQuery = null;
+    state.skuPage = 1;
+    ["it-warehouse-rows", "it-category-rows", "it-matrix-rows", "it-slow-rows", "it-sku-rows"].forEach(id => {
+      if ($(id)) $(id).replaceChildren();
+    });
+    ["it-total-inventory-value", "it-total-qty-sub", "it-tied-up-value", "it-tied-up-percent-sub", "it-slow-moving-skus", "it-total-skus-sub", "it-avg-days", "it-period-days-sub", "it-turnover-rate", "it-annual-turnover-sub", "it-report-time"].forEach(id => {
+      if ($(id)) $(id).textContent = "—";
+    });
+    renderSkuPagination(0);
+    if ($("it-export")) $("it-export").disabled = true;
+  }
+
   async function loadReport() {
+    if (!checkPermissions()) return;
+    const requestId = ++state.reportRequest;
+    state.exportRequest++;
+    state.exportBusy = false;
+    state.reportBusy = false;
+    clearReport();
     showError("");
 
     const fromDate = $("it-filter-from")?.value;
@@ -188,6 +223,7 @@
     }
 
     const query = buildQueryParams();
+    state.reportBusy = true;
 
     try {
       const res = await Auth.apiFetch(`/reports/inventory-turnover?${query.toString()}`);
@@ -196,12 +232,19 @@
       }
 
       const body = await res.json();
+      if (requestId !== state.reportRequest || !Utils.canViewInventoryReport(Auth)) return;
       state.reportData = body.data || {};
+      state.reportQuery = query.toString();
       state.skuPage = 1;
 
       renderAll();
     } catch (e) {
-      showError(e.message || "Lỗi tải dữ liệu báo cáo");
+      if (requestId === state.reportRequest && Utils.canViewInventoryReport(Auth)) showError(e.message || "Lỗi tải dữ liệu báo cáo");
+    } finally {
+      if (requestId === state.reportRequest) {
+        state.reportBusy = false;
+        checkPermissions();
+      }
     }
   }
 
@@ -255,11 +298,11 @@
       html += `<tr>
         <td><strong>${escapeHtml(w.warehouseCode)}</strong></td>
         <td>${escapeHtml(w.warehouseName)}</td>
-        <td class="it-num">${escapeHtml(Utils.formatQuantity(w.physicalQuantity))}</td>
-        <td class="it-num">${escapeHtml(Utils.formatQuantity(w.availableQuantity))}</td>
+        <td class="it-num">${escapeHtml(Utils.formatQuantity(w.totalPhysicalQuantity))}</td>
+        <td class="it-num">${escapeHtml(Utils.formatQuantity(w.totalAvailableQuantity))}</td>
         <td class="it-num" style="font-weight: 600;">${escapeHtml(Utils.formatMoney(w.inventoryValue))}</td>
         <td class="it-num">${escapeHtml(Utils.formatPercent(w.valueSharePercent))}</td>
-        <td class="it-num" style="color: var(--danger); font-weight: 600;">${escapeHtml(Utils.formatMoney(w.slowMovingValue))}</td>
+        <td class="it-num" style="color: var(--danger); font-weight: 600;">${escapeHtml(Utils.formatMoney(w.slowMovingInventoryValue))}</td>
         <td class="it-num">${escapeHtml(Utils.formatTurnoverRate(w.turnoverRate))}</td>
       </tr>`;
     });
@@ -282,10 +325,10 @@
       html += `<tr>
         <td><strong>${escapeHtml(c.categoryCode)}</strong></td>
         <td>${escapeHtml(c.categoryName)}</td>
-        <td class="it-num">${escapeHtml(Utils.formatQuantity(c.physicalQuantity))}</td>
+        <td class="it-num">${escapeHtml(Utils.formatQuantity(c.totalPhysicalQuantity))}</td>
         <td class="it-num" style="font-weight: 600;">${escapeHtml(Utils.formatMoney(c.inventoryValue))}</td>
         <td class="it-num">${escapeHtml(Utils.formatPercent(c.valueSharePercent))}</td>
-        <td class="it-num" style="color: var(--danger); font-weight: 600;">${escapeHtml(Utils.formatMoney(c.slowMovingValue))}</td>
+        <td class="it-num" style="color: var(--danger); font-weight: 600;">${escapeHtml(Utils.formatMoney(c.slowMovingInventoryValue))}</td>
         <td class="it-num">${escapeHtml(c.slowMovingSkuCount || 0)}</td>
         <td class="it-num">${escapeHtml(Utils.formatTurnoverRate(c.turnoverRate))}</td>
       </tr>`;
@@ -309,10 +352,10 @@
       html += `<tr>
         <td>${escapeHtml(m.warehouseName || m.warehouseCode)}</td>
         <td>${escapeHtml(m.categoryName || m.categoryCode)}</td>
-        <td class="it-num">${escapeHtml(Utils.formatQuantity(m.physicalQuantity))}</td>
+        <td class="it-num">${escapeHtml(Utils.formatQuantity(m.totalPhysicalQuantity))}</td>
         <td class="it-num" style="font-weight: 600;">${escapeHtml(Utils.formatMoney(m.inventoryValue))}</td>
-        <td class="it-num">${escapeHtml(Utils.formatPercent(m.valueShareInWarehousePercent))}</td>
-        <td class="it-num" style="color: var(--danger); font-weight: 600;">${escapeHtml(Utils.formatMoney(m.slowMovingValue))}</td>
+        <td class="it-num">${escapeHtml(Utils.formatPercent(m.valueSharePercent))}</td>
+        <td class="it-num" style="color: var(--danger); font-weight: 600;">${escapeHtml(Utils.formatMoney(m.slowMovingInventoryValue))}</td>
       </tr>`;
     });
 
@@ -433,6 +476,13 @@
   }
 
   async function exportExcel() {
+    if (!checkPermissions() || state.exportBusy || state.reportBusy || !state.reportData) return;
+    if (buildQueryParams().toString() !== state.reportQuery) {
+      showError("Bộ lọc đã thay đổi. Bấm Xem báo cáo trước khi xuất Excel.");
+      return;
+    }
+    const requestId = ++state.exportRequest;
+    state.exportBusy = true;
     showError("");
     const exportBtn = $("it-export");
     if (exportBtn) {
@@ -448,6 +498,7 @@
       }
 
       const blob = await res.blob();
+      if (requestId !== state.exportRequest || !Utils.canViewInventoryReport(Auth)) return;
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
@@ -462,12 +513,13 @@
 
       showSuccess("Đã xuất báo cáo Excel thành công.");
     } catch (e) {
-      showError(e.message || "Không thể xuất file Excel");
+      if (requestId === state.exportRequest && Utils.canViewInventoryReport(Auth)) showError(e.message || "Không thể xuất file Excel");
     } finally {
-      if (exportBtn) {
-        exportBtn.disabled = false;
+      if (exportBtn && requestId === state.exportRequest) {
         exportBtn.textContent = "Xuất Excel";
       }
+      if (requestId === state.exportRequest) state.exportBusy = false;
+      checkPermissions();
     }
   }
 
@@ -475,12 +527,13 @@
     if (!Auth.requireLogin()) return;
     await Auth.ready;
 
-    if (!checkPermissions()) {
-      return;
-    }
-
-    window.addEventListener("auth:permissions-changed", () => {
+    window.addEventListener("auth:permissions-changed", async () => {
+      state.optionsRequest++;
+      state.reportRequest++;
+      state.exportRequest++;
+      clearReport();
       if (checkPermissions()) {
+        await loadOptions();
         loadReport();
       }
     });
@@ -544,8 +597,10 @@
       });
     }
 
-    await loadOptions();
-    await loadReport();
+    if (checkPermissions()) {
+      await loadOptions();
+      await loadReport();
+    }
   }
 
   document.addEventListener("DOMContentLoaded", init);

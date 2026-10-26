@@ -157,7 +157,11 @@ Bộ dữ liệu nghiệp vụ demo gồm:
   Doanh số và chiết khấu được tính từ các đơn đã ghi sổ qua service hiện có.
 - Nhật ký thực hiện tạo danh mục, ghi đơn và thay đổi tồn kho.
 
-Số lượng trên là bộ demo đầy đủ khi khởi tạo mới. Mã nghiệp vụ có tiền tố
+Bổ sung S8-04: chỉ tiêu của `sales.demo`, `sales.manager` và ba khu vực demo trong tháng trước, tháng hiện tại và tháng tới. Kỳ trước có nhật ký sửa chỉ tiêu kèm lý do; tiến độ lấy từ đơn của đại lý được phân công. Tài khoản Quản trị viên không được tạo chỉ tiêu cá nhân giả; đăng nhập `sales.demo` để xem tab **Tiến độ của tôi** có dữ liệu. Chạy seed lại không ghi đè các chỉ tiêu đã sửa.
+
+Phiếu tài chính demo `DEMO-TR-NHAP-DA-NHAN-002` liên kết phiếu kho đã xác nhận `DEMO-PTH-DA-NHAN-002`; nhận kho dùng service nghiệp vụ, chỉ cộng tồn một lần.
+
+Các số lượng trên mô tả bộ demo ban đầu; seed bổ sung thêm dữ liệu cho các luồng đã triển khai. Mã nghiệp vụ có tiền tố
 `DEMO-`, tên/ghi chú có nhãn Demo. Có thể tìm các mã này trên trang quản lý.
 Seeder tìm từng bản ghi theo mã/tên đăng nhập, thêm phần còn thiếu và không
 ghi đè dữ liệu đã lưu. Khởi động lại không nhân đôi đơn/phiếu hoặc cộng tồn

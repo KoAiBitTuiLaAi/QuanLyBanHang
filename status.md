@@ -1565,3 +1565,46 @@ Tài liệu API/frontend: `backend/API_DOCUMENTATION.md`, `docs/S8-09_FRONTEND_C
 | An toàn dữ liệu | Idempotent theo mã demo; không sửa bản ghi đã có; `APP_SEED_DEMO_DATA` mặc định tắt | Không lưu dữ liệu nghiệp vụ vào browser storage | Seed chưa được chạy trên database; không tạo hoặc sửa dữ liệu của người dùng |
 
 `mvn -q -DskipTests test-compile` và `git diff --check` đã thành công. Test hiện hữu được cập nhật để tính phiếu chuyển vào cân đối tồn và kiểm tra các bản ghi bổ sung; không chạy test suite. Không khởi động ứng dụng hoặc nạp seed vào database.
+
+## Rà và sửa Sprint 8 + seed Chỉ tiêu doanh số — 26/10/2026
+
+Đối chiếu S8-01–S8-10 với Product Backlog, sheet `4. Product Backlog`. Không commit/merge trong lượt này.
+
+| Story | Backend | Frontend | Kết nối và kiểm chứng |
+|---|---|---|---|
+| S8-01 | Có | Có | Mở Trả hàng đại lý và chọn hóa đơn trên web thật; bộ tích hợp kiểm tra nhập đúng lô, giới hạn đã giao, nhận kho và ma trận quyền. |
+| S8-02 | Đã sửa | Đã sửa | Bắt buộc phiếu kho CONFIRMED đúng hóa đơn; chống giảm trùng theo nguồn, xử lý credit lịch sử chưa liên kết; khóa đại lý → hóa đơn, READ_COMMITTED. Web xác nhận phiếu demo và kiểm tra hóa đơn gốc không đổi. |
+| S8-03 | Đã sửa | Đã sửa | Bắt buộc lô cho SKU quản lý lô, trừ cả tồn tổng/lô, bảo vệ giữ chỗ; sửa ID bảng chi tiết khiến mở phiếu bị lỗi. Web lập phiếu, chặn tự duyệt, đăng nhập người duyệt khác và ghi sổ; H2 kiểm tra rollback và thu hồi quyền. |
+| S8-04 | Có, thêm seed | Đã sửa | Dùng REPORT_SALES/ORDER_APPROVE đúng backend; sửa field summary/options/my-progress, POST userId/territoryId và PUT cập nhật; có chọn nhân viên/khu vực, lý do kỳ khóa và audit thật. Web sửa/khôi phục chỉ tiêu, kiểm tra kỳ khóa, sales.demo xem tiến độ; admin không có chỉ tiêu hiển thị rỗng hoàn tất. |
+| S8-05 | Có | Có | Web bấm Dashboard điều hành và tải lại, có dữ liệu thật; đo thời gian tải cục bộ trong báo cáo live. |
+| S8-06 | Có | Có | Web kiểm tra 5 chiều nhóm, so sánh và tải Excel thật; bộ backend kiểm tra dữ liệu và quyền xem biên lợi nhuận. |
+| S8-07 | Có | Đã sửa | Đọc đúng totalPhysicalQuantity/totalAvailableQuantity/slowMovingInventoryValue/valueSharePercent; chặn phản hồi cũ, xóa dữ liệu và vô hiệu xuất khi mất quyền; dữ liệu thật, các tab, Excel và phản hồi đến sai thứ tự được kiểm tra trên Chrome. |
+| S8-08 | Có | Có | Web lọc kho và tải Excel đúng tên mã kho/ngày; không thay đổi thuật toán xuất. |
+| S8-09 | Đã sửa phần dùng chung | Có | Giá trị ADJUSTED bằng 0 không bị phục hồi tiền gốc; web tuổi nợ có dữ liệu và xuất Excel thật; bộ backend kiểm tra nhóm tuổi nợ/nhân viên/quyền. |
+| S8-10 | Có | Đã sửa | Chặn phản hồi sổ/danh mục đại lý đã lỗi thời; mất quyền xóa dữ liệu và chặn xuất. Sửa tên file ưu tiên filename* UTF-8 để giữ đúng đuôi PDF/XLSX; đã tải cả hai từ backend thật. |
+
+Seed bổ sung: nhân viên sales.demo/sales.manager và ba khu vực, tháng trước/hiện tại/tới; kỳ trước có sửa kèm lý do và audit. Bật opt-in mới chạy; chỉ thêm scope chưa có, không ghi đè chỉ tiêu, mật khẩu hay dữ liệu người dùng. Thêm phiếu kho đã nhận bằng service và nháp tài chính có liên kết nguồn; nháp cũ không nguồn có thể hủy/lập lại, không tự backfill tiền. Kịch bản seed H2 kiểm tra tái chạy không nhân đôi và bảo toàn tồn cùng các bản ghi đã sửa.
+
+Kiểm thử thực tế dùng localhost:5500 + MySQL localhost:3306 qua backend localhost:8080; đã nạp seed mới, không reset DB. Giao dịch QA được ghi rõ, các nháp điều chỉnh sinh ở lượt kiểm thử chưa hoàn tất được từ chối qua UI; có một phiếu QA ghi giảm 0.0001 đơn vị và phiếu tài chính demo được xác nhận. Các khoản sửa chỉ tiêu hiện tại đã được khôi phục giá trị ban đầu, audit vẫn giữ lại đúng nghiệp vụ.
+
+Antigravity: Opus hỗ trợ rà lỗi zero-adjustment và stale response; sau khi Opus báo hết quota, Gemini 3.8 Flash High rà tiếp liên kết nguồn. Các gợi ý được đối chiếu với repository/model và kiểm thử trước khi chọn áp dụng.
+
+Minh chứng Chrome và file tải thật: `E:/DevTemp/UserTemp/qlbh-s8-live-20261026/`; script đọc thật có thể chạy lại: `tests/sprint8-live.browser.cjs` (QLBH_TEST_USERNAME/QLBH_TEST_PASSWORD; frontend và backend phải chạy). Không giả response trong script live; riêng ca race chỉ trì hoãn phản hồi thật, không thay nội dung.
+
+Kết quả cuối trên bản jar đã khởi động lại ngày 26/10/2026:
+
+| Kiểm tra | Kết quả |
+|---|---|
+| Backend liên quan Sprint 8 | 183 ca trong 24 lớp, 0 lỗi, 0 bỏ qua; gồm rollback tồn/lô, ghi giảm đồng thời trên nhiều hóa đơn cùng đại lý, quyền và seed idempotent. |
+| Node unit/regression | 299/299 đạt. |
+| Chrome fixture giảm công nợ | 16/16 đạt; kiểm tra nguồn kho, payload, lỗi giao dịch và thu hồi quyền. |
+| Chrome hồi quy menu tài chính Sprint 7 | Đạt; dữ liệu fixture, không ghi DB. |
+| Chrome + API thật + MySQL | Cả 10 menu Sprint 8 đạt trên desktop và mobile; 7 file Excel/PDF tải được và đúng định dạng; không có lỗi JavaScript hoặc API. |
+| Thu hồi quyền trên DB thật | REPORT_INVENTORY và FINANCE_VIEW_DEBT: JWT đang dùng nhận 403 ở request kế tiếp; phản hồi đến muộn không khôi phục bảng/nút xuất. Cấp lại tải được dữ liệu; đã khôi phục ma trận ROLE_VIEWER ban đầu. |
+| Đóng gói và diff | `mvn -q -DskipTests package`, `git diff --check` đạt. |
+
+S8-10 lấy danh mục đại lý trực tiếp từ `/api/finance/debt` theo FINANCE_VIEW_DEBT, tránh gọi `/api/dealers` cần quyền khác rồi bị điều hướng 403 trước khi fallback. Nháp S8-02 cũ thiếu nguồn kho được khóa nút xác nhận, có thể hủy và lập lại có nguồn; không sửa lịch sử xác nhận cũ.
+
+`live-report.json`, `matrix-report.json`, `adjustment-report.json` và `qa-cleanup-report.json` lưu trong thư mục minh chứng trên. Lượt workflow đầu có sáu kiểm tra đã đạt rồi dừng ở fixture SKU cũ không quản lý lô; sau đó đã kiểm tra lại độc lập bằng SKU thực sự quản lý lô và đạt, đồng thời từ chối các nháp QA dư. Không diễn giải lượt đầu là toàn bộ workflow đã đạt.
+
+Dashboard tải khoảng 701 ms trong lượt cuối trên máy local có dữ liệu demo; đây là phép đo cục bộ, chưa xác nhận SLA dưới 2 giây cho dữ liệu lớn hoặc nhiều người dùng. Backend hiện chạy bản jar mới, tắt seed và email nhắc nợ cho phiên kiểm thử; không sửa cấu hình seed trong script chạy của người dùng.

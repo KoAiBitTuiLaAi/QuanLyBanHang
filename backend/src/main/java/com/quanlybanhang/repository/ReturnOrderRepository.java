@@ -16,6 +16,10 @@ public interface ReturnOrderRepository extends JpaRepository<ReturnOrder, Long>,
     Optional<ReturnOrder> findForUpdate(@Param("id") Long id);
     @Query("select coalesce(sum(i.returnQuantity),0) from ReturnOrderItem i where i.invoiceItem.id = :itemId and i.returnOrder.status = com.quanlybanhang.model.ReturnOrderStatus.CONFIRMED")
     BigDecimal confirmedQuantity(@Param("itemId") Long itemId);
+    @Query("select coalesce(sum(i.returnQuantity),0) from ReturnOrderItem i where i.invoiceItem.id = :itemId and i.returnOrder.dealerReturn.id = :sourceId and i.returnOrder.status = com.quanlybanhang.model.ReturnOrderStatus.CONFIRMED")
+    BigDecimal confirmedSourceQuantity(@Param("sourceId") Long sourceId, @Param("itemId") Long itemId);
+    @Query("select coalesce(sum(i.returnQuantity),0) from ReturnOrderItem i where i.invoiceItem.id = :itemId and i.returnOrder.dealerReturn is null and i.returnOrder.status = com.quanlybanhang.model.ReturnOrderStatus.CONFIRMED")
+    BigDecimal confirmedLegacyQuantity(@Param("itemId") Long itemId);
     @Query("select coalesce(sum(i.returnAmount),0) from ReturnOrderItem i where i.invoiceItem.id = :itemId and i.returnOrder.status = com.quanlybanhang.model.ReturnOrderStatus.CONFIRMED")
     BigDecimal confirmedAmount(@Param("itemId") Long itemId);
     interface OrderCredit { Long getOrderId(); BigDecimal getAmount(); }

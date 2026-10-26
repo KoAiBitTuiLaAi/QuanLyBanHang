@@ -459,7 +459,9 @@ class DealerReturnIntegrationTest {
                         .content(json.writeValueAsString(Map.of("username", username, "password", password))))
                 .andReturn();
         assertThat(res.getResponse().getStatus()).isEqualTo(200);
-        return json.readTree(res.getResponse().getContentAsString()).at("/data/accessToken").asText();
+        String token = json.readTree(res.getResponse().getContentAsString()).path("accessToken").asText();
+        assertThat(token).isNotBlank();
+        return token;
     }
 
     private JsonNode call(MockHttpServletRequestBuilder builder, String token, Object body, int expectedStatus) throws Exception {

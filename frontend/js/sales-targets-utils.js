@@ -110,8 +110,8 @@
       errors.push('Kỳ tháng không hợp lệ (định dạng YYYY-MM).');
     }
     const amount = Number(draft.targetAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      errors.push('Chỉ tiêu phải là số không âm.');
+    if (!Number.isFinite(amount) || amount <= 0) {
+      errors.push('Chỉ tiêu phải là số lớn hơn 0.');
     }
     if (amount > 999_999_999_999) {
       errors.push('Chỉ tiêu không được vượt quá 999 tỷ.');

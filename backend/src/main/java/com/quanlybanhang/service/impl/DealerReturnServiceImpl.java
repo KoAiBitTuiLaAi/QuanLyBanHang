@@ -343,11 +343,6 @@ public class DealerReturnServiceImpl implements DealerReturnService {
             throw new IllegalArgumentException("Kho thương mại nhận hàng tốt không được là kho hàng lỗi ('" + normalWarehouse.getCode() + "')");
         }
 
-        String returnCode = normalizeReturnCode(request.getReturnCode());
-        if (dealerReturnRepository.existsByReturnCode(returnCode)) {
-            throw new IllegalArgumentException("Mã phiếu trả hàng '" + returnCode + "' đã tồn tại");
-        }
-
         // Kiểm tra tổng số lượng trả theo từng dòng hóa đơn gốc (gộp các dòng trùng invoiceItemId trong cùng request)
         Map<Long, BigDecimal> requestedByInvoiceItemId = new LinkedHashMap<>();
         List<ResolvedLineInput> resolvedInputs = new ArrayList<>();
@@ -378,6 +373,11 @@ public class DealerReturnServiceImpl implements DealerReturnService {
 
             requestedByInvoiceItemId.merge(invoiceItem.getId(), returnQty, BigDecimal::add);
             resolvedInputs.add(new ResolvedLineInput(invoiceItem, itemReq, returnQty.setScale(4, RoundingMode.HALF_UP), itemReason));
+        }
+
+        String returnCode = normalizeReturnCode(request.getReturnCode());
+        if (dealerReturnRepository.existsByReturnCode(returnCode)) {
+            throw new IllegalArgumentException("Mã phiếu trả hàng '" + returnCode + "' đã tồn tại");
         }
 
         // Tiêu chí 2: Số lượng trả không vượt số lượng đã giao trừ phần đã trả trước đó

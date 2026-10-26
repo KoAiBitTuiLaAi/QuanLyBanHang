@@ -27,6 +27,8 @@
     selectedDealerId: null,
     currentStatement: null,
     loading: false,
+    statementRequest: 0,
+    dealerRequest: 0,
     exportingPdf: false,
     exportingExcel: false,
     activeTab: "aging",
@@ -202,6 +204,14 @@
       if (statementTabPanel) statementTabPanel.hidden = true;
       if (agingWorkspace) agingWorkspace.hidden = true;
       state.currentStatement = null;
+      state.statementRequest++;
+      state.dealerRequest++;
+      state.dealers = [];
+      if ($("filter-dealer")) $("filter-dealer").replaceChildren();
+      state.loading = false;
+      ["btn-export-excel", "btn-export-pdf", "btn-view-statement"].forEach(id => { if ($(id)) $(id).disabled = true; });
+      if ($("statement-loading-state")) $("statement-loading-state").hidden = true;
+      if ($("statement-tbody")) $("statement-tbody").replaceChildren();
       state.agingRequest++;
       state.agingData = null;
       state.agingBusy = false;
@@ -233,51 +243,23 @@
   }
 
   /**
-   * Tải danh sách đại lý (ưu tiên API dealers, fallback sang API debt)
+   * Tải danh sách đại lý trong phạm vi quyền xem công nợ
    */
   async function loadDealers() {
+    const requestId = ++state.dealerRequest;
     const select = $("filter-dealer");
     if (!select) return;
 
     select.innerHTML = '<option value="">-- Đang tải danh sách đại lý... --</option>';
 
     try {
-      let dealerList = [];
-
-      // Thử gọi /dealers?size=200 trước
-      try {
-        const res = await Auth.apiFetch("/dealers?size=200");
-        const json = await res.json().catch(() => null);
-        if (res.ok && json?.success && json?.data?.content && Array.isArray(json.data.content)) {
-          dealerList = json.data.content.map(d => ({
-            id: d.id,
-            code: d.code || "",
-            name: d.name || d.customerName || `Đại lý #${d.id}`,
-          }));
-        } else if (res.ok && json?.success && Array.isArray(json.data)) {
-          dealerList = json.data.map(d => ({
-            id: d.id,
-            code: d.code || "",
-            name: d.name || d.customerName || `Đại lý #${d.id}`,
-          }));
-        }
-      } catch (e) {
-        // Fallback
-      }
-
-      // Nếu chưa có, fallback sang /finance/debt
-      if (!dealerList.length) {
-        const res2 = await Auth.apiFetch("/finance/debt");
-        const json2 = await res2.json().catch(() => null);
-        if (res2.ok && json2?.success && Array.isArray(json2.data)) {
-          dealerList = json2.data.map(d => ({
-            id: d.dealerId,
-            code: d.dealerCode || "",
-            name: d.customerName || `Đại lý #${d.dealerId}`,
-          }));
-        }
-      }
-
+      // FINANCE_VIEW_DEBT is sufficient for this page. Calling /dealers first
+      // causes Auth.apiFetch to redirect on 403 before any fallback can run.
+      const response = await Auth.apiFetch("/finance/debt");
+      const json = await response.json().catch(() => null);
+      if (requestId !== state.dealerRequest || !canViewDebtStatement(Auth.getUser())) return;
+      if (!response.ok || !json?.success || !Array.isArray(json.data)) throw new Error(json?.message || "Không tải được danh sách đại lý có công nợ.");
+      const dealerList = json.data.map(d => ({id:d.dealerId,code:d.dealerCode||"",name:d.customerName||d.dealerName||`Đại lý #${d.dealerId}`}));
       state.dealers = dealerList;
 
       // Kiểm tra xem người dùng hiện tại có vai trò ROLE_DEALER không
@@ -302,6 +284,7 @@
         select.disabled = true;
       }
     } catch (err) {
+      if (requestId !== state.dealerRequest || !canViewDebtStatement(Auth.getUser())) return;
       select.innerHTML = '<option value="">-- Không thể tải danh sách đại lý --</option>';
       showError("Lỗi tải danh mục đại lý: " + (err.message || "Vui lòng thử lại."));
     }
@@ -360,6 +343,9 @@
    * Tải sổ chi tiết công nợ từ server
    */
   async function loadStatement(dealerId, from, to) {
+    if (!canViewDebtStatement(Auth.getUser())) return;
+    const requestId = ++state.statementRequest;
+    state.currentStatement = null;
     showError(null);
     state.loading = true;
 
@@ -381,6 +367,7 @@
       const url = `/finance/debt/${encodeURIComponent(dealerId)}/statement?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
       const response = await Auth.apiFetch(url);
       const json = await response.json().catch(() => null);
+      if (requestId !== state.statementRequest || !canViewDebtStatement(Auth.getUser())) return;
 
       if (!response.ok || !json?.success || !json?.data) {
         const errorMsg = json?.message || `Lỗi tải sổ chi tiết công nợ (HTTP ${response.status}).`;
@@ -393,12 +380,15 @@
       if (btnExcel) btnExcel.disabled = false;
       if (btnPdf) btnPdf.disabled = false;
     } catch (err) {
+      if (requestId !== state.statementRequest || !canViewDebtStatement(Auth.getUser())) return;
       showError(err.message || "Không thể tải sổ chi tiết công nợ.");
       if (initialState) initialState.hidden = false;
     } finally {
-      state.loading = false;
-      if (loadingState) loadingState.hidden = true;
-      if (btnSubmit) btnSubmit.disabled = false;
+      if (requestId === state.statementRequest) {
+        state.loading = false;
+        if (loadingState) loadingState.hidden = true;
+        if (btnSubmit) btnSubmit.disabled = !canViewDebtStatement(Auth.getUser());
+      }
     }
   }
 
@@ -514,6 +504,7 @@
    * Xuất file PDF hoặc Excel
    */
   async function exportStatement(format) {
+    if (!canViewDebtStatement(Auth.getUser()) || state.loading) return;
     const isPdf = format.toLowerCase() === "pdf";
     if (isPdf && state.exportingPdf) return;
     if (!isPdf && state.exportingExcel) return;
@@ -524,6 +515,7 @@
     }
 
     const { dealerId, dealerCode, from, to } = state.currentStatement;
+    const requestId = state.statementRequest;
     const btn = isPdf ? $("btn-export-pdf") : $("btn-export-excel");
     const originalText = btn ? btn.textContent : "";
 
@@ -545,21 +537,11 @@
       }
 
       const blob = await response.blob();
+      if (requestId !== state.statementRequest || !canViewDebtStatement(Auth.getUser())) return;
 
-      // Lấy filename từ Content-Disposition header hoặc tự tạo
-      let filename = "";
-      const disposition = response.headers.get("Content-Disposition");
-      if (disposition && disposition.includes("filename=")) {
-        const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
-        if (match && match[1]) {
-          filename = decodeURIComponent(match[1]);
-        }
-      }
-
-      if (!filename) {
-        const cleanCode = (dealerCode || String(dealerId)).replace(/[^\w.-]/g, "_");
-        filename = `So-cong-no_${cleanCode}_${from}_${to}.${format}`;
-      }
+      const cleanCode = (dealerCode || String(dealerId)).replace(/[^\w.-]/g, "_");
+      const filename = DebtStatementUtils.exportFilename(response.headers.get("Content-Disposition"),
+        `So-cong-no_${cleanCode}_${from}_${to}.${format}`);
 
       // Kích hoạt tải về
       const downloadUrl = window.URL.createObjectURL(blob);
@@ -575,13 +557,13 @@
       }, 200);
 
     } catch (err) {
-      showError("Lỗi xuất tệp: " + (err.message || "Vui lòng thử lại."));
+      if (requestId === state.statementRequest && canViewDebtStatement(Auth.getUser())) showError("Lỗi xuất tệp: " + (err.message || "Vui lòng thử lại."));
     } finally {
       if (isPdf) state.exportingPdf = false;
       else state.exportingExcel = false;
 
       if (btn) {
-        btn.disabled = false;
+        btn.disabled = !state.currentStatement || state.loading || !canViewDebtStatement(Auth.getUser());
         btn.textContent = originalText;
       }
     }
@@ -701,10 +683,18 @@
 
     // Lắng nghe thay đổi ma trận quyền tức thì
     window.addEventListener("auth:permissions-changed", async () => {
+      state.statementRequest++;
+      state.currentStatement = null;
+      state.loading = false;
+      if ($("statement-result-panel")) $("statement-result-panel").hidden = true;
+      if ($("statement-loading-state")) $("statement-loading-state").hidden = true;
+      ["btn-export-excel", "btn-export-pdf"].forEach(id => { if ($(id)) $(id).disabled = true; });
       state.agingRequest++;
       state.agingData = null;
       state.agingBusy = false;
       const allowed = await syncPermissions();
+      if ($("btn-view-statement")) $("btn-view-statement").disabled = !allowed;
+      if (allowed) await loadDealers();
       if (allowed && state.activeTab === "aging") loadAgingLedger();
     });
     loadAgingLedger();

@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({DemoDataSeeder.class, OrderServiceImpl.class, OrderShipmentService.class, WarehouseServiceImpl.class, WarehouseTransferService.class,
-        UnitConversionServiceImpl.class, VolumeDiscountPolicyServiceImpl.class,
+        UnitConversionServiceImpl.class, VolumeDiscountPolicyServiceImpl.class, com.quanlybanhang.service.impl.DealerReturnServiceImpl.class,
         DealerDebtServiceImpl.class,
         AuditLogServiceImpl.class, DemoDataSeederTest.EncoderConfig.class})
 class DemoDataSeederTest {
@@ -84,6 +84,9 @@ class DemoDataSeederTest {
     @Autowired OrderDraftRepository orderDrafts;
     @Autowired PaymentReminderLogRepository paymentReminderLogs;
     @Autowired AuditLogRepository auditLogs;
+    @Autowired DealerReturnRepository dealerReturns;
+    @Autowired ReturnOrderRepository returnOrders;
+    @Autowired SalesTargetRepository salesTargets;
 
     @BeforeEach
     void systemAccounts() {
@@ -155,10 +158,13 @@ class DemoDataSeederTest {
                 Map.entry("conversions", 8L), Map.entry("dealers", 5L), Map.entry("deliveryPoints", 6L),
                 Map.entry("assignments", 5L), Map.entry("priceLists", 3L), Map.entry("priceItems", 24L),
                 Map.entry("priceHistory", 8L), Map.entry("policies", 3L), Map.entry("tiers", 5L),
-                Map.entry("orders", 14L), Map.entry("vouchers", 17L), Map.entry("inventories", 13L),
+                Map.entry("orders", 14L), Map.entry("vouchers", 17L), Map.entry("inventories", 14L),
                 Map.entry("transfers", 2L), Map.entry("locations", 6L), Map.entry("locationProducts", 16L),
                 Map.entry("debtPayments", 2L), Map.entry("invoiceAdjustments", 1L), Map.entry("debtRiskConfigs", 1L),
                 Map.entry("orderDrafts", 1L), Map.entry("paymentReminderLogs", 1L)));
+        assertThat(salesTargets.findAll()).filteredOn(t -> t.getScopeType() == SalesTargetScopeType.EMPLOYEE).hasSize(6);
+        assertThat(salesTargets.findAll()).anyMatch(t -> Boolean.TRUE.equals(t.getLocked()) && t.getLastModifyReason() != null);
+        assertThat(returnOrders.findAll()).allMatch(r -> r.getDealerReturn() != null && r.getDealerReturn().getStatus() == DealerReturnStatus.CONFIRMED);
         assertThat(categories.findAll()).allSatisfy(category ->
                 assertThat(category.getLevel()).isEqualTo(category.getParent() == null ? 1 : category.getParent().getLevel() + 1));
         assertThat(priceLists.findAll()).allMatch(price -> Boolean.TRUE.equals(price.getHasOrders()));
@@ -214,12 +220,19 @@ class DemoDataSeederTest {
                     }
                 }
             }
+            for (DealerReturn receipt : dealerReturns.findAll()) {
+                if (receipt.getStatus() != DealerReturnStatus.CONFIRMED) continue;
+                for (DealerReturnItem line : receipt.getItems()) {
+                    if (line.getTargetWarehouse().getId().equals(inventory.getWarehouse().getId())
+                            && line.getProduct().getId().equals(inventory.getProduct().getId())) expected = expected.add(line.getBaseReturnQuantity());
+                }
+            }
             assertThat(inventory.getBaseQuantity()).isEqualByComparingTo(expected).isNotNegative();
         }
         Long kenId = products.findByCode("DEMO-SP-KEN330").orElseThrow().getId();
         Long hcmId = warehouses.findByCode("DEMO-KHO-HCM").orElseThrow().getId();
         assertThat(inventories.findByWarehouseIdAndProductId(hcmId, kenId).orElseThrow().getBaseQuantity())
-                .isEqualByComparingTo("840");
+                .isEqualByComparingTo("840.25");
         for (Product product : products.findAll()) {
             BigDecimal expectedRevenue = orders.findByStatus("RECORDED").stream().flatMap(order -> order.getItems().stream())
                     .filter(item -> item.getProduct().getId().equals(product.getId())).map(OrderItem::getTotalAmount)
@@ -251,7 +264,7 @@ class DemoDataSeederTest {
         orders.findByOrderCode("DEMO-DH-DOUONG").orElseThrow().setStatus("CANCELLED");
         Warehouse hcm = warehouses.findByCode("DEMO-KHO-HCM").orElseThrow();
         warehouseService.adjustInventory(WarehouseVoucherRequest.builder().voucherCode("MANUAL-ADJUST")
-                .warehouseId(hcm.getId()).productId(ken.getId()).unit("lon").quantity(new BigDecimal("900")).build(), "admin");
+                .warehouseId(hcm.getId()).items(List.of(com.quanlybanhang.dto.request.WarehouseVoucherItemRequest.builder().productId(ken.getId()).unit("lon").quantity(new BigDecimal("900")).lotNumber("DEMO-LO-KEN330-MOI-DEMO-KHO-HCM").expiryDate(java.time.LocalDate.now().plusMonths(8)).build())).build(), "admin");
         entityManager.flush();
         Map<String, Long> before = counts();
         seeder.seed(true, true, "new-bootstrap-password");
@@ -323,6 +336,9 @@ class DemoDataSeederTest {
         counts.put("paymentReminderLogs", paymentReminderLogs.count());
         counts.put("inventories", inventories.count());
         counts.put("auditLogs", auditLogs.count());
+        counts.put("dealerReturns", dealerReturns.count());
+        counts.put("returnOrders", returnOrders.count());
+        counts.put("salesTargets", salesTargets.count());
         return counts;
     }
 }

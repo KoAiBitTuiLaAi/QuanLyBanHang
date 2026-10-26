@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * - Tuyệt đối không dùng role-based fallback (ví dụ chỉ có ROLE_WAREHOUSE_MANAGER nhưng bị gỡ REPORT_INVENTORY phải trả 403).
  */
 @WebMvcTest(controllers = InventoryTurnoverReportController.class)
-@Import({SecurityConfig.class, JwtAuthenticationFilter.class, GlobalExceptionHandler.class})
+@Import({SecurityConfig.class, JwtAuthenticationFilter.class, GlobalExceptionHandler.class, AuthEntryPointJwt.class, RestAccessDeniedHandler.class})
 class InventoryTurnoverReportSecurityTest {
 
     @Autowired
@@ -55,7 +55,10 @@ class InventoryTurnoverReportSecurityTest {
     private JwtUtils jwtUtils;
 
     @MockBean
-    private UserDetailsService userDetailsService;
+    private UserDetailsServiceImpl userDetailsService;
+
+    @MockBean
+    private com.quanlybanhang.service.TokenBlacklistService tokenBlacklistService;
 
     @MockBean
     private UserRepository userRepository;
@@ -84,7 +87,7 @@ class InventoryTurnoverReportSecurityTest {
         when(reportService.getValuationByWarehouseAndCategory(any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of());
         when(reportService.getSkuTurnovers(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
-                .thenReturn(new PageImpl<>(List.of()));
+                .thenReturn(new PageImpl<>(List.of(), org.springframework.data.domain.PageRequest.of(0, 20), 0));
         when(reportService.getSlowMovingSkus(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of());
         when(excelExportService.exportToExcel(any())).thenReturn(new byte[]{1, 2, 3, 4});

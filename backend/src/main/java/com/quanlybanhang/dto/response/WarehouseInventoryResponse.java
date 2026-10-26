@@ -26,6 +26,7 @@ public class WarehouseInventoryResponse {
     private Long productId;
     private String productCode;
     private String productName;
+    private Boolean manageLot;
 
     /**
      * Số lượng tồn ghi sổ theo đơn vị cơ sở (vd: 240 lon).

@@ -25,6 +25,10 @@ public class CreateReturnOrderRequest {
     @Positive
     private Long invoiceId;
 
+    @NotNull(message = "Bắt buộc chọn phiếu trả đã được kho xác nhận")
+    @Positive
+    private Long dealerReturnId;
+
     @NotBlank(message = "Ly do tra hang khong duoc de trong")
     @Size(max = 500)
     private String returnReason;

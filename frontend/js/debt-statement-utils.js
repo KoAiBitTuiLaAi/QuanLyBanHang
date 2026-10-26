@@ -177,6 +177,18 @@ const DebtStatementUtils = (() => {
     return `/api/finance/debt/${cleanDealerId}/statement/export?from=${cleanFrom}&to=${cleanTo}&format=${cleanFormat}`;
   }
 
+  // Spring may send both a MIME-encoded filename and RFC 5987 filename*.
+  // Prefer filename*; never use the MIME word as a literal download filename.
+  function exportFilename(disposition, fallback) {
+    const encoded = disposition?.match(/(?:^|;)\s*filename\*\s*=\s*(?:"?)(?:UTF-8'')([^";]+)/i);
+    if (encoded) {
+      try { return decodeURIComponent(encoded[1].trim()).replace(/[\\/\x00-\x1f]/g, '_'); } catch { /* use fallback */ }
+    }
+    const plain = disposition?.match(/(?:^|;)\s*filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
+    const filename = (plain?.[1] || plain?.[2] || '').trim();
+    return filename && !filename.startsWith('=?') ? filename.replace(/[\\/\x00-\x1f]/g, '_') : fallback;
+  }
+
   return {
     escapeHtml,
     formatMoney,
@@ -187,6 +199,7 @@ const DebtStatementUtils = (() => {
     getSourceTypeInfo,
     getDefaultDateRange,
     buildExportUrl,
+    exportFilename,
   };
 })();
 

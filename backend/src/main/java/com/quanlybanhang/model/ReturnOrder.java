@@ -46,6 +46,11 @@ public class ReturnOrder {
     @JsonIgnore
     private Invoice invoice;
 
+    /** Confirmed warehouse receipt underlying this credit; nullable for historical records only. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dealer_return_id")
+    private DealerReturn dealerReturn;
+
     /** Dai ly tra hang. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dealer_id", nullable = false)

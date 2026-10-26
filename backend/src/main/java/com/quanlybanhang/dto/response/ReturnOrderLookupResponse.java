@@ -11,7 +11,9 @@ public final class ReturnOrderLookupResponse {
     public record InvoiceOption(Long invoiceId, String invoiceCode, String invoiceNumber, Long dealerId,
             String dealerCode, String dealerName, LocalDateTime invoiceDate, InvoiceStatus status) {}
     public record Source(Long invoiceId, String invoiceCode, String invoiceNumber, Long dealerId,
-            String dealerCode, String dealerName, List<Item> items) {}
+            String dealerCode, String dealerName, List<Item> items, List<WarehouseReturn> warehouseReturns) {}
+    public record WarehouseReturn(Long dealerReturnId, String returnCode, LocalDateTime confirmedAt, List<WarehouseItem> items) {}
+    public record WarehouseItem(Long invoiceItemId, BigDecimal receivedQuantity, BigDecimal remainingQuantity) {}
     public record Item(Long invoiceItemId, String productCode, String productName, String unit,
             BigDecimal invoicedQuantity, BigDecimal confirmedReturnQuantity, BigDecimal remainingQuantity,
             BigDecimal invoiceUnitPrice, BigDecimal originalDiscountAmount, BigDecimal originalLineTotal,

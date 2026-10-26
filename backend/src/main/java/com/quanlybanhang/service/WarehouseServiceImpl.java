@@ -921,6 +921,8 @@ public class WarehouseServiceImpl implements WarehouseService {
                 || upperReason.startsWith("[EXPIRED]") || upperReason.startsWith("[OTHER]"))) {
             throw new IllegalArgumentException("Lý do phải thuộc hàng hỏng, hàng mất, hết hạn hoặc lý do khác");
         }
+        if (reason.substring(reason.indexOf(']') + 1).isBlank() || reason.length() > 500)
+            throw new IllegalArgumentException("Bắt buộc ghi chi tiết lý do, tối đa 500 ký tự gồm mã lý do");
         List<WarehouseVoucherItemRequest> lines = normalizeItemRequests(request, WarehouseVoucherType.ADJUSTMENT);
         if (lines.isEmpty()) throw new IllegalArgumentException("Phiếu điều chỉnh phải có ít nhất một mặt hàng");
 
@@ -952,6 +954,14 @@ public class WarehouseServiceImpl implements WarehouseService {
             String unit = line.getUnit() == null || line.getUnit().isBlank() ? product.getUnit() : line.getUnit().trim();
             BigDecimal factor = unitConversionService.getConversionFactor(product, unit);
             BigDecimal baseQty = line.getQuantity().multiply(factor).negate();
+            if (Boolean.TRUE.equals(product.getManageLot()) && lot.isBlank())
+                throw new IllegalArgumentException("Sản phẩm quản lý lô bắt buộc chọn số lô điều chỉnh");
+            if (!lot.isBlank()) {
+                WarehouseLotInventory existingLot = lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(warehouse.getId(), product.getId(), lot)
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lô trong kho nhận điều chỉnh"));
+                if (existingLot.getBaseQuantity().add(baseQty).signum() < 0)
+                    throw new IllegalArgumentException("Tồn lô không đủ để lập phiếu điều chỉnh");
+            }
             WarehouseVoucherItem item = WarehouseVoucherItem.builder().voucher(voucher).product(product)
                     .unit(unit).quantity(line.getQuantity()).conversionFactor(factor).baseUnit(product.getUnit())
                     .baseQuantity(baseQty).price(line.getPrice()).totalAmount(line.getLossValue())
@@ -996,9 +1006,11 @@ public class WarehouseServiceImpl implements WarehouseService {
             if (movement.signum() >= 0 || after.signum() < 0 || after.compareTo(reserved) < 0)
                 throw new IllegalArgumentException("Tồn kho khả dụng không đủ để ghi nhận tổn thất của " + product.getName());
 
+            if (Boolean.TRUE.equals(product.getManageLot()) && (item.getLotNumber() == null || item.getLotNumber().isBlank()))
+                throw new IllegalArgumentException("Phiếu thiếu số lô của sản phẩm quản lý lô; cần lập lại có số lô");
             if (item.getLotNumber() != null && !item.getLotNumber().isBlank()) {
-                WarehouseLotInventory lot = lotInventoryRepository.findByWarehouseIdAndProductIdAndLotNumber(
-                                warehouse.getId(), product.getId(), item.getLotNumber())
+                WarehouseLotInventory lot = lotInventoryRepository.findByWarehouseIdAndProductIdForUpdate(warehouse.getId(), product.getId()).stream()
+                        .filter(l -> item.getLotNumber().equals(l.getLotNumber())).findFirst()
                         .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lô " + item.getLotNumber()));
                 BigDecimal lotAfter = Objects.requireNonNullElse(lot.getBaseQuantity(), BigDecimal.ZERO).add(movement);
                 if (lotAfter.signum() < 0) throw new IllegalArgumentException("Tồn lô không đủ để ghi nhận tổn thất");
@@ -2648,6 +2660,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .productCode(p != null ? p.getCode() : null)
                 .productName(p != null ? p.getName() : null)
                 .baseQuantity(physical)
+                .manageLot(p != null && Boolean.TRUE.equals(p.getManageLot()))
                 .inTransitQuantity(inv.getInTransitQuantity() != null ? inv.getInTransitQuantity() : BigDecimal.ZERO)
                 .baseUnit(inv.getBaseUnit())
                 .reservedQuantity(reserved)

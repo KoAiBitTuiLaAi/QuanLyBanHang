@@ -22,6 +22,8 @@ import java.util.stream.Collectors;
 public class ReturnOrderServiceImpl implements ReturnOrderService {
     private final ReturnOrderRepository returnOrderRepository;
     private final InvoiceRepository invoiceRepository;
+    private final DealerReturnRepository dealerReturnRepository;
+    private final DealerRepository dealerRepository;
     private final InvoiceAdjustmentRepository adjustmentRepository;
     private final AuditLogService auditLogService;
     private final DealerDebtService dealerDebtService;
@@ -31,7 +33,11 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
         String term = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
         if (term.length() > 100) throw bad("Từ khóa tối đa 100 ký tự");
         Specification<Invoice> spec = (root, query, cb) -> {
-            var usable = root.get("status").in(InvoiceStatus.ISSUED, InvoiceStatus.ADJUSTED);
+            var received = query.subquery(Long.class);
+            var physical = received.from(DealerReturn.class);
+            received.select(physical.get("id")).where(cb.equal(physical.get("invoice"), root),
+                    cb.equal(physical.get("status"), DealerReturnStatus.CONFIRMED));
+            var usable = cb.and(root.get("status").in(InvoiceStatus.ISSUED, InvoiceStatus.ADJUSTED), cb.exists(received));
             if (term.isEmpty()) return usable;
             String pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
             return cb.and(usable, cb.or(
@@ -59,17 +65,19 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
                             item.getTotalAmount(), returnOrderRepository.confirmedAmount(item.getId()));
                 }).toList();
         return new ReturnOrderLookupResponse.Source(invoice.getId(), invoice.getInvoiceCode(), invoice.getInvoiceNumber(),
-                invoice.getDealer().getId(), invoice.getDealer().getCode(), invoice.getDealer().getName(), items);
+                invoice.getDealer().getId(), invoice.getDealer().getCode(), invoice.getDealer().getName(), items, warehouseSources(invoice));
     }
 
-    @Override @Transactional
+    @Override @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public ReturnOrderResponse create(CreateReturnOrderRequest request, String username) {
         Invoice invoice = lockInvoice(request.getInvoiceId());
         checkInvoice(invoice);
+        DealerReturn physical = requireWarehouseSource(invoice, request.getDealerReturnId());
+        Map<Long, BigDecimal> available = sourceAvailability(invoice, physical.getId());
         var source = invoice.getItems().stream().collect(Collectors.toMap(InvoiceItem::getId, i -> i));
         Set<Long> seen = new HashSet<>();
         ReturnOrder result = ReturnOrder.builder()
-                .returnCode("TR-" + UUID.randomUUID()).invoice(invoice).dealer(invoice.getDealer())
+                .returnCode("TR-" + UUID.randomUUID()).invoice(invoice).dealer(invoice.getDealer()).dealerReturn(physical)
                 .returnReason(request.getReturnReason().trim()).returnDate(request.getReturnDate())
                 .note(request.getNote()).createdBy(username).createdAt(LocalDateTime.now()).build();
         BigDecimal total = BigDecimal.ZERO;
@@ -83,6 +91,7 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
                     .returnQuantity(row.getReturnQuantity()).invoiceUnitPrice(original.getUnitPrice())
                     .note(row.getNote()).build();
             priceAndValidate(item);
+            validateReceivedQuantity(item, available);
             item.setInvoiceDiscountPerUnit((original.getDiscountAmount() == null ? BigDecimal.ZERO : original.getDiscountAmount())
                     .divide(original.getInvoicedQuantity(), 6, RoundingMode.HALF_UP));
             result.addItem(item);
@@ -95,16 +104,19 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
     }
 
     /** Serialize all returns of the same invoice before checking the remaining quantities. */
-    @Override @Transactional
+    @Override @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public ReturnOrderResponse confirm(Long id, String username) {
         Long invoiceId = returnOrderRepository.findInvoiceId(id).orElseThrow(() -> missing("phiếu trả hàng"));
         Invoice invoice = lockInvoice(invoiceId);
         checkInvoice(invoice);
         ReturnOrder result = lockedReturn(id);
         requireDraft(result);
+        DealerReturn physical = requireWarehouseSource(invoice, result.getDealerReturn() == null ? null : result.getDealerReturn().getId());
+        Map<Long, BigDecimal> available = sourceAvailability(invoice, physical.getId());
         BigDecimal total = BigDecimal.ZERO;
         for (ReturnOrderItem item : result.getItems()) {
             priceAndValidate(item);
+            validateReceivedQuantity(item, available);
             total = total.add(item.getReturnAmount());
         }
         // A separate document records the credit. No field on the original invoice is changed.
@@ -154,6 +166,52 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
                 .divide(original.getInvoicedQuantity(), 2, RoundingMode.HALF_UP);
         item.setReturnAmount(cumulativeAmount.subtract(previousAmount));
     }
+
+    private DealerReturn requireWarehouseSource(Invoice invoice, Long sourceId) {
+        if (sourceId == null) throw bad("Bắt buộc chọn phiếu trả đã được kho xác nhận; phiếu nháp cũ cần hủy và lập lại có phiếu nguồn");
+        DealerReturn physical = dealerReturnRepository.findById(sourceId).orElseThrow(() -> missing("phiếu trả nhập kho"));
+        if (physical.getStatus() != DealerReturnStatus.CONFIRMED || physical.getInvoice() == null
+                || !Objects.equals(invoice.getId(), physical.getInvoice().getId()))
+            throw bad("Phiếu trả phải đã được kho xác nhận và thuộc đúng hóa đơn gốc");
+        return physical;
+    }
+
+    private List<ReturnOrderLookupResponse.WarehouseReturn> warehouseSources(Invoice invoice) {
+        // Allocate historical unlinked credits to older warehouse receipts first.
+        // This preserves old credits without making them available for credit again.
+        Map<Long, BigDecimal> legacy = new HashMap<>();
+        for (InvoiceItem item : invoice.getItems()) legacy.put(item.getId(), returnOrderRepository.confirmedLegacyQuantity(item.getId()));
+        List<ReturnOrderLookupResponse.WarehouseReturn> sources = new ArrayList<>();
+        var receipts = dealerReturnRepository.findByInvoiceIdOrderByCreatedAtDesc(invoice.getId()).stream()
+                .filter(r -> r.getStatus() == DealerReturnStatus.CONFIRMED)
+                .sorted(Comparator.comparing(DealerReturn::getConfirmedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(DealerReturn::getId)).toList();
+        for (DealerReturn receipt : receipts) {
+            Map<Long, BigDecimal> received = new LinkedHashMap<>();
+            receipt.getItems().forEach(row -> received.merge(row.getInvoiceItem().getId(), row.getReturnQuantity(), BigDecimal::add));
+            List<ReturnOrderLookupResponse.WarehouseItem> items = new ArrayList<>();
+            received.forEach((itemId, quantity) -> {
+                BigDecimal remaining = quantity.subtract(returnOrderRepository.confirmedSourceQuantity(receipt.getId(), itemId)).max(BigDecimal.ZERO);
+                BigDecimal allocation = legacy.getOrDefault(itemId, BigDecimal.ZERO).min(remaining);
+                legacy.put(itemId, legacy.getOrDefault(itemId, BigDecimal.ZERO).subtract(allocation));
+                items.add(new ReturnOrderLookupResponse.WarehouseItem(itemId, quantity, remaining.subtract(allocation)));
+            });
+            sources.add(new ReturnOrderLookupResponse.WarehouseReturn(receipt.getId(), receipt.getReturnCode(), receipt.getConfirmedAt(), items));
+        }
+        return sources;
+    }
+
+    private Map<Long, BigDecimal> sourceAvailability(Invoice invoice, Long sourceId) {
+        Map<Long, BigDecimal> available = new HashMap<>();
+        warehouseSources(invoice).stream().filter(r -> r.dealerReturnId().equals(sourceId)).findFirst()
+                .ifPresent(r -> r.items().forEach(item -> available.put(item.invoiceItemId(), item.remainingQuantity())));
+        return available;
+    }
+
+    private void validateReceivedQuantity(ReturnOrderItem item, Map<Long, BigDecimal> available) {
+        if (item.getReturnQuantity().compareTo(available.getOrDefault(item.getInvoiceItem().getId(), BigDecimal.ZERO)) > 0)
+            throw bad("Số lượng giảm nợ vượt số đã được kho nhận còn chưa ghi giảm trên phiếu nguồn");
+    }
     @Override @Transactional
     public ReturnOrderResponse cancel(Long id, CancelReturnOrderRequest request, String username) {
         ReturnOrder result = lockedReturn(id);
@@ -187,6 +245,11 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
         return returnOrderRepository.findAll(spec, pageable).map(this::mapToResponse);
     }
     private Invoice lockInvoice(Long id) {
+        // Serialize credits across all invoices of one dealer before recalculating
+        // debt flags. READ_COMMITTED also avoids a stale MySQL repeatable-read
+        // snapshot from the source-ID lookup performed before waiting for a lock.
+        Long dealerId = invoiceRepository.findDealerIdForReturn(id).orElseThrow(() -> missing("hóa đơn"));
+        dealerRepository.findByIdForUpdate(dealerId).orElseThrow(() -> missing("đại lý"));
         return invoiceRepository.findForReturnUpdate(id).orElseThrow(() -> missing("hóa đơn"));
     }
     private ReturnOrder lockedReturn(Long id) {
@@ -260,6 +323,8 @@ public class ReturnOrderServiceImpl implements ReturnOrderService {
                 .id(r.getId())
                 .returnCode(r.getReturnCode())
                 .invoiceId(invoice != null ? invoice.getId() : null)
+                .dealerReturnId(r.getDealerReturn() != null ? r.getDealerReturn().getId() : null)
+                .dealerReturnCode(r.getDealerReturn() != null ? r.getDealerReturn().getReturnCode() : null)
                 .invoiceCode(invoice != null ? invoice.getInvoiceCode() : null)
                 .invoiceNumber(invoice != null ? invoice.getInvoiceNumber() : null)
                 .dealerId(dealer != null ? dealer.getId() : null)

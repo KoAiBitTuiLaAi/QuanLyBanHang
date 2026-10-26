@@ -87,7 +87,7 @@ test('S8-04: Kiểm tra hợp lệ form đặt/sửa chỉ tiêu doanh số', ()
   const negAmount = { ...valid, targetAmount: '-100' };
   const r3 = Utils.validateTargetDraft(negAmount);
   assert.equal(r3.isValid, false);
-  assert.ok(r3.errors.some(e => e.includes('không âm')), 'Phải báo chỉ tiêu âm');
+  assert.ok(r3.errors.some(e => e.includes('lớn hơn 0')), 'Phải báo chỉ tiêu âm');
 
   // Vượt trần 999 tỷ
   const bigAmount = { ...valid, targetAmount: '1000000000000' };
@@ -171,11 +171,11 @@ test('S8-04: Ma trận phân quyền DB — không fallback vai trò', () => {
   const ADMIN = { roles: ['ROLE_ADMIN'], permissions: [] };
   const MANAGER_WITH_PERM = {
     roles: ['ROLE_SALES_MANAGER'],
-    permissions: ['SALES_TARGET_VIEW', 'SALES_TARGET_MANAGE'],
+    permissions: ['REPORT_SALES', 'ORDER_APPROVE'],
   };
   const SALES_WITH_OWN = {
     roles: ['ROLE_SALES'],
-    permissions: ['SALES_TARGET_VIEW_OWN'],
+    permissions: ['REPORT_SALES'],
   };
   const SALES_NO_PERM = {
     roles: ['ROLE_SALES'],
@@ -183,7 +183,7 @@ test('S8-04: Ma trận phân quyền DB — không fallback vai trò', () => {
   };
   const VIEWER = {
     roles: ['ROLE_VIEWER'],
-    permissions: ['SALES_TARGET_VIEW'],
+    permissions: ['REPORT_SALES'],
   };
   const NO_PERM = {
     roles: ['ROLE_WAREHOUSE_STAFF'],
@@ -194,16 +194,16 @@ test('S8-04: Ma trận phân quyền DB — không fallback vai trò', () => {
   assert.ok(ids(ADMIN).includes('sales-targets'), 'ADMIN phải thấy chỉ tiêu');
 
   // Manager có đúng quyền
-  assert.ok(ids(MANAGER_WITH_PERM).includes('sales-targets'), 'Manager có SALES_TARGET_VIEW phải thấy');
+  assert.ok(ids(MANAGER_WITH_PERM).includes('sales-targets'), 'Manager có REPORT_SALES phải thấy');
 
   // Nhân viên có quyền VIEW_OWN
-  assert.ok(ids(SALES_WITH_OWN).includes('sales-targets'), 'Nhân viên có SALES_TARGET_VIEW_OWN phải thấy');
+  assert.ok(ids(SALES_WITH_OWN).includes('sales-targets'), 'Nhân viên có REPORT_SALES phải thấy');
 
   // Nhân viên KHÔNG có quyền → không thấy
   assert.ok(!ids(SALES_NO_PERM).includes('sales-targets'), 'Nhân viên không có quyền → ẩn menu');
 
   // VIEWER có VIEW → thấy
-  assert.ok(ids(VIEWER).includes('sales-targets'), 'VIEWER có SALES_TARGET_VIEW phải thấy');
+  assert.ok(ids(VIEWER).includes('sales-targets'), 'VIEWER có REPORT_SALES phải thấy');
 
   // Không có quyền nào → ẩn
   assert.ok(!ids(NO_PERM).includes('sales-targets'), 'Không có quyền → ẩn menu');
@@ -223,9 +223,9 @@ test('S8-04: Route /sales-targets được phục vụ bởi menu-config', () =>
   assert.equal(item.href, '/sales-targets', 'href phải là /sales-targets');
   assert.ok(item.section === 'Kinh doanh', 'Phải thuộc section Kinh doanh');
   assert.ok(Array.isArray(item.permissions), 'Phải dùng permissions[] (không dùng permission đơn)');
-  assert.ok(item.permissions.includes('SALES_TARGET_VIEW'), 'Phải có SALES_TARGET_VIEW');
-  assert.ok(item.permissions.includes('SALES_TARGET_MANAGE'), 'Phải có SALES_TARGET_MANAGE');
-  assert.ok(item.permissions.includes('SALES_TARGET_VIEW_OWN'), 'Phải có SALES_TARGET_VIEW_OWN');
+  assert.ok(item.permissions.includes('REPORT_SALES'), 'Phải có REPORT_SALES');
+  assert.ok(item.permissions.includes('ORDER_APPROVE'), 'Phải có ORDER_APPROVE');
+  assert.ok(item.permissions.includes('REPORT_SALES'), 'Phải có REPORT_SALES');
 });
 
 /* ── TEST 7: Không dùng localStorage/sessionStorage ─────────────────── */

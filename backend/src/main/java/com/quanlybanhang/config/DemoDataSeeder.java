@@ -85,6 +85,7 @@ public class DemoDataSeeder {
     private final CashCollectionRepository cashCollections;
     private final DebtReconciliationRepository reconciliations;
     private final SalesTargetRepository salesTargets;
+    private final com.quanlybanhang.service.DealerReturnService dealerReturnService;
     private final NotificationRepository notifications;
     private final WarehouseTransferRepository warehouseTransfers;
     private final WarehouseLocationRepository warehouseLocations;
@@ -871,20 +872,16 @@ public class DemoDataSeeder {
         InvoiceItem line = invoice.getItems().stream().filter(item -> item.getProduct().getId().equals(product.getId()))
                 .findFirst().orElse(null);
         if (line == null) return;
-        String code = "DEMO-TR-NHAP-001";
-        if (returnOrders.findAll().stream().noneMatch(row -> code.equals(row.getReturnCode()))) {
-            ReturnOrder order = ReturnOrder.builder().returnCode(code).invoice(invoice).dealer(invoice.getDealer())
-                    .status(ReturnOrderStatus.DRAFT).returnReason("Bao bì móp, chờ kiểm tra hàng trả (Demo)")
-                    .totalReturnAmount(line.getUnitPrice()).createdBy(ACTOR).note(NOTE).build();
-            BigDecimal qty = BigDecimal.ONE;
-            order.addItem(ReturnOrderItem.builder().product(product).productCode(product.getCode())
-                    .productName(product.getName()).unit(line.getUnit()).invoiceItem(line).returnQuantity(qty)
-                    .invoiceUnitPrice(line.getUnitPrice()).invoiceDiscountPerUnit(BigDecimal.ZERO)
-                    .returnAmount(line.getUnitPrice().multiply(qty)).note(NOTE).build());
-            returnOrders.save(order);
-        }
+        // Opt-in startup seed invokes the normal permission-protected workflow.
+        // Keep its system identity confined to this block, never to an HTTP session.
+        var previousContext = org.springframework.security.core.context.SecurityContextHolder.getContext();
+        var seedContext = org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        seedContext.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                ACTOR, null, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
+        org.springframework.security.core.context.SecurityContextHolder.setContext(seedContext);
+        try {
         String dealerReturnCode = "DEMO-PTH-CHO-NHAN-001";
-        if (dealerReturns.existsByReturnCode(dealerReturnCode)) return;
+        if (!dealerReturns.existsByReturnCode(dealerReturnCode)) {
         DealerReturn dealerReturn = DealerReturn.builder().returnCode(dealerReturnCode).invoice(invoice)
                 .invoiceCode(invoice.getInvoiceCode()).dealer(invoice.getDealer()).dealerCode(invoice.getDealerCode())
                 .dealerName(invoice.getDealerName()).warehouse(scope.hcm()).defectiveWarehouse(scope.hcm())
@@ -902,6 +899,38 @@ public class DemoDataSeeder {
                 .manufacturingDate(Boolean.TRUE.equals(product.getManageLot()) ? LocalDate.now().minusMonths(4) : null)
                 .note(NOTE).build());
         dealerReturns.save(dealerReturn);
+        }
+        String receivedCode = "DEMO-PTH-DA-NHAN-002";
+        DealerReturn received = dealerReturns.findByReturnCode(receivedCode).orElse(null);
+        if (received == null) {
+            var row = com.quanlybanhang.dto.request.CreateDealerReturnItemRequest.builder()
+                    .invoiceItemId(line.getId()).returnQuantity(new BigDecimal("0.25"))
+                    .returnReason("Khách trả hàng tốt, kho đã kiểm nhận (Demo)")
+                    .lotNumber(Boolean.TRUE.equals(product.getManageLot()) ? "DEMO-LO-KEN330-MOI-DEMO-KHO-HCM" : null)
+                    .expiryDate(Boolean.TRUE.equals(product.getManageLot()) ? LocalDate.now().plusMonths(8) : null)
+                    .manufacturingDate(Boolean.TRUE.equals(product.getManageLot()) ? LocalDate.now().minusMonths(4) : null)
+                    .build();
+            var draft = dealerReturnService.createReturn(com.quanlybanhang.dto.request.CreateDealerReturnRequest.builder()
+                    .returnCode(receivedCode).invoiceId(invoice.getId()).warehouseId(scope.hcm().getId())
+                    .items(List.of(row)).note(NOTE).build(), ACTOR);
+            dealerReturnService.confirmReturn(draft.getId(), null, ACTOR);
+            received = dealerReturns.findById(draft.getId()).orElseThrow();
+        }
+        String code = "DEMO-TR-NHAP-DA-NHAN-002";
+        if (received.getStatus() == DealerReturnStatus.CONFIRMED && returnOrders.findAll().stream().noneMatch(r -> code.equals(r.getReturnCode()))) {
+            BigDecimal qty = new BigDecimal("0.25");
+            BigDecimal amount = line.getTotalAmount().multiply(qty).divide(line.getInvoicedQuantity(), 2, RoundingMode.HALF_UP);
+            ReturnOrder credit = ReturnOrder.builder().returnCode(code).invoice(invoice).dealer(invoice.getDealer())
+                    .dealerReturn(received).status(ReturnOrderStatus.DRAFT).returnReason("Hàng trả đã được kho xác nhận (Demo)")
+                    .totalReturnAmount(amount).createdBy(ACTOR).note(NOTE).build();
+            credit.addItem(ReturnOrderItem.builder().product(product).productCode(product.getCode()).productName(product.getName())
+                    .unit(line.getUnit()).invoiceItem(line).returnQuantity(qty).invoiceUnitPrice(line.getUnitPrice())
+                    .invoiceDiscountPerUnit(BigDecimal.ZERO).returnAmount(amount).note(NOTE).build());
+            returnOrders.save(credit);
+        }
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.setContext(previousContext);
+        }
     }
 
     private void createCollectionExample(Dealer dealer) {
@@ -979,6 +1008,41 @@ public class DemoDataSeeder {
         createTerritoryTarget(scope.east(), period, "HCM-DONG", new BigDecimal("50000000"));
         createTerritoryTarget(scope.west(), period, "HCM-TAY", new BigDecimal("42000000"));
         createTerritoryTarget(scope.north(), period, "HA-NOI", new BigDecimal("60000000"));
+        for (int offset : new int[]{-1, 0, 1}) {
+            java.time.YearMonth ym = java.time.YearMonth.now().plusMonths(offset);
+            createEmployeeTarget("sales.demo", ym, new BigDecimal(offset == 0 ? "30000000" : "35000000"));
+            createEmployeeTarget("sales.manager", ym, new BigDecimal("55000000"));
+            if (offset != 0) {
+                String otherPeriod = ym.getYear() + String.format("%02d", ym.getMonthValue());
+                createTerritoryTarget(scope.east(), otherPeriod, "HCM-DONG", new BigDecimal("50000000"));
+                createTerritoryTarget(scope.west(), otherPeriod, "HCM-TAY", new BigDecimal("42000000"));
+                createTerritoryTarget(scope.north(), otherPeriod, "HA-NOI", new BigDecimal("60000000"));
+            }
+        }
+    }
+
+    private void createEmployeeTarget(String username, java.time.YearMonth period, BigDecimal amount) {
+        User employee = users.findByUsername(username).orElse(null);
+        if (employee == null) return; // Data-only seed must not create or change credentials.
+        String scopeKey = SalesTarget.buildScopeKey(period.getYear(), period.getMonthValue(), employee.getId(), null);
+        if (salesTargets.existsByScopeKey(scopeKey)) return;
+        String code = "DEMO-CT-NV-" + period + "-" + username;
+        if (salesTargets.existsByTargetCode(code)) return;
+        boolean past = period.isBefore(java.time.YearMonth.now());
+        SalesTarget target = salesTargets.save(SalesTarget.builder().targetCode(code).scopeKey(scopeKey)
+                .targetYear(period.getYear()).targetMonth(period.getMonthValue()).scopeType(SalesTargetScopeType.EMPLOYEE)
+                .user(employee).targetAmount(amount).locked(past).lockedAt(past ? LocalDateTime.now() : null)
+                .lockedBy(past ? ACTOR : null).note(NOTE).createdBy(ACTOR).updatedBy(ACTOR).build());
+        audit("SALES_TARGET", target.getId().toString(), "CREATE");
+        if (past) {
+            BigDecimal revised = amount.add(new BigDecimal("1000000"));
+            String reason = "DEMO: cập nhật chỉ tiêu kỳ đã khóa theo biên bản thống nhất";
+            target.setTargetAmount(revised);
+            target.setLastModifyReason(reason);
+            salesTargets.save(target);
+            auditLogService.logAction("SALES_TARGET", target.getId().toString(), "UPDATE_LOCKED_TARGET",
+                    amount.toPlainString(), revised.toPlainString(), reason, ACTOR);
+        }
     }
 
     private void createTerritoryTarget(Territory territory, String period, String suffix, BigDecimal amount) {

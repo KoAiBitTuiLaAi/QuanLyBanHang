@@ -4095,7 +4095,7 @@ Base path: `/api/invoices/returns`. Yêu cầu Bearer JWT; dữ liệu lưu tron
 | GET | `/by-invoice/{invoiceId}` | INVOICE_VIEW | Danh sách phiếu trả liên kết hóa đơn gốc |
 | GET | `/options` | INVOICE_VIEW hoặc INVOICE_ADJUST | Danh sách mã/nhãn trạng thái phiếu trả |
 | GET | `/eligible-invoices` | INVOICE_ADJUST | Page hóa đơn ISSUED/ADJUSTED, tìm `keyword` theo mã/số hóa đơn hoặc mã/tên đại lý; tối đa 100 ký tự |
-| GET | `/eligible-invoices/{invoiceId}` | INVOICE_ADJUST | Dòng hóa đơn gốc, số đã trả CONFIRMED và số còn được trả |
+| GET | `/eligible-invoices/{invoiceId}` | INVOICE_ADJUST | Dòng hóa đơn gốc, số đã ghi giảm và `warehouseReturns` gồm phiếu kho đã xác nhận cùng số lượng còn được ghi giảm từng dòng |
 
 Các API Page nhận `page >= 0`, `size` từ 1 đến 100; giá trị ngoài khoảng trả 400, không âm thầm cắt giới hạn. Lookup dòng trả `invoiceItemId`, snapshot sản phẩm/đơn vị, `invoicedQuantity`, `confirmedReturnQuantity`, `remainingQuantity`, `invoiceUnitPrice`, `originalDiscountAmount`, `originalLineTotal`, `previouslyCreditedAmount`. Chỉ các dòng liên kết đơn gốc, có lượng xuất hóa đơn dương được đưa vào nguồn; kiểm tra lại điều kiện lúc tạo/xác nhận. Hóa đơn hết số được trả có thể vẫn xuất hiện trong lookup nhưng không thể lập thêm lượng trả.
 
@@ -4104,6 +4104,7 @@ POST tạo phiếu:
 ```json
 {
   "invoiceId": 12,
+  "dealerReturnId": 31,
   "returnReason": "Đại lý trả lại hàng",
   "returnDate": "2026-10-23T08:00:00",
   "note": "Đã kiểm tra hàng trả",
@@ -4111,6 +4112,7 @@ POST tạo phiếu:
 }
 ```
 
+- `dealerReturnId`: bắt buộc, dương; trỏ tới phiếu S8-01 có trạng thái `CONFIRMED`, thuộc cùng hóa đơn. Phiếu chưa được kho nhận hoặc khác hóa đơn bị từ chối.
 - `invoiceId` và `invoiceItemId`: bắt buộc, dương. Dòng hàng phải thuộc hóa đơn gốc và có liên kết đơn hàng gốc.
 - `returnReason`: bắt buộc, không chỉ khoảng trắng, tối đa 500 ký tự.
 - `returnDate`: tùy chọn (mặc định thời điểm lập), không ở tương lai. `note`: tối đa 500 ký tự.
@@ -4153,7 +4155,9 @@ Với từng hóa đơn: `netInvoice = max(0, adjustedTotalAmount (hoặc totalA
 
 Khoản trả gắn đúng hóa đơn và đơn nguồn qua `ReturnOrderItem.invoiceItem.order`. Giảm số dư đúng hóa đơn/đơn trước, sau đó phân bổ quỹ thanh toán theo FIFO hiện có; không trừ tiền trả lần hai ở tổng công nợ. Tổng nợ, nợ quá hạn, còn nợ từng hóa đơn và hồ sơ đại lý cùng dùng số dư đã giảm trừ. Quỹ thanh toán vẫn là quỹ chung của đại lý theo thiết kế cũ, không được đánh dấu là đã phân bổ cố định cho một hóa đơn. Không tạo phiếu thu giả, không thay đổi tiền đã thanh toán. Số dư vượt nợ hiện tại không tự tạo phiếu hoàn tiền hoặc số dư nợ âm.
 
-S8-02 là luồng tài chính trả hàng; không tạo phiếu nhập kho hoặc cập nhật tồn kho vật lý.
+S8-02 là bước tài chính sau S8-01: bắt buộc liên kết phiếu trả đã được kho xác nhận; không cộng tồn lại khi ghi giảm nợ. Mỗi lần tạo/xác nhận kiểm tra số đã ghi giảm theo phiếu nguồn dưới khóa hóa đơn, ngoài giới hạn tổng số lượng hóa đơn. Response thêm `dealerReturnId`, `dealerReturnCode`; `warehouseReturns[].items` chứa `invoiceItemId`, `receivedQuantity`, `remainingQuantity`.
+
+Cột FK `return_orders.dealer_return_id` cho phép null để giữ lịch sử cũ. Khoản đã xác nhận nhưng chưa có liên kết được phân bổ trừ vào phiếu kho theo thứ tự xác nhận/id để tránh giảm trùng. Nháp cũ chưa có nguồn không được xác nhận; có thể hủy và lập lại với nguồn hợp lệ. Không tự sửa hóa đơn hoặc tự sinh khoản giảm để backfill.
 
 ### Mã lỗi
 
@@ -4962,3 +4966,12 @@ Tác vụ hằng ngày gửi email và thông báo trong ứng dụng trước h
 `ROLE_ADMIN` luôn được phép theo chính sách chung. Các quyền chức năng được lấy từ ma trận quyền DB; cấu hình mặc định cấp `WAREHOUSE_ADJUST` và `WAREHOUSE_APPROVE` cho Quản lý kho. Thu hồi quyền có hiệu lực theo cơ chế xác thực hiện hành ở request kế tiếp. Phiếu `APPROVED` được lấy vào thẻ kho với lượng cơ sở có dấu âm; `PENDING_APPROVAL` và `REJECTED` không tạo phát sinh tồn.
 
 Giá trị tổn thất mỗi dòng phải dương và được lưu riêng; tổng phiếu được tính từ các dòng. Duyệt thất bại nếu tồn vật lý sau điều chỉnh âm hoặc thấp hơn lượng đang giữ chỗ. Hệ thống dùng giao dịch và khóa hàng để tránh ghi sổ dở dang.
+
+## Rà Sprint 8 và seed bổ sung — 26/10/2026
+
+- `FinancialReturnCredits` giữ giá trị 0 của hóa đơn `ADJUSTED` sau giảm toàn phần; không khôi phục tiền gốc. `ISSUED` cũ có giá trị mặc định 0 vẫn dùng tổng tiền gốc trước khi trừ khoản trả.
+- `GET /api/warehouse/inventory` thêm `manageLot`. S8-03 bắt buộc số lô với SKU quản lý lô; kiểm tra lô thuộc đúng kho/SKU khi lập. Khi duyệt, khóa các dòng tồn lô, trừ đồng thời tồn tổng/lô và bảo vệ tồn giữ chỗ; mọi lỗi rollback cả phiếu. Lý do phải có phần giải trình sau mã và tổng chiều dài không quá 500 ký tự.
+- Frontend S8-04 dùng đúng quyền backend: `REPORT_SALES` hoặc `ORDER_APPROVE` để đọc, `ORDER_APPROVE` để đặt/sửa; ADMIN luôn được phép. Backend tiếp tục giới hạn dữ liệu nhân viên tự xem. UI đọc `employeeProgress`, `territoryProgress`, danh mục `/options`, `totalTargetAmount`/`actualAmount` của `/my-progress`; POST dùng `userId`/`territoryId`, PUT `/{id}` khi sửa. Nhật ký lấy từ `/{id}/audit-logs`.
+- Seed vẫn mặc định tắt, bật `APP_SEED_DEMO_DATA=true` mới thêm dữ liệu. Thêm chỉ tiêu nhân viên `sales.demo`, `sales.manager` và chỉ tiêu khu vực cho tháng trước/hiện tại/tới; kỳ trước có mẫu sửa kèm lý do và audit. Không tạo tài khoản khi chỉ seed data; không thay mật khẩu, chỉ tiêu hay dữ liệu đã có. Phiếu tài chính demo mới liên kết phiếu kho đã nhận qua workflow S8-01, không giả ghi sổ tồn.
+
+S8-02 khi tạo/xác nhận dùng `READ_COMMITTED`, khóa đại lý trước hóa đơn để các khoản ghi giảm trên nhiều hóa đơn cùng đại lý được tuần tự khi đánh giá lại cờ nợ; tránh dùng snapshot MySQL cũ sau khi chờ khóa.

@@ -9,6 +9,13 @@ const path = require('node:path');
 
 const DebtStatementUtils = require('../frontend/js/debt-statement-utils.js');
 
+test('Statement downloads prefer RFC 5987 names over MIME words and preserve file extension', () => {
+  assert.equal(DebtStatementUtils.exportFilename('attachment; filename="=?UTF-8?Q?So=5Fcong.pdf?="; filename*=UTF-8\'\'So_cong_%C4%91%E1%BA%A1i_l%C3%BD.pdf', 'fallback.pdf'), 'So_cong_đại_lý.pdf');
+  assert.equal(DebtStatementUtils.exportFilename('attachment; filename="=?UTF-8?Q?So=5Fcong.pdf?="', 'fallback.pdf'), 'fallback.pdf');
+  assert.equal(DebtStatementUtils.exportFilename('attachment; filename="statement.xlsx"', 'fallback.xlsx'), 'statement.xlsx');
+  assert.equal(DebtStatementUtils.exportFilename("attachment; filename*=UTF-8''%ZZ.pdf", 'fallback.pdf'), 'fallback.pdf');
+});
+
 test('DebtStatementUtils: Định dạng tiền tệ VND chính xác, xử lý số âm và null/undefined', () => {
   assert.equal(DebtStatementUtils.formatMoney(null), '—');
   assert.equal(DebtStatementUtils.formatMoney(undefined), '—');

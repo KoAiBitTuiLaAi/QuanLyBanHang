@@ -47,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 @TestPropertySource(properties = {
         "spring.datasource.url=jdbc:h2:mem:s807_inventory_turnover_db;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
         "spring.datasource.driver-class-name=org.h2.Driver",
@@ -54,7 +55,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.password=",
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
-        "app.seed.enabled=false"
+        "app.jwt.secret=s807-test-secret-at-least-thirty-two-characters",
+        "app.bootstrap.admin-password=S807Test2026!",
+        "app.bootstrap.admin-email=s807@example.invalid",
+        "app.seed-demo-users=false",
+        "app.seed-demo-data=false",
+        "app.payment-reminder.enabled=false"
 })
 class InventoryTurnoverReportIntegrationTest {
 
@@ -198,14 +204,14 @@ class InventoryTurnoverReportIntegrationTest {
         // - skuSlow: 190 hộp * 50,000 = 9,500,000 VND
         inventoryRepository.save(WarehouseInventory.builder()
                 .warehouse(warehouseHanoi)
-                .product(skuFast)
+                .product(skuFast).baseUnit("Chai")
                 .baseQuantity(new BigDecimal("100"))
                 .reservedQuantity(new BigDecimal("10"))
                 .build());
 
         inventoryRepository.save(WarehouseInventory.builder()
                 .warehouse(warehouseHanoi)
-                .product(skuSlow)
+                .product(skuSlow).baseUnit("Hộp")
                 .baseQuantity(new BigDecimal("190"))
                 .reservedQuantity(BigDecimal.ZERO)
                 .build());
@@ -214,7 +220,7 @@ class InventoryTurnoverReportIntegrationTest {
         // - skuDeadStock: 40 hộp * 200,000 = 8,000,000 VND
         inventoryRepository.save(WarehouseInventory.builder()
                 .warehouse(warehouseHcm)
-                .product(skuDeadStock)
+                .product(skuDeadStock).baseUnit("Hộp")
                 .baseQuantity(new BigDecimal("40"))
                 .reservedQuantity(BigDecimal.ZERO)
                 .build());
@@ -227,13 +233,13 @@ class InventoryTurnoverReportIntegrationTest {
                 .type(WarehouseVoucherType.EXPORT)
                 .status("CONFIRMED")
                 .warehouse(warehouseHanoi)
-                .voucherDate(LocalDateTime.of(2026, 3, 18, 14, 30))
+                .voucherDate(LocalDateTime.of(2026, 3, 18, 14, 30)).recordedAt(LocalDateTime.of(2026, 3, 18, 14, 30))
                 .createdBy("wh_mgr_s807")
                 .build();
 
         WarehouseVoucherItem itemFast = WarehouseVoucherItem.builder()
                 .voucher(exportVoucher)
-                .product(skuFast)
+                .product(skuFast).baseUnit("Chai")
                 .unit("Chai")
                 .quantity(new BigDecimal("300"))
                 .conversionFactor(BigDecimal.ONE)
@@ -242,7 +248,7 @@ class InventoryTurnoverReportIntegrationTest {
 
         WarehouseVoucherItem itemSlow = WarehouseVoucherItem.builder()
                 .voucher(exportVoucher)
-                .product(skuSlow)
+                .product(skuSlow).baseUnit("Hộp")
                 .unit("Hộp")
                 .quantity(new BigDecimal("20"))
                 .conversionFactor(BigDecimal.ONE)
@@ -275,18 +281,18 @@ class InventoryTurnoverReportIntegrationTest {
                 .andExpect(jsonPath("$.data.warehouseValuations", hasSize(2)))
                 .andExpect(jsonPath("$.data.warehouseValuations[0].warehouseCode").value("KHO-HN-S807"))
                 .andExpect(jsonPath("$.data.warehouseValuations[0].inventoryValue").value(10700000.0))
-                .andExpect(jsonPath("$.data.warehouseValuations[0].slowMovingValue").value(9500000.0))
+                .andExpect(jsonPath("$.data.warehouseValuations[0].slowMovingInventoryValue").value(9500000.0))
                 .andExpect(jsonPath("$.data.warehouseValuations[1].warehouseCode").value("KHO-HCM-S807"))
                 .andExpect(jsonPath("$.data.warehouseValuations[1].inventoryValue").value(8000000.0))
-                .andExpect(jsonPath("$.data.warehouseValuations[1].slowMovingValue").value(8000000.0))
+                .andExpect(jsonPath("$.data.warehouseValuations[1].slowMovingInventoryValue").value(8000000.0))
                 // Giá trị tồn theo nhóm hàng (Nước giải khát = 10,700,000; Bánh kẹo cao cấp = 8,000,000)
                 .andExpect(jsonPath("$.data.categoryValuations", hasSize(2)))
                 .andExpect(jsonPath("$.data.categoryValuations[0].categoryCode").value("CAT-BEV-S807"))
                 .andExpect(jsonPath("$.data.categoryValuations[0].inventoryValue").value(10700000.0))
-                .andExpect(jsonPath("$.data.categoryValuations[0].slowMovingValue").value(9500000.0))
+                .andExpect(jsonPath("$.data.categoryValuations[0].slowMovingInventoryValue").value(9500000.0))
                 .andExpect(jsonPath("$.data.categoryValuations[1].categoryCode").value("CAT-CONF-S807"))
                 .andExpect(jsonPath("$.data.categoryValuations[1].inventoryValue").value(8000000.0))
-                .andExpect(jsonPath("$.data.categoryValuations[1].slowMovingValue").value(8000000.0))
+                .andExpect(jsonPath("$.data.categoryValuations[1].slowMovingInventoryValue").value(8000000.0))
                 // Danh sách hàng chậm luân chuyển đang chôn vốn (sắp xếp giảm dần theo vốn chôn)
                 .andExpect(jsonPath("$.data.slowMovingItems", hasSize(2)))
                 .andExpect(jsonPath("$.data.slowMovingItems[0].productCode").value("SKU-SLOW-807"))
@@ -434,4 +440,3 @@ class InventoryTurnoverReportIntegrationTest {
                 .build());
     }
 }
-

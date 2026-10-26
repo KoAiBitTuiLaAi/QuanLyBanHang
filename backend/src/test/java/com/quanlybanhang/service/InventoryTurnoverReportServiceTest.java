@@ -147,6 +147,8 @@ class InventoryTurnoverReportServiceTest {
         lenient().when(userRepository.findByUsername("warehouse_mgr")).thenReturn(Optional.empty());
         lenient().when(warehouseRepository.findAllByOrderByCodeAsc())
                 .thenReturn(List.of(warehouseNorth, warehouseSouth));
+        lenient().when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouseNorth));
+        lenient().when(warehouseRepository.findById(2L)).thenReturn(Optional.of(warehouseSouth));
         lenient().when(categoryRepository.findAllByOrderByLevelAscNameAsc())
                 .thenReturn(List.of(catBeverage, catFood));
         lenient().when(productRepository.findAll())
@@ -198,7 +200,7 @@ class InventoryTurnoverReportServiceTest {
                 .reservedQuantity(BigDecimal.ZERO)
                 .build();
 
-        when(inventoryRepository.findAll()).thenReturn(List.of(invFastNorth, invSlowNorth, invDeadSouth));
+        when(inventoryRepository.findAllByOrderByProduct_CodeAsc()).thenReturn(List.of(invFastNorth, invSlowNorth, invDeadSouth));
 
         // Phiếu xuất trong kỳ (15/03/2026) tại Kho Bắc
         WarehouseVoucher exportVoucher = WarehouseVoucher.builder()
@@ -308,7 +310,7 @@ class InventoryTurnoverReportServiceTest {
                 .orElseThrow();
         assertThat(deadSku.isSlowMoving()).isTrue();
         assertThat(deadSku.getTurnoverStatus()).isEqualTo("DEAD_STOCK");
-        assertThat(deadSku.getAverageDaysInInventory()).isNull();
+        assertThat(deadSku.getAverageDaysInInventory()).isEqualByComparingTo("60");
         assertThat(deadSku.getTiedUpCapitalValue()).isEqualByComparingTo("5000000.00");
 
         // Danh sách slowMovingItems sắp xếp theo giá trị chôn vốn giảm dần
@@ -331,7 +333,7 @@ class InventoryTurnoverReportServiceTest {
                 .baseQuantity(new BigDecimal("50"))
                 .reservedQuantity(BigDecimal.ZERO)
                 .build();
-        when(inventoryRepository.findAll()).thenReturn(List.of(inv));
+        when(inventoryRepository.findAllByOrderByProduct_CodeAsc()).thenReturn(List.of(inv));
         when(voucherRepository.findAll()).thenReturn(List.of());
 
         InventoryTurnoverReportResponse report = reportService.getReport(
@@ -372,7 +374,7 @@ class InventoryTurnoverReportServiceTest {
                 null, 60, null, false, null, false
         ))
                 .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("phạm vi kho");
+                .hasMessageContaining("quyền xem báo cáo của kho này");
     }
 
     @Test
@@ -391,4 +393,3 @@ class InventoryTurnoverReportServiceTest {
                 .hasMessageContaining("REPORT_INVENTORY");
     }
 }
-

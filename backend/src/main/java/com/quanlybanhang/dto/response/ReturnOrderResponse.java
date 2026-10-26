@@ -19,6 +19,8 @@ public class ReturnOrderResponse {
     private Long id;
     private String returnCode;
     private Long invoiceId;
+    private Long dealerReturnId;
+    private String dealerReturnCode;
     private String invoiceCode;
     private String invoiceNumber;
     private Long dealerId;

@@ -16,6 +16,7 @@
     currentVoucher: null,
     createItems: [],
     selectedWarehouseId: null,
+    lotRequest: 0,
     page: 1,
     pageSize: 10,
     filters: {
@@ -123,7 +124,7 @@
 
     // Nếu đang xem chi tiết và quyền duyệt thay đổi
     if ($("adj-approval-section")) {
-      $("adj-approval-section").hidden = !canApprove;
+      $("adj-approval-section").hidden = !canApprove || state.currentVoucher?.status !== "PENDING_APPROVAL";
     }
 
     return true;
@@ -204,6 +205,7 @@
       const baseQty = inv.availableQuantity != null ? inv.availableQuantity : inv.baseQuantity || 0;
       opt.textContent = `${inv.productCode} - ${inv.productName} (Tồn: ${Utils.formatQuantity(baseQty)} ${inv.baseUnit || ""})`;
       opt.dataset.unit = inv.baseUnit || "";
+      opt.dataset.manageLot = String(inv.manageLot === true);
       opt.dataset.available = baseQty;
       opt.dataset.price = inv.price || 0;
       select.appendChild(opt);
@@ -212,7 +214,11 @@
     onProductSelected();
   }
 
-  function onProductSelected() {
+  async function onProductSelected() {
+    const requestId = ++state.lotRequest;
+    $("adj-item-lot").value = "";
+    $("adj-lot-options").replaceChildren();
+    $("adj-item-lot").required = false;
     const select = $("adj-item-product");
     const unitInput = $("adj-item-unit");
     const availInput = $("adj-item-available");
@@ -232,6 +238,17 @@
       if (unitInput) unitInput.value = selectedOpt.dataset.unit || "";
       if (availInput) availInput.value = Utils.formatQuantity(selectedOpt.dataset.available);
       if (priceInput) priceInput.value = selectedOpt.dataset.price || "";
+      $("adj-item-lot").required = selectedOpt.dataset.manageLot === "true";
+      const warehouseId = $("adj-create-warehouse").value;
+      if (warehouseId) {
+        try {
+          const response = await Auth.apiFetch(`/warehouse/inventory/lots?warehouseId=${encodeURIComponent(warehouseId)}&productId=${encodeURIComponent(select.value)}`);
+          const json = await response.json();
+          if (requestId !== state.lotRequest) return;
+          if (!response.ok) throw new Error(json.message || "Không tải được danh sách lô");
+          $("adj-lot-options").replaceChildren(...(json.data || []).map(lot => {const option=document.createElement('option');option.value=lot.lotNumber;option.label=Utils.formatQuantity(lot.baseQuantity)+' '+(lot.baseUnit||'');return option;}));
+        } catch(error) {if(requestId===state.lotRequest)showCreateError(error.message);}
+      }
     }
   }
 
@@ -463,8 +480,10 @@
     const price = Number(priceInput.value || 0);
     const unit = unitInput.value || "đơn vị";
 
-    // Kiểm tra trùng SKU
-    const existingIndex = state.createItems.findIndex((it) => it.productId === productId);
+    const lotNumber = $("adj-item-lot").value.trim();
+    if (opt?.dataset.manageLot === "true" && !lotNumber) {showCreateError("Sản phẩm quản lý lô bắt buộc chọn số lô.");return;}
+    // Allow a product to be split into different physical lots.
+    const existingIndex = state.createItems.findIndex((it) => it.productId === productId && it.lotNumber === lotNumber);
     if (existingIndex >= 0) {
       showCreateError("Sản phẩm này đã có trong danh sách. Vui lòng xoá dòng cũ nếu muốn chọn lại.");
       return;
@@ -474,6 +493,7 @@
 
     state.createItems.push({
       productId,
+      lotNumber,
       productCode: opt.textContent.split(" - ")[0],
       productName: opt.textContent.split(" (Tồn:")[0],
       unit,
@@ -487,6 +507,9 @@
 
     // Reset các ô nhập của dòng sản phẩm
     prodSelect.value = "";
+    state.lotRequest++;
+    $("adj-item-lot").value = "";
+    $("adj-item-lot").required = false;
     qtyInput.value = "";
     priceInput.value = "";
     unitInput.value = "";
@@ -517,7 +540,7 @@
     state.createItems.forEach((item, index) => {
       html += `<tr>
         <td><strong>${escapeHtml(item.productCode)}</strong></td>
-        <td>${escapeHtml(item.productName)}</td>
+        <td>${escapeHtml(item.productName)}<small>${escapeHtml(item.lotNumber || "")}</small></td>
         <td>${escapeHtml(item.unit)}</td>
         <td class="adj-num">${escapeHtml(Utils.formatQuantity(item.quantity))}</td>
         <td class="adj-num">${escapeHtml(Utils.formatMoney(item.unitPrice))}</td>
@@ -584,6 +607,7 @@
         note: `Giá trị tổn thất: ${Utils.formatMoney(totalLoss)}${note ? " | " + note : ""}`,
         items: state.createItems.map((it) => ({
           productId: it.productId,
+          lotNumber: it.lotNumber || null,
           quantity: it.quantity,
           unit: it.unit,
           price: it.unitPrice,
@@ -627,7 +651,7 @@
     const detailPanel = $("adj-detail");
     const codeEl = $("adj-detail-code");
     const factsEl = $("adj-facts");
-    const rowsEl = $("adj-detail-items");
+    const rowsEl = $("adj-detail-rows");
     const approvalSec = $("adj-approval-section");
     const creatorWarning = $("adj-creator-warning");
     const approveBtn = $("adj-btn-approve");
@@ -665,7 +689,7 @@
 
         itemsHtml += `<tr>
           <td><strong>${escapeHtml(item.productCode || `SP-#${item.productId}`)}</strong></td>
-          <td>${escapeHtml(item.productName || "—")}</td>
+          <td>${escapeHtml(item.productName || "—")}<small>${escapeHtml(item.lotNumber || "")}</small></td>
           <td>${escapeHtml(item.unit || item.baseUnit || "đơn vị")}</td>
           <td class="adj-num">${escapeHtml(Utils.formatQuantity(item.quantity || item.baseQuantity))}</td>
           <td class="adj-num">${escapeHtml(Utils.formatMoney(item.price))}</td>

@@ -2,9 +2,9 @@
  * sales-targets.js — S8-04: Quản lý chỉ tiêu doanh số.
  *
  * Quyền:
- *  - SALES_TARGET_VIEW   : xem danh sách chỉ tiêu tất cả nhân viên (Quản lý)
- *  - SALES_TARGET_MANAGE : đặt / sửa chỉ tiêu (Quản lý)
- *  - SALES_TARGET_VIEW_OWN: nhân viên xem tiến độ của chính mình
+ *  - REPORT_SALES   : xem danh sách chỉ tiêu tất cả nhân viên (Quản lý)
+ *  - ORDER_APPROVE : đặt / sửa chỉ tiêu (Quản lý)
+ *  - REPORT_SALES: nhân viên xem tiến độ của chính mình
  *
  * Kỳ đã qua bị khoá tự động; sửa bắt buộc nhập lý do và ghi nhật ký.
  * Tuyệt đối không lưu dữ liệu kinh doanh vào localStorage / sessionStorage.
@@ -23,13 +23,13 @@
   if (!Auth.requireLogin()) return;
 
   /* ── QUYỀN ─────────────────────────────────────────────────────────── */
-  const PERM_VIEW   = 'SALES_TARGET_VIEW';
-  const PERM_MANAGE = 'SALES_TARGET_MANAGE';
-  const PERM_OWN    = 'SALES_TARGET_VIEW_OWN';
+  const PERM_VIEW   = 'REPORT_SALES';
+  const PERM_MANAGE = 'ORDER_APPROVE';
+  const PERM_OWN    = 'REPORT_SALES';
 
-  function canViewAll()  { return Auth.hasPermission(PERM_VIEW); }
+  function canViewAll()  { return Auth.hasPermission(PERM_VIEW) || canManage(); }
   function canManage()   { return Auth.hasPermission(PERM_MANAGE); }
-  function canViewOwn()  { return Auth.hasPermission(PERM_OWN); }
+  function canViewOwn()  { return Auth.hasPermission(PERM_OWN) || canManage(); }
   function isAdmin()     { const u = Auth.getUser(); return (u?.roles || []).includes('ROLE_ADMIN'); }
 
   function hasAnyAccess() {
@@ -53,6 +53,9 @@
     myTotal: 0,
     myPages: 0,
     employees: [],
+    options: null,
+    editingTarget: null,
+    periodLocked: false,
     regions: [],
     regionSummaries: [],
     auditLog: [],
@@ -67,17 +70,20 @@
 
   /* ── REQUESTS ───────────────────────────────────────────────────────── */
   const controllers = {};
+  let generation = 0;
   function abort(key) { controllers[key]?.abort(); delete controllers[key]; }
   function abortAll() { Object.keys(controllers).forEach(abort); }
 
   async function apiFetch(path, opts = {}) {
     const c = new AbortController();
+    const version = generation;
     const key = opts._key || path;
     abort(key);
     controllers[key] = c;
     try {
       const resp = await Auth.apiFetch(path, { signal: c.signal, cache: 'no-store', ...opts });
       const text = await resp.text();
+      if (version !== generation || controllers[key] !== c || !hasAnyAccess()) throw Object.assign(new Error(), {name:'AbortError'});
       let payload;
       try { payload = JSON.parse(text); } catch { throw new Error('Máy chủ trả dữ liệu không hợp lệ.'); }
       if (!resp.ok || payload.success === false) {
@@ -85,7 +91,7 @@
       }
       return payload.data ?? payload;
     } finally {
-      delete controllers[key];
+      if (controllers[key] === c) delete controllers[key];
     }
   }
 
@@ -202,11 +208,27 @@
     try {
       const params = new URLSearchParams({ period: state.period });
       const data = await apiFetch('/api/sales-targets/summary?' + params, { _key: 'summary' });
-      state.employees = data.employees || [];
-      state.regionSummaries = data.regions || [];
-      state.auditLog = data.auditLog || [];
+      const options = await apiFetch('/api/sales-targets/options', {_key:'options'});
+      if (!canViewAll() || state.period !== data.period) return;
+      state.options = options;
+      state.periodLocked = Boolean(data.pastPeriod);
+      const targets = data.targets || [];
+      state.employees = (options.employees || []).map(employee => {
+        const progress = (data.employeeProgress || []).find(row => row.userId === employee.id) || {};
+        const target = targets.find(row => row.userId === employee.id && row.scopeType === 'EMPLOYEE');
+        return {...progress, employeeId:employee.id,employeeName:employee.fullName||employee.username,
+          username:employee.username,regionIds:employee.territoryIds||[],regionName:(employee.territoryNames||[]).join(', '),
+          targetId:target?.id,locked:target?.locked||data.pastPeriod,targetAmount:target?.targetAmount??progress.targetAmount??0,actualSales:progress.actualAmount||0};
+      });
+      state.regionSummaries = (data.territoryProgress || []).map(row => ({...row,
+        regionId:row.territoryId,regionName:row.territoryName,totalTarget:row.targetAmount,actualSales:row.actualAmount,
+        targetId:targets.find(t=>t.scopeType==='TERRITORY'&&t.territoryId===row.territoryId)?.id,
+        employeeCount:(options.employees||[]).filter(e=>(e.territoryIds||[]).includes(row.territoryId)).length}));
+      state.auditLog = [];
+      const histories = await Promise.all(targets.filter(t=>t.locked).map(t=>apiFetch('/api/sales-targets/'+t.id+'/audit-logs', {_key:'audit-'+t.id})));
+      state.auditLog = histories.flat();
       // Populate region filter
-      populateRegions(data.regions || []);
+      populateRegions((options.territories || []).map(row=>({regionId:row.id,regionName:row.name})));
       renderManagerView();
       renderAuditLog();
     } catch (err) {
@@ -248,7 +270,7 @@
   function applyFilters(employees) {
     let list = employees;
     if (state.regionFilter) {
-      list = list.filter(e => String(e.regionId || e.regionName || '') === state.regionFilter);
+      list = list.filter(e => (e.regionIds||[]).some(id=>String(id)===state.regionFilter));
     }
     if (state.keyword) {
       const kw = state.keyword.toLowerCase();
@@ -266,7 +288,7 @@
   }
 
   function renderEmployeeTable() {
-    const locked = U.isPeriodLocked(state.period);
+    const locked = state.periodLocked;
     const filtered = applyFilters(state.employees);
     state.empTotal = filtered.length;
     state.empPages = Math.ceil(state.empTotal / state.empPageSize) || 1;
@@ -366,9 +388,10 @@
           <span>${pct}%</span>
           <div class="st-mini-track" aria-hidden="true"><div class="st-mini-bar" style="width:${w}%"></div></div>
         </td>
-        <td>${esc(r.employeeCount || 0)} nhân viên</td>
+        <td>${esc(r.employeeCount || 0)} nhân viên${isAdmin()||canManage()?` <button class="btn btn--secondary" type="button" data-st-region="${esc(r.regionId)}">Sửa chỉ tiêu</button>`:''}</td>
       </tr>`;
     }).join('');
+    document.querySelectorAll('[data-st-region]').forEach(btn=>btn.addEventListener('click',()=>{const row=state.regionSummaries.find(r=>String(r.regionId)===btn.dataset.stRegion);if(row)openModal({...row,employeeName:row.regionName,territoryId:row.regionId,targetAmount:row.totalTarget,locked:row.locked||state.periodLocked});}));
   }
 
   /* ── AUDIT LOG ───────────────────────────────────────────────────────── */
@@ -383,11 +406,10 @@
       <li class="st-audit-item">
         <div class="st-audit-dot"></div>
         <div class="st-audit-body">
-          <strong>${esc(entry.employeeName || entry.username || '—')}</strong>:
-          Chỉ tiêu đổi từ <strong>${esc(U.formatMoney(entry.oldAmount))}</strong>
-          → <strong>${esc(U.formatMoney(entry.newAmount))}</strong>
+          <strong>${esc(entry.username || '—')}</strong>: ${esc(entry.action)}<br>
+          ${esc(entry.oldValue || '—')} → ${esc(entry.newValue || '—')}
           <br>
-          <small>Lý do: ${esc(entry.reason || '—')} &nbsp;·&nbsp; ${esc(entry.changedBy || '—')} &nbsp;·&nbsp; ${esc(entry.changedAt || '')}</small>
+          <small>Lý do: ${esc(entry.reason || '—')} &nbsp;·&nbsp; ${esc(entry.username || '—')} &nbsp;·&nbsp; ${esc(entry.createdAt || '')}</small>
         </div>
       </li>
     `).join('');
@@ -400,8 +422,10 @@
     try {
       const params = new URLSearchParams({ period: state.period });
       const data = await apiFetch('/api/sales-targets/my-progress?' + params, { _key: 'myprogress' });
-      state.myProgress = data;
-      state.myOrders = data.orders || [];
+      state.myProgress = {...data,targetAmount:data.totalTargetAmount,actualSales:data.actualAmount};
+      state.myOrders = [...(data.personalTargets||[]),...(data.territoryTargets||[])].map(row=>({
+        orderCode:row.scopeTypeLabel,orderDate:row.period,dealerName:row.territoryName||data.fullName,
+        revenue:row.actualAmount,status:row.progressStatusLabel}));
       state.myTotal = state.myOrders.length;
       state.myPages = Math.ceil(state.myTotal / state.myPageSize) || 1;
       renderMyProgress();
@@ -420,6 +444,8 @@
     $('st-my-pending').hidden = hasTarget;
     $('st-my-kpis').hidden = !hasTarget;
     $('st-my-progress-section').hidden = !hasTarget;
+
+    renderMyOrders();
 
     if (!hasTarget) return;
 
@@ -457,13 +483,13 @@
     if (state.myPage >= state.myPages) state.myPage = Math.max(0, state.myPages - 1);
     const page = state.myOrders.slice(state.myPage * state.myPageSize, (state.myPage + 1) * state.myPageSize);
 
-    $('st-my-detail-count').textContent = `${state.myTotal} đơn trong kỳ`;
+    $('st-my-detail-count').textContent = `${state.myTotal} chỉ tiêu trong kỳ`;
     $('st-my-page').textContent = state.myTotal ? `Trang ${state.myPage + 1}/${state.myPages}` : '0 trang';
     $('st-my-prev').disabled = state.myPage === 0;
     $('st-my-next').disabled = state.myPage + 1 >= state.myPages;
 
     if (!page.length) {
-      $('st-my-detail-rows').innerHTML = '<tr><td colspan="4" class="st-muted" style="text-align:center;padding:24px;">Chưa có đơn hàng nào trong kỳ này.</td></tr>';
+      $('st-my-detail-rows').innerHTML = '<tr><td colspan="4" class="st-muted" style="text-align:center;padding:24px;">Chưa có chỉ tiêu chi tiết trong kỳ này.</td></tr>';
       return;
     }
     $('st-my-detail-rows').innerHTML = page.map(o => `
@@ -514,7 +540,9 @@
 
   /* ── MODAL ĐẶT / SỬA CHỈ TIÊU ──────────────────────────────────────── */
   function openModal(emp) {
-    const locked = U.isPeriodLocked(state.period);
+    if (!isAdmin() && !canManage()) return;
+    state.editingTarget = emp;
+    const locked = Boolean(emp?.locked || state.periodLocked);
     showModalError('');
 
     // Hiển thị/ẩn thông báo khoá
@@ -524,8 +552,14 @@
     reasonLabel.hidden = !locked;
     reasonField.required = locked;
 
+    const subject=$('st-modal-subject');
+    subject.innerHTML='<option value="">Chọn nhân viên hoặc khu vực</option>'+
+      (state.options?.employees||[]).map(row=>`<option value="user:${row.id}">${U.escape(row.fullName||row.username)} (Nhân viên)</option>`).join('')+
+      (state.options?.territories||[]).map(row=>`<option value="territory:${row.id}">${U.escape(row.name)} (Khu vực)</option>`).join('');
+    subject.value=emp?(emp.territoryId?'territory:'+emp.territoryId:'user:'+emp.employeeId):'';
+    subject.disabled=Boolean(emp);
     // Điền thông tin
-    $('st-modal-employee-id').value = emp ? (emp.employeeId || '') : '';
+    $('st-modal-employee-id').value = emp ? (emp.territoryId || emp.employeeId || '') : '';
     $('st-modal-employee-name').value = emp ? (emp.employeeName || emp.username || '') : '(Chọn nhân viên)';
     $('st-modal-period-display').value = U.periodLabel(state.period);
     $('st-modal-is-locked').value = locked ? '1' : '0';
@@ -538,6 +572,12 @@
     $('st-modal-backdrop').hidden = false;
     setTimeout(() => $('st-modal-amount').focus(), 50);
   }
+
+  $('st-modal-subject').addEventListener('change',()=>{
+    const [type,id]=$('st-modal-subject').value.split(':');
+    $('st-modal-employee-id').value=id||'';
+    $('st-modal-employee-name').value=$('st-modal-subject').selectedOptions[0]?.textContent||'';
+  });
 
   function closeModal() {
     $('st-modal-backdrop').hidden = true;
@@ -560,7 +600,7 @@
   /* ── SUBMIT ─────────────────────────────────────────────────────────── */
   $('st-modal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (state.submitting) return;
+    if (state.submitting || (!isAdmin() && !canManage())) return;
     showModalError('');
 
     const isLocked = $('st-modal-is-locked').value === '1';
@@ -584,14 +624,14 @@
 
     try {
       const body = {
-        employeeId: draft.employeeId,
+        ...($('st-modal-subject').value.startsWith('territory:')?{territoryId:Number(draft.employeeId)}:{userId:Number(draft.employeeId)}),
         period: draft.period,
         targetAmount: Number(draft.targetAmount),
         ...(isLocked && draft.reason ? { reason: draft.reason.trim() } : {}),
       };
 
-      await apiFetch('/api/sales-targets', {
-        method: 'POST',
+      await apiFetch('/api/sales-targets'+(state.editingTarget?.targetId?'/'+state.editingTarget.targetId:''), {
+        method: state.editingTarget?.targetId?'PUT':'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         _key: 'submit',
@@ -611,12 +651,11 @@
   });
 
   /* ── PHẢN ỨNG VỚI THAY ĐỔI QUYỀN ───────────────────────────────────── */
-  document.addEventListener('auth:permissions-changed', () => {
-    if (!hasAnyAccess()) {
-      abortAll();
-      closeModal();
-      clearSensitiveData();
-    }
+  window.addEventListener('auth:permissions-changed', () => {
+    generation++;
+    abortAll();
+    closeModal();
+    clearSensitiveData();
     updateAccess();
     reload();
   });
@@ -627,6 +666,12 @@
     state.auditLog = [];
     state.myProgress = null;
     state.myOrders = [];
+    state.options = null;
+    state.editingTarget = null;
+    $('st-modal-subject').replaceChildren();
+    $('st-my-kpis').hidden = true;
+    $('st-my-progress-section').hidden = true;
+    $('st-my-pending').hidden = true;
     $('st-employee-rows').innerHTML = '';
     $('st-region-rows').innerHTML = '';
     $('st-region-cards').innerHTML = '';

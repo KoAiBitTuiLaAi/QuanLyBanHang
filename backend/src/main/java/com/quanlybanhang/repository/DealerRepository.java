@@ -15,6 +15,10 @@ import java.util.Optional;
 @Repository
 public interface DealerRepository extends JpaRepository<Dealer, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from Dealer d where d.id = :id")
+    Optional<Dealer> findByIdForUpdate(@Param("id") Long id);
+
     Optional<Dealer> findByCode(String code);
 
     Optional<Dealer> findByCodeIgnoreCase(String code);

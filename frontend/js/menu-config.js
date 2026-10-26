@@ -374,7 +374,7 @@ const MenuConfig = (() => {
       label: "Chỉ tiêu doanh số",
       icon: '<path d="M12 20V10M18 20V4M6 20v-4"/><path d="M2 20h20"/>',
       href: "/sales-targets",
-      permissions: ["SALES_TARGET_VIEW", "SALES_TARGET_MANAGE", "SALES_TARGET_VIEW_OWN"],
+      permissions: ["REPORT_SALES", "ORDER_APPROVE"],
       roles: ALL_ROLES,
     },
     {

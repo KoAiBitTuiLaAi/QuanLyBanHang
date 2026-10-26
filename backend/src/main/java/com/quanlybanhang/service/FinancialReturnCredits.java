@@ -19,7 +19,10 @@ public final class FinancialReturnCredits {
     }
     public static BigDecimal netInvoice(Invoice invoice, Map<Long, BigDecimal> credits) {
         if (invoice == null || invoice.getStatus() == InvoiceStatus.CANCELLED) return BigDecimal.ZERO;
-        BigDecimal original = (invoice.getAdjustedTotalAmount() != null && invoice.getAdjustedTotalAmount().compareTo(BigDecimal.ZERO) > 0)
+        // Legacy ISSUED rows may contain the model's default zero. ADJUSTED zero
+        // is a real full decrease and must never fall back to the original amount.
+        BigDecimal original = invoice.getAdjustedTotalAmount() != null
+                && (invoice.getStatus() == InvoiceStatus.ADJUSTED || invoice.getAdjustedTotalAmount().signum() != 0)
                 ? invoice.getAdjustedTotalAmount()
                 : (invoice.getTotalAmount() != null ? invoice.getTotalAmount() : BigDecimal.ZERO);
         return original.subtract(credits != null ? credits.getOrDefault(invoice.getId(), BigDecimal.ZERO) : BigDecimal.ZERO).max(BigDecimal.ZERO);

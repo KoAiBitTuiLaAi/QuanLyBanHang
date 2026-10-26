@@ -216,17 +216,17 @@
         <!-- Bảng doanh số theo ngày/đơn hàng trong kỳ -->
         <section class="st-panel" aria-labelledby="st-my-detail-title">
           <div class="st-panel-header">
-            <h2 id="st-my-detail-title">Chi tiết doanh số trong kỳ</h2>
+            <h2 id="st-my-detail-title">Chỉ tiêu và tiến độ trong kỳ</h2>
             <span id="st-my-detail-count" class="st-muted" role="status"></span>
           </div>
-          <div class="st-scroll" role="region" aria-label="Chi tiết đơn hàng trong kỳ" tabindex="0">
+          <div class="st-scroll" role="region" aria-label="Chi tiết chỉ tiêu trong kỳ" tabindex="0">
             <table>
               <thead>
                 <tr>
-                  <th scope="col">Đơn hàng / Ngày</th>
-                  <th scope="col">Đại lý</th>
-                  <th scope="col" class="st-num">Doanh số đơn</th>
-                  <th scope="col">Trạng thái đơn</th>
+                  <th scope="col">Phạm vi / Kỳ</th>
+                  <th scope="col">Nhân viên / Khu vực</th>
+                  <th scope="col" class="st-num">Doanh số thực</th>
+                  <th scope="col">Tiến độ</th>
                 </tr>
               </thead>
               <tbody id="st-my-detail-rows">
@@ -261,7 +261,8 @@
           <input type="hidden" id="st-modal-employee-id">
           <input type="hidden" id="st-modal-is-locked">
 
-          <label>Nhân viên
+          <label>Nhân viên / Khu vực<select id="st-modal-subject" required></select></label>
+          <label>Đối tượng đã chọn
             <input type="text" id="st-modal-employee-name" readonly aria-label="Nhân viên">
           </label>
 
@@ -270,9 +271,9 @@
           </label>
 
           <label>Chỉ tiêu doanh số (VND) <span class="req">*</span>
-            <input type="number" id="st-modal-amount" min="0" max="999999999999" step="1000"
+            <input type="number" id="st-modal-amount" min="0.01" max="999999999999" step="0.01"
               placeholder="Nhập số tiền chỉ tiêu" required aria-required="true">
-            <small>Nhập giá trị dương. Đặt 0 để xoá chỉ tiêu.</small>
+            <small>Nhập giá trị dương. Giá trị phải lớn hơn 0.</small>
           </label>
 
           <label id="st-modal-reason-label">Lý do sửa chỉ tiêu kỳ đã khoá <span class="req">*</span>

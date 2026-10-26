@@ -19,6 +19,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long>, JpaSpec
     @Query("select i from Invoice i where i.id = :id")
     Optional<Invoice> findForReturnUpdate(@Param("id") Long id);
 
+    @Query("select i.dealer.id from Invoice i where i.id = :id")
+    Optional<Long> findDealerIdForReturn(@Param("id") Long id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM Invoice i WHERE i.id = :id")
     Optional<Invoice> findByIdForUpdate(@Param("id") Long id);

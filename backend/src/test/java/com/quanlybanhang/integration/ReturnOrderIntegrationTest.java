@@ -47,6 +47,8 @@ class ReturnOrderIntegrationTest {
  @Autowired InvoiceRepository invoices;
  @Autowired InvoiceAdjustmentRepository adjustments;
  @Autowired ReturnOrderRepository returns;
+ @Autowired DealerReturnRepository warehouseReturns;
+ @Autowired WarehouseRepository warehouses;
  @Autowired DebtPaymentRepository payments;
  @Autowired RolePermissionConfig matrix;
  @Autowired JwtUtils jwt;
@@ -59,6 +61,7 @@ class ReturnOrderIntegrationTest {
  Long lineId;
  Product product;
  Order order;
+ DealerReturn warehouseReturn;
  final String base="/api/invoices/returns";
  @BeforeEach void setup() {
   String key=UUID.randomUUID().toString().substring(0,8);
@@ -80,6 +83,15 @@ class ReturnOrderIntegrationTest {
    .unitPrice(new BigDecimal("33.34")).subtotalAmount(new BigDecimal("100.02")).discountAmount(new BigDecimal("0.02"))
    .totalAmount(new BigDecimal("100.00")).build());
   invoice=invoices.saveAndFlush(invoice); lineId=invoice.getItems().get(0).getId();
+  var warehouse=warehouses.save(Warehouse.builder().code("WH-"+key).name("Kho test").build());
+  warehouseReturn=DealerReturn.builder().returnCode("PTH-"+key).invoice(invoice).invoiceCode(invoice.getInvoiceCode())
+   .dealer(dealer).dealerCode(dealer.getCode()).dealerName(dealer.getName()).warehouse(warehouse)
+   .status(DealerReturnStatus.CONFIRMED).confirmedAt(LocalDateTime.now()).confirmedBy("warehouse-test").build();
+  warehouseReturn.addItem(DealerReturnItem.builder().invoiceItem(invoice.getItems().get(0)).product(product)
+   .productCode(product.getCode()).productName(product.getName()).unit("thùng").baseUnit("thùng")
+   .conversionFactor(BigDecimal.ONE).deliveredQuantity(new BigDecimal("3")).returnQuantity(new BigDecimal("3")).baseReturnQuantity(new BigDecimal("3"))
+   .targetWarehouse(warehouse).returnReason("Đã nhận hàng trả").build());
+  warehouseReturn=warehouseReturns.saveAndFlush(warehouseReturn);
  }
  JsonNode call(MockHttpServletRequestBuilder req,String auth,Object body,int expected) throws Exception {
   if(auth!=null)req.header("Authorization","Bearer "+auth);
@@ -89,7 +101,7 @@ class ReturnOrderIntegrationTest {
   return response.getContentAsByteArray().length==0?json.nullNode():json.readTree(response.getContentAsByteArray()).path("data");
  }
  Map<String,Object> body(String quantity) {
-  return Map.of("invoiceId",invoice.getId(),"returnReason","Trả hàng thực tế","items",List.of(Map.of("invoiceItemId",lineId,"returnQuantity",quantity)));
+  return Map.of("invoiceId",invoice.getId(),"dealerReturnId",warehouseReturn.getId(),"returnReason","Trả hàng thực tế","items",List.of(Map.of("invoiceItemId",lineId,"returnQuantity",quantity)));
  }
  long draft(String quantity) throws Exception { return call(post(base),token,body(quantity),201).path("id").asLong(); }
  JsonNode confirm(long id,int expected) throws Exception { return call(post(base+"/"+id+"/confirm"),token,null,expected); }
@@ -111,6 +123,28 @@ class ReturnOrderIntegrationTest {
   assertThat(jdbc.queryForMap("select * from invoices where id=?",invoice.getId())).isEqualTo(original);
   assertThat(jdbc.queryForMap("select * from invoice_items where id=?",lineId)).isEqualTo(originalItem);
   call(get("/api/invoices/"+invoice.getId()+"/adjustments"),token,null,200);
+ }
+ @Test void creditRequiresConfirmedWarehouseReceiptAndCannotExceedReceivedQuantity() throws Exception {
+  var missingSource=new HashMap<>(body("1"));missingSource.remove("dealerReturnId");
+  call(post(base),token,missingSource,400);
+  warehouseReturn.setStatus(DealerReturnStatus.PENDING);warehouseReturn=warehouseReturns.saveAndFlush(warehouseReturn);
+  call(post(base),token,body("1"),400);
+  warehouseReturn.setStatus(DealerReturnStatus.CONFIRMED);
+  warehouseReturn.getItems().get(0).setReturnQuantity(new BigDecimal("1"));warehouseReturn=warehouseReturns.saveAndFlush(warehouseReturn);
+  call(post(base),token,body("2"),400);
+  long first=draft("1"), competing=draft("1");confirm(first,200);confirm(competing,400);
+  var detail=call(get(base+"/"+first),token,null,200);
+  assertThat(detail.path("dealerReturnId").asLong()).isEqualTo(warehouseReturn.getId());
+  assertThat(debt.getDealerDebtInfo(dealer.getId()).getCurrentDebt()).isEqualByComparingTo("66.67");
+ }
+ @Test void historicalUnlinkedCreditIsNotCreditedAgainThroughWarehouseReceipt() throws Exception {
+  long old=draft("1");confirm(old,200);
+  jdbc.update("update return_orders set dealer_return_id=null where id=?",old);
+  var source=call(get(base+"/eligible-invoices/"+invoice.getId()),token,null,200);
+  assertThat(source.path("warehouseReturns").get(0).path("items").get(0).path("remainingQuantity").decimalValue()).isEqualByComparingTo("2");
+  call(post(base),token,body("3"),400);
+  confirm(draft("2"),200);
+  assertThat(debt.getDealerDebtInfo(dealer.getId()).getCurrentDebt()).isZero();
  }
  @Test void splitReturnsPreserveEveryCentAndRevokeOverdueFlag() throws Exception {
   BigDecimal sum=BigDecimal.ZERO;
@@ -185,6 +219,39 @@ class ReturnOrderIntegrationTest {
   assertThat(debt.getDealerDebtInfo(dealer.getId()).getCurrentDebt()).isEqualByComparingTo("0");
   assertThat(dealerService.getDealerById(dealer.getId()).getCurrentDebt()).isEqualByComparingTo("0");
   assertThat(debt.getDealerDebtInfo(dealer.getId()).getRemainingLimit()).isEqualByComparingTo("200");
+ }
+ @Test void concurrentCreditsAcrossInvoicesLeaveDealerFlagsConsistent() throws Exception {
+  long first=draft("3");
+  String key=UUID.randomUUID().toString().substring(0,8);
+  Order other=orders.save(Order.builder().orderCode("DH-C-"+key).dealer(dealer).status("DELIVERED")
+   .totalAmount(new BigDecimal("100")).recordedAt(LocalDateTime.now().minusDays(30)).build());
+  Invoice second=Invoice.builder().invoiceCode("HD-C-"+key).invoiceNumber(key).dealer(dealer)
+   .dealerCode(dealer.getCode()).dealerName(dealer.getName()).invoiceDate(LocalDateTime.now().minusDays(25))
+   .totalAmount(new BigDecimal("100")).adjustedTotalAmount(new BigDecimal("100")).orders(new ArrayList<>(List.of(other))).build();
+  second.addItem(InvoiceItem.builder().order(other).product(product).productCode(product.getCode()).productName(product.getName())
+   .unit("thùng").orderedQuantity(new BigDecimal("3")).deliveredQuantity(new BigDecimal("3")).invoicedQuantity(new BigDecimal("3"))
+   .unitPrice(new BigDecimal("33.34")).subtotalAmount(new BigDecimal("100.02")).totalAmount(new BigDecimal("100")).build());
+  second=invoices.saveAndFlush(second);
+  DealerReturn physical=DealerReturn.builder().returnCode("PTH-C-"+key).invoice(second).invoiceCode(second.getInvoiceCode())
+   .dealer(dealer).dealerCode(dealer.getCode()).dealerName(dealer.getName()).warehouse(warehouseReturn.getWarehouse())
+   .status(DealerReturnStatus.CONFIRMED).confirmedAt(LocalDateTime.now()).build();
+  physical.addItem(DealerReturnItem.builder().invoiceItem(second.getItems().get(0)).product(product).productCode(product.getCode())
+   .productName(product.getName()).unit("thùng").baseUnit("thùng").conversionFactor(BigDecimal.ONE)
+   .deliveredQuantity(new BigDecimal("3")).returnQuantity(new BigDecimal("3")).baseReturnQuantity(new BigDecimal("3"))
+   .targetWarehouse(warehouseReturn.getWarehouse()).returnReason("Đã nhận").build());
+  physical=warehouseReturns.saveAndFlush(physical);
+  long otherDraft=call(post(base),token,Map.of("invoiceId",second.getId(),"dealerReturnId",physical.getId(),
+   "returnReason","Trả đủ","items",List.of(Map.of("invoiceItemId",second.getItems().get(0).getId(),"returnQuantity","3"))),201).path("id").asLong();
+  debt.evaluateDealerDebt(dealer.getId());
+  var pool=Executors.newFixedThreadPool(2);var start=new CountDownLatch(1);
+  java.util.function.LongFunction<Callable<Integer>> task=id->()->{start.await();return mvc.perform(post(base+"/"+id+"/confirm")
+   .header("Authorization","Bearer "+token)).andReturn().getResponse().getStatus();};
+  try {
+   var one=pool.submit(task.apply(first));var two=pool.submit(task.apply(otherDraft));start.countDown();
+   assertThat(List.of(one.get(20,TimeUnit.SECONDS),two.get(20,TimeUnit.SECONDS))).containsOnly(200);
+   assertThat(debt.getDealerDebtInfo(dealer.getId()).getCurrentDebt()).isZero();
+   assertThat(dealers.findById(dealer.getId()).orElseThrow().getDebtFlagged()).isFalse();
+  } finally {pool.shutdownNow();}
  }
  @Test void fullReturnOfOneOrderDoesNotClearOverdueDebtOfAnother() throws Exception {
   orders.saveAndFlush(Order.builder().orderCode("OTHER-"+UUID.randomUUID()).dealer(dealer).status("DELIVERED").totalAmount(new BigDecimal("50"))
