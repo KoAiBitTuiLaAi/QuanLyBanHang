@@ -1,6 +1,5 @@
 (() => {
   // ── Configuration ──
-  const API_BASE = "http://localhost:8080/api";
 
   // ── DOM refs ──
   const form = document.querySelector(".login-form");
@@ -61,28 +60,6 @@
     }
   }
 
-  // ── Token & user storage ──
-  function saveAuthData(data) {
-    sessionStorage.setItem("accessToken", data.accessToken);
-    sessionStorage.setItem("refreshToken", data.refreshToken);
-    sessionStorage.setItem(
-      "user",
-      JSON.stringify({
-        id: data.id,
-        username: data.username,
-        email: data.email,
-        fullName: data.fullName,
-        roles: data.roles,
-        permissions: data.permissions || [],
-        warehouses: data.warehouses || [],
-        territories: data.territories || [],
-        mustChangePassword: Boolean(data.mustChangePassword),
-        avatarUrl: data.avatarUrl || null,
-        avatarThumbnailUrl: data.avatarThumbnailUrl || null,
-      }),
-    );
-  }
-
   // ── Role-based redirect (S1-01) ──
   function getRedirectUrl(roles) {
     // Admin → admin dashboard
@@ -96,20 +73,16 @@
   }
 
   // ── Check if already logged in ──
-  function checkExistingSession() {
-    const token = sessionStorage.getItem("accessToken");
-    const user = sessionStorage.getItem("user");
-    if (token && user) {
-      try {
-        const userData = JSON.parse(user);
-        window.location.href = getRedirectUrl(userData.roles || []);
-      } catch {
-        // Invalid stored data, clear and stay on login
-        sessionStorage.removeItem("accessToken");
-        sessionStorage.removeItem("refreshToken");
-        sessionStorage.removeItem("user");
+  async function checkExistingSession() {
+    // Explicit logout must stay on this screen even if a failed network request
+    // left an HttpOnly cookie in the browser.
+    if (sessionStorage.getItem("sessionSignedOut")) return;
+    setLoading(true);
+    try {
+      if (Auth.isLoggedIn() || await Auth.restoreSession()) {
+        window.location.href = getRedirectUrl(Auth.getUser()?.roles || []);
       }
-    }
+    } finally { setLoading(false); }
   }
 
   // ── Shake form animation ──
@@ -152,19 +125,9 @@
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, password }),
-      });
+      const {response, data} = await Auth.login({ username, password });
 
       if (response.ok) {
-        // ✅ Đăng nhập thành công
-        const data = await response.json();
-        saveAuthData(data);
-
         showToast(
           `Đăng nhập thành công! Chào mừng ${data.fullName}.`,
           "success",
@@ -178,7 +141,7 @@
       }
 
       // ── Xử lý các mã lỗi ──
-      const errorData = await response.json().catch(() => null);
+      const errorData = data;
 
       switch (response.status) {
         case 401:

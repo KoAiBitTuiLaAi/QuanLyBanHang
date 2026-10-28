@@ -1608,3 +1608,21 @@ S8-10 lấy danh mục đại lý trực tiếp từ `/api/finance/debt` theo FI
 `live-report.json`, `matrix-report.json`, `adjustment-report.json` và `qa-cleanup-report.json` lưu trong thư mục minh chứng trên. Lượt workflow đầu có sáu kiểm tra đã đạt rồi dừng ở fixture SKU cũ không quản lý lô; sau đó đã kiểm tra lại độc lập bằng SKU thực sự quản lý lô và đạt, đồng thời từ chối các nháp QA dư. Không diễn giải lượt đầu là toàn bộ workflow đã đạt.
 
 Dashboard tải khoảng 701 ms trong lượt cuối trên máy local có dữ liệu demo; đây là phép đo cục bộ, chưa xác nhận SLA dưới 2 giây cho dữ liệu lớn hoặc nhiều người dùng. Backend hiện chạy bản jar mới, tắt seed và email nhắc nợ cho phiên kiểm thử; không sửa cấu hình seed trong script chạy của người dùng.
+
+## S1-02 — Sửa phiên đăng nhập khi mở menu ở tab mới — 26/10/2026
+
+Nhánh `fix-tab`. Nguyên nhân: token/hồ sơ chỉ ở sessionStorage theo tab, nên tab mới không có dữ liệu để đi qua guard. Bổ sung cookie refresh HttpOnly, SameSite=Strict, giới hạn `/api/auth`; tab mới khôi phục token/hồ sơ từ backend rồi mở lại chính URL đã chọn. Không dùng localStorage hoặc truyền token trong URL/thông báo giữa tab. Dữ liệu nghiệp vụ và ma trận quyền tiếp tục ở DB.
+
+| Hạng mục | Backend | Frontend | Kết nối / kiểm chứng |
+|---|---|---|---|
+| Ctrl+click, tab độc lập và nhiều tab đồng thời | Có — login/refresh hỗ trợ cookie opt-in và giữ contract JSON cho client cũ | Có — dùng credentials include, guard dùng chung khôi phục rồi khởi tạo lại đúng URL | Chrome + API + MySQL: từ Sổ công nợ Ctrl+click sang Đơn hàng, tab độc lập, hai tab khôi phục đồng thời và đóng tab gốc đều đạt. |
+| Đăng xuất đa tab | Có — thu hồi token và cả nhóm sid trong token_blacklist, xóa cookie đúng scope | Có — BroadcastChannel chỉ gửi thông báo; xóa cache, chặn phản hồi đến muộn | Chrome: mọi tab về đăng nhập; response refresh thật bị trì hoãn không khôi phục phiên; access token của tab khác nhận 401. H2: phiên thiết bị khác còn hiệu lực. |
+| Phân quyền và trạng thái tài khoản | Có — Bearer JWT vẫn qua bộ lọc và DB matrix/active/tokenVersion trên từng request | Có — giữ đồng bộ quyền, không fallback vai trò; phản hồi sau logout không ghi lại quyền | Integration: cùng JWT cấp/thu hồi/cấp lại PRODUCT_VIEW trả 200/403/200; khóa tài khoản và đổi tokenVersion chặn cả access/refresh; ADMIN vẫn theo cơ chế chung. |
+| Cookie và chống CSRF | Có — custom header + Origin whitelist; HttpOnly, SameSite=Strict; HTTPS Secure; no-store | Có — không lưu refreshToken mới vào JS storage | Cookie đơn lẻ không gọi được API nghiệp vụ, thiếu header/Origin không khôi phục được, Origin lạ bị 403; cookie hỏng/chữ ký sai trả 401. |
+| Lỗi mạng, đổi tài khoản và client cũ | Có — refresh không quay vòng nên không xung đột giữa tab; login mới thu hồi cookie cũ | Có — mạng/5xx giữ trạng thái và có Thử lại; đổi tài khoản dừng yêu cầu đang chờ; refreshToken cũ chuyển sang cookie khi gia hạn | 11 ca lifecycle mới bao gồm late refresh/permissions/API, account switch, legacy migration và lỗi mạng. |
+
+Kiểm thử: 97 ca backend trong 15 lớp xác thực/phân quyền (gồm 9 ca BrowserSessionIntegrationTest), 310 ca Node đều đạt; Chrome thực tế có 9 kiểm tra đa tab, không có lỗi JavaScript. Hồi quy cả 10 menu Sprint 8 trên desktop/mobile và 7 file Excel/PDF đạt; bài kiểm thử ghi riêng 401 được mong đợi khi trang đăng nhập thăm dò cookie chưa tồn tại, không bỏ qua 401 sau khi đã đăng nhập. Script: `tests/auth-tabs-live.browser.cjs`, minh chứng `E:/DevTemp/UserTemp/qlbh-auth-tabs-20261026/`. Kiểm tra thực tế chỉ ghi login/logout/thu hồi token, không đổi đơn, phiếu, tồn hoặc công nợ; khởi động lại backend với seed và scheduler nhắc nợ tắt.
+
+Antigravity: Sonnet báo hết quota; Gemini hỗ trợ rà thiết kế CSRF/cookie/race. Các gợi ý được đối chiếu với code thực tế; không áp dụng đề xuất xóa localStorage hoặc tăng tokenVersion toàn tài khoản vì hệ thống không lưu token ở localStorage và logout một trình duyệt không được thu hồi thiết bị khác. Lượt rà diff đầy đủ bằng CLI hết thời gian chờ, không coi là đã được Antigravity duyệt toàn bộ code.
+
+Đã cập nhật API_DOCUMENTATION và FUNCTION_MAP. Backend đang chạy bản jar mới. Phiên cũ không còn refreshToken hoặc chưa chuyển sang cookie cần đăng nhập lại một lần để tạo cookie mới. Không commit/merge trong lượt này.

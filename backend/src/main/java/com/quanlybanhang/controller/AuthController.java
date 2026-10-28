@@ -9,11 +9,19 @@ import com.quanlybanhang.service.AvatarService;
 import com.quanlybanhang.service.PasswordResetService;
 import com.quanlybanhang.service.AdminUserService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Cookie;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.core.Authentication;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -40,26 +48,50 @@ public class AuthController {
     private final AdminUserService adminUserService;
     private final AvatarService avatarService;
 
+    private static final String SESSION_COOKIE = "qlbh_refresh";
+    @Value("${app.cors.allowed-origins}")
+    private String[] allowedOrigins;
+    @Value("${app.auth.cookie-secure:false}")
+    private boolean secureCookie;
+
     /**
      * Đăng nhập.
      */
     @PostMapping("/login")
-    public ResponseEntity<JwtResponse> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<JwtResponse> login(@Valid @RequestBody LoginRequest request,
+                                             HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        boolean browser = browserRequest(httpRequest);
         JwtResponse response = authService.login(request);
-        return ResponseEntity.ok(response);
+        if (browser) {
+            String previous = sessionCookie(httpRequest);
+            if (StringUtils.hasText(previous)) authService.logout(null, previous);
+            writeSessionCookie(httpRequest, httpResponse, response);
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(response);
     }
 
     /**
      * Refresh access token.
      */
     @PostMapping("/refresh")
-    public ResponseEntity<JwtResponse> refreshToken(@RequestBody java.util.Map<String, String> request) {
-        String refreshToken = request.get("refreshToken");
+    public ResponseEntity<JwtResponse> refreshToken(@RequestBody(required = false) java.util.Map<String, String> request,
+                                                    HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        boolean browser = browserRequest(httpRequest);
+        String refreshToken = request == null ? null : request.get("refreshToken");
+        // Browser cookie is authoritative; a stale tab must not replace a newer login.
+        String cookie = browser ? sessionCookie(httpRequest) : null;
+        if (StringUtils.hasText(cookie)) refreshToken = cookie;
         if (refreshToken == null || refreshToken.isBlank()) {
-            throw new RuntimeException("Refresh token không được để trống");
+            throw new BadCredentialsException("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
         }
-        JwtResponse response = authService.refreshToken(refreshToken);
-        return ResponseEntity.ok(response);
+        try {
+            JwtResponse response = authService.refreshToken(refreshToken);
+            if (browser) writeSessionCookie(httpRequest, httpResponse, response);
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(response);
+        } catch (BadCredentialsException ex) {
+            if (browser) clearSessionCookie(httpRequest, httpResponse);
+            throw ex;
+        }
     }
 
     /**
@@ -69,11 +101,48 @@ public class AuthController {
      */
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse> logout(HttpServletRequest request,
-                                               @RequestBody(required = false) java.util.Map<String, String> body) {
+                                               @RequestBody(required = false) java.util.Map<String, String> body,
+                                               HttpServletResponse httpResponse) {
+        boolean browser = browserRequest(request);
         String token = parseJwt(request);
         String refreshToken = body == null ? null : body.get("refreshToken");
+        String cookie = browser ? sessionCookie(request) : null;
+        if (StringUtils.hasText(cookie)) refreshToken = cookie;
         authService.logout(token, refreshToken);
-        return ResponseEntity.ok(ApiResponse.success("Đăng xuất thành công"));
+        if (browser) clearSessionCookie(request, httpResponse);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.success("Đăng xuất thành công"));
+    }
+
+    /** Cookie operations require an explicit, CORS-preflighted request from a trusted frontend. */
+    private boolean browserRequest(HttpServletRequest request) {
+        if (!"1".equals(request.getHeader("X-Browser-Session"))) return false;
+        String origin = request.getHeader(HttpHeaders.ORIGIN);
+        if (origin == null || java.util.Arrays.stream(allowedOrigins).noneMatch(origin::equals)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Nguồn yêu cầu phiên đăng nhập không được phép");
+        }
+        return true;
+    }
+
+    private String sessionCookie(HttpServletRequest request) {
+        if (request.getCookies() == null) return null;
+        for (Cookie cookie : request.getCookies()) {
+            if (SESSION_COOKIE.equals(cookie.getName())) return cookie.getValue();
+        }
+        return null;
+    }
+
+    private ResponseCookie.ResponseCookieBuilder cookieBuilder(HttpServletRequest request, String value) {
+        return ResponseCookie.from(SESSION_COOKIE, value).httpOnly(true)
+                .secure(secureCookie || request.isSecure()).sameSite("Strict").path("/api/auth");
+    }
+
+    private void writeSessionCookie(HttpServletRequest request, HttpServletResponse response, JwtResponse data) {
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieBuilder(request, data.getRefreshToken()).build().toString());
+        data.setRefreshToken(null); // Browser JavaScript never receives the new refresh credential.
+    }
+
+    private void clearSessionCookie(HttpServletRequest request, HttpServletResponse response) {
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieBuilder(request, "").maxAge(0).build().toString());
     }
 
     @GetMapping("/me")
